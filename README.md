@@ -59,6 +59,7 @@ ckb-wallet-gateway/
 │       ├── routes.rs           # API endpoints
 │       ├── light_client.rs     # CKB light client wrapper
 │       └── models.rs           # Data models
+├── deployment/                 # Docker & VPS deployment files
 ├── docs/                       # Documentation
 ├── scripts/                    # Utility scripts
 └── WEEKLY_PROGRESS_LOGS.md     # Development progress
@@ -232,6 +233,34 @@ Located in `android/app/build.gradle.kts`:
 // Gateway URL for debug builds (10.0.2.2 = host localhost from emulator)
 buildConfigField("String", "GATEWAY_URL", "\"http://10.0.2.2:8080\"")
 ```
+
+## Deployment
+
+For production deployment to a VPS, see the [Deployment Guide](deployment/README.md).
+
+### Quick Deploy to VPS
+
+```bash
+# SSH into your VPS (Ubuntu 22.04 / Debian 12)
+ssh root@YOUR_SERVER_IP
+
+# Run the automated setup script
+curl -sSL https://raw.githubusercontent.com/RaheemJnr/Light-Client-Gateway/main/deployment/setup-vps.sh -o setup-vps.sh
+chmod +x setup-vps.sh
+sudo ./setup-vps.sh
+
+# With SSL certificate for a domain
+sudo ./setup-vps.sh --domain api.yourdomain.com
+```
+
+### Using Docker Compose
+
+```bash
+cd deployment
+docker compose up -d
+```
+
+See [deployment/README.md](deployment/README.md) for detailed instructions.
 
 ## Roadmap
 

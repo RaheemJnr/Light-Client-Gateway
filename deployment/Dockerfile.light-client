@@ -1,0 +1,53 @@
+# CKB Light Client Dockerfile
+# Builds and runs the CKB light client for testnet
+
+# Build stage
+FROM rust:1.75-bookworm as builder
+
+WORKDIR /build
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    clang \
+    libclang-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone the light client repository
+RUN git clone --depth 1 https://github.com/nervosnetwork/ckb-light-client.git .
+
+# Build the light client
+RUN cargo build --release -p light-client-bin
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy the binary from builder
+COPY --from=builder /build/target/release/ckb-light-client /app/ckb-light-client
+
+# Copy config files
+COPY --from=builder /build/config /app/config
+
+# Create data directory
+RUN mkdir -p /app/data
+
+# Create non-root user
+RUN useradd -r -s /bin/false ckb
+RUN chown -R ckb:ckb /app
+USER ckb
+
+# Expose RPC port
+EXPOSE 9000
+
+# Data volume for blockchain state
+VOLUME ["/app/data"]
+
+# Run the light client with testnet config
+CMD ["./ckb-light-client", "run", "--config-file", "config/testnet.toml"]
