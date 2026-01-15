@@ -4,19 +4,78 @@ import android.util.Log
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.FiberNew
+import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.QuestionMark
+import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.AccessTime
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Sync
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,7 +83,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
-import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -34,8 +92,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
-import androidx.compose.runtime.rememberCoroutineScope
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -212,9 +270,9 @@ fun HomeScreen(
                     item {
                         SyncModeReminderBanner(
                             onDismiss = { viewModel.dismissSyncReminder() },
-                            onSettingsClick = { 
+                            onSettingsClick = {
                                 viewModel.dismissSyncReminder()
-                                viewModel.showSyncOptions() 
+                                viewModel.showSyncOptions()
                             }
                         )
                     }
@@ -330,7 +388,7 @@ private fun BackupWalletDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error
                 )
-                
+
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant
@@ -365,7 +423,7 @@ private fun ImportWalletDialog(
     onImport: (String) -> Unit
 ) {
     var privateKey by remember { mutableStateOf("") }
-    
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Import Wallet", fontWeight = FontWeight.Bold) },
@@ -376,7 +434,7 @@ private fun ImportWalletDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error
                 )
-                
+
                 OutlinedTextField(
                     value = privateKey,
                     onValueChange = { privateKey = it.trim() },
@@ -969,16 +1027,19 @@ private fun TransactionItem(
             Color(0xFF4CAF50).copy(alpha = 0.15f),
             Color(0xFF4CAF50)
         )
+
         isOutgoing -> Triple(
             Icons.Default.ArrowUpward,
             Color(0xFFF44336).copy(alpha = 0.15f),
             Color(0xFFF44336)
         )
+
         isSelf -> Triple(
             Icons.Default.SwapHoriz,
             MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
             MaterialTheme.colorScheme.onSurface
         )
+
         else -> Triple(
             Icons.Default.QuestionMark,
             MaterialTheme.colorScheme.surfaceVariant,
@@ -1055,7 +1116,8 @@ private fun TransactionItem(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.AccessTime,
+                        imageVector = if (transaction.isConfirmed()) Icons.Outlined.CheckCircle
+                        else Icons.Outlined.AccessTime,
                         contentDescription = null,
                         modifier = Modifier.size(14.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
@@ -1219,7 +1281,8 @@ private fun TransactionDetailSheet(
 
             DetailRow(
                 label = "Block Number",
-                value = transaction.blockNumber.removePrefix("0x").toLongOrNull(16)?.toString() ?: transaction.blockNumber
+                value = transaction.blockNumber.removePrefix("0x").toLongOrNull(16)?.toString()
+                    ?: transaction.blockNumber
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))

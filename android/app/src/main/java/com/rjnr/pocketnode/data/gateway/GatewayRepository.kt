@@ -695,8 +695,6 @@ class GatewayRepository @Inject constructor(
         }
     }
 
-   // fun hasWallet(): Boolean = keyManager.hasWallet()
-    
     fun getPrivateKey(): ByteArray = keyManager.getPrivateKey()
 
     /**
