@@ -5,6 +5,8 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.google.services)
+    alias(libs.plugins.firebase.appdistribution)
 }
 
 android {
@@ -32,6 +34,12 @@ android {
                 "proguard-rules.pro"
             )
             buildConfigField("String", "GATEWAY_URL", "\"https://your-gateway.example.com\"")
+            
+            // Firebase App Distribution
+            firebaseAppDistribution {
+                artifactType = "APK"
+                testers = "rjnr.pocketnode@gmail.com" // Placeholder for team lead
+            }
         }
     }
 
@@ -112,6 +120,10 @@ dependencies {
     implementation(libs.camerax.view)
     implementation(libs.mlkit.barcode.scanning)
     implementation(libs.accompanist.permissions)
+
+    // Firebase
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.analytics)
 }
 
 tasks.register<Exec>("cargoBuild") {
