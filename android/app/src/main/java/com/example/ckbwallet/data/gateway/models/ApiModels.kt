@@ -22,12 +22,16 @@ enum class SyncMode {
 /**
  * Helper to convert SyncMode to the from_block parameter value
  */
-fun SyncMode.toFromBlock(customBlockHeight: Long? = null): String? {
+fun SyncMode.toFromBlock(customBlockHeight: Long? = null, tipHeight: Long = 0): String {
     return when (this) {
-        SyncMode.NEW_WALLET -> "tip"
-        SyncMode.RECENT -> null // Server will default to ~30 days
-        SyncMode.FULL_HISTORY -> "genesis"
-        SyncMode.CUSTOM -> customBlockHeight?.toString() ?: null
+        SyncMode.NEW_WALLET -> tipHeight.toString()
+        SyncMode.RECENT -> {
+            // CKB block time is ~10-15s. 30 days is about 200,000 blocks.
+            val recentBlock = tipHeight - 200_000
+            if (recentBlock < 0) "0" else recentBlock.toString()
+        }
+        SyncMode.FULL_HISTORY -> "0"
+        SyncMode.CUSTOM -> customBlockHeight?.toString() ?: "0"
     }
 }
 
@@ -128,3 +132,27 @@ data class ErrorDetail(
     val message: String,
     val details: Map<String, String> = emptyMap()
 )
+
+// ============ JNI Response Models ============
+// These match the JSON structure returned by the Rust JNI bridge
+
+@Serializable
+data class JniCell(
+    val output: CellOutput,
+    @SerialName("output_data") val outputData: String? = null,
+    @SerialName("out_point") val outPoint: OutPoint,
+    @SerialName("block_number") val blockNumber: String,
+    @SerialName("tx_index") val txIndex: String
+) {
+    /**
+     * Convert JNI cell format to the app's Cell format
+     */
+    fun toCell(): Cell = Cell(
+        outPoint = outPoint,
+        capacity = output.capacity,
+        blockNumber = blockNumber,
+        lock = output.lock,
+        type = output.type,
+        data = outputData ?: "0x"
+    )
+}

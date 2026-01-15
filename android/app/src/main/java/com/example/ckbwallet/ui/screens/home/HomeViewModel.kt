@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ckbwallet.data.gateway.GatewayRepository
+import com.example.ckbwallet.data.gateway.models.BalanceResponse
 import com.example.ckbwallet.data.gateway.models.SyncMode
 import com.example.ckbwallet.data.gateway.models.TransactionRecord
 import com.example.ckbwallet.data.wallet.WalletInfo
@@ -33,7 +34,12 @@ class HomeViewModel @Inject constructor(
 
         viewModelScope.launch {
             repository.walletInfo.collect { info ->
-                _uiState.update { it.copy(walletInfo = info) }
+                _uiState.update { 
+                    it.copy(
+                        walletInfo = info,
+                        address = repository.getCurrentAddress() ?: ""
+                    ) 
+                }
             }
         }
 
@@ -149,7 +155,7 @@ class HomeViewModel @Inject constructor(
 
                         // Refresh transactions periodically during sync
                         if (attempts % 3 == 0) {
-                            refreshTransactionsOnly()
+                            refreshTransactionsOnly(silent = true)
                         }
                     }
                     .onFailure {
@@ -181,7 +187,7 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private suspend fun refreshTransactionsOnly() {
+    private suspend fun refreshTransactionsOnly(silent: Boolean = false) {
         Log.d(TAG, "Fetching transactions (limit=50)...")
         repository.getTransactions(limit = 50)
             .onSuccess { response ->
@@ -195,8 +201,10 @@ class HomeViewModel @Inject constructor(
             }
             .onFailure { error ->
                 Log.e(TAG, "Failed to fetch transactions", error)
-                _uiState.update {
-                    it.copy(error = "Failed to load transactions: ${error.message}")
+                if (!silent) {
+                    _uiState.update {
+                        it.copy(error = "Failed to load transactions: ${error.message}")
+                    }
                 }
             }
     }
@@ -271,7 +279,9 @@ data class HomeUiState(
     val isSyncing: Boolean = false,
     val syncProgress: Double = 0.0,
     val walletInfo: WalletInfo? = null,
+    val address: String = "",
     val balanceCkb: Double = 0.0,
+    val balance: BalanceResponse? = null,
     val transactions: List<TransactionRecord> = emptyList(),
     val error: String? = null,
     val currentSyncMode: SyncMode = SyncMode.RECENT,

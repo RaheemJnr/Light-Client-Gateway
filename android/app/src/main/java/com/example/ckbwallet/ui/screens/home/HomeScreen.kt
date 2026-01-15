@@ -41,6 +41,7 @@ import com.example.ckbwallet.data.gateway.models.TransactionRecord
 fun HomeScreen(
     onNavigateToSend: () -> Unit = {},
     onNavigateToReceive: () -> Unit = {},
+    onNavigateToStatus: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -114,6 +115,11 @@ fun HomeScreen(
                         }
                     }
 
+                    // Node Status Button
+                    IconButton(onClick = onNavigateToStatus) {
+                        Icon(Icons.Filled.Terminal, "Node Status")
+                    }
+
                     // Refresh button
                     IconButton(
                         onClick = { viewModel.refresh() },
@@ -172,17 +178,15 @@ fun HomeScreen(
                 item {
                     BalanceCard(
                         balanceCkb = uiState.balanceCkb,
-                        address = uiState.walletInfo?.testnetAddress ?: "",
+                        address = uiState.address,
                         isRefreshing = uiState.isRefreshing,
                         onCopyAddress = {
-                            uiState.walletInfo?.testnetAddress?.let {
-                                clipboardManager.setText(AnnotatedString(it))
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(
-                                        message = "Address copied to clipboard",
-                                        duration = SnackbarDuration.Short
-                                    )
-                                }
+                            clipboardManager.setText(AnnotatedString(uiState.address))
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    message = "Address copied to clipboard",
+                                    duration = SnackbarDuration.Short
+                                )
                             }
                         }
                     )
@@ -262,11 +266,7 @@ private fun SyncStatusBanner(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (showDataWarning) {
-                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
-            } else {
-                MaterialTheme.colorScheme.tertiaryContainer
-            }
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -283,7 +283,7 @@ private fun SyncStatusBanner(
                         imageVector = Icons.Default.Warning,
                         contentDescription = null,
                         modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.error
+                        tint = MaterialTheme.colorScheme.tertiary
                     )
                 } else {
                     CircularProgressIndicator(
@@ -301,11 +301,7 @@ private fun SyncStatusBanner(
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
-                    color = if (showDataWarning) {
-                        MaterialTheme.colorScheme.onErrorContainer
-                    } else {
-                        MaterialTheme.colorScheme.onTertiaryContainer
-                    }
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
                 )
             }
 
@@ -317,16 +313,8 @@ private fun SyncStatusBanner(
                     .fillMaxWidth()
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp)),
-                color = if (showDataWarning) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.tertiary
-                },
-                trackColor = if (showDataWarning) {
-                    MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.2f)
-                } else {
-                    MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.2f)
-                }
+                color = MaterialTheme.colorScheme.tertiary,
+                trackColor = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.2f)
             )
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -338,11 +326,7 @@ private fun SyncStatusBanner(
                     "${(syncProgress * 100).toInt()}% complete • Almost done..."
                 },
                 style = MaterialTheme.typography.bodySmall,
-                color = if (showDataWarning) {
-                    MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
-                } else {
-                    MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
-                }
+                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
             )
         }
     }

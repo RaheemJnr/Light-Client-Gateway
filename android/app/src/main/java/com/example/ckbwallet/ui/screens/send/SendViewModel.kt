@@ -1,5 +1,6 @@
 package com.example.ckbwallet.ui.screens.send
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ckbwallet.data.gateway.GatewayRepository
@@ -47,6 +48,7 @@ class SendViewModel @Inject constructor(
     private var pollingJob: Job? = null
 
     companion object {
+        private const val TAG = "SendViewModel"
         private const val POLLING_INTERVAL_MS = 3000L // Poll every 3 seconds
         private const val MAX_POLLING_ATTEMPTS = 120  // Stop after ~6 minutes
         private const val REQUIRED_CONFIRMATIONS = 3  // Consider fully confirmed after 3 confirmations
@@ -112,13 +114,24 @@ class SendViewModel @Inject constructor(
             }
 
             try {
-                val walletInfo = keyManager.getWalletInfo()
-                val address = walletInfo.testnetAddress
+                Log.d(TAG, "📤 Starting send transaction flow")
+                Log.d(TAG, "  Recipient: ${state.recipientAddress}")
+                Log.d(TAG, "  Amount: ${state.amountCkb} CKB ($amountShannons shannons)")
 
+                val walletInfo = keyManager.getWalletInfo()
+                val address = walletInfo.mainnetAddress
+                Log.d(TAG, "  From address: $address")
+
+                Log.d(TAG, "🔍 Fetching available cells...")
                 val cellsResult = repository.getCells(address)
                 val cells = cellsResult.getOrThrow().items
+                Log.d(TAG, "✅ Got ${cells.size} cells")
+                cells.forEachIndexed { i, cell ->
+                    Log.d(TAG, "  Cell[$i]: ${cell.capacityAsLong()} shannons")
+                }
 
                 _uiState.update { it.copy(statusMessage = "Signing transaction...") }
+                Log.d(TAG, "✍️ Building and signing transaction...")
 
                 val signedTx = transactionBuilder.buildTransfer(
                     fromAddress = address,
@@ -127,10 +140,13 @@ class SendViewModel @Inject constructor(
                     availableCells = cells,
                     privateKey = keyManager.getPrivateKey()
                 )
+                Log.d(TAG, "✅ Transaction built: ${signedTx.cellInputs.size} inputs, ${signedTx.cellOutputs.size} outputs")
 
                 _uiState.update { it.copy(statusMessage = "Broadcasting transaction...") }
+                Log.d(TAG, "📡 Broadcasting transaction...")
 
                 val txHash = repository.sendTransaction(signedTx).getOrThrow()
+                Log.d(TAG, "✅ Transaction sent! Hash: $txHash")
 
                 _uiState.update {
                     it.copy(
@@ -147,15 +163,65 @@ class SendViewModel @Inject constructor(
                 startPollingTransactionStatus(txHash, address)
 
             } catch (e: Exception) {
+                Log.e(TAG, "❌ Transaction failed", e)
+                Log.e(TAG, "  Error type: ${e.javaClass.simpleName}")
+                Log.e(TAG, "  Error message: ${e.message}")
+                e.printStackTrace()
+
+                val userFriendlyError = parseErrorMessage(e)
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        error = e.message ?: "Transaction failed",
+                        error = userFriendlyError,
                         transactionState = TransactionState.FAILED,
                         statusMessage = "Transaction failed"
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * Parse technical error messages into user-friendly descriptions
+     */
+    private fun parseErrorMessage(e: Exception): String {
+        val message = e.message ?: "Unknown error"
+
+        return when {
+            // Cell/UTXO errors
+            message.contains("Failed to get cells", ignoreCase = true) ->
+                "Could not fetch your available funds. Please ensure your wallet is synced and try again."
+            message.contains("No cells available", ignoreCase = true) ||
+            message.contains("Insufficient cells", ignoreCase = true) ->
+                "Not enough funds available. Please wait for your wallet to fully sync."
+
+            // Transaction building errors
+            message.contains("Insufficient balance", ignoreCase = true) ->
+                "Insufficient balance for this transaction."
+            message.contains("minimum", ignoreCase = true) && message.contains("61", ignoreCase = true) ->
+                "Minimum transfer amount is 61 CKB due to CKB's cell model."
+
+            // Network/broadcast errors
+            message.contains("Send failed", ignoreCase = true) ||
+            message.contains("broadcast", ignoreCase = true) ->
+                "Could not broadcast transaction. Please check your network connection and try again."
+            message.contains("verification failed", ignoreCase = true) ->
+                "Transaction verification failed. The transaction may be invalid."
+
+            // Sync errors
+            message.contains("not synced", ignoreCase = true) ||
+            message.contains("sync", ignoreCase = true) ->
+                "Wallet is still syncing. Please wait for sync to complete before sending."
+
+            // JSON/parsing errors (likely a bug)
+            message.contains("json", ignoreCase = true) ||
+            message.contains("parse", ignoreCase = true) ||
+            message.contains("serial", ignoreCase = true) ||
+            message.contains("missing", ignoreCase = true) ->
+                "Internal error processing transaction data. Please try again or restart the app."
+
+            // Generic fallback
+            else -> "Transaction failed: $message"
         }
     }
 

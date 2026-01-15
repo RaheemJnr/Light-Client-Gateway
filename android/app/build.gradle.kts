@@ -59,6 +59,7 @@ android {
             }
         }
     }
+
 }
 
 dependencies {
@@ -88,6 +89,7 @@ dependencies {
     implementation(libs.ktor.client.android)
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
+    implementation(libs.kotlinx.serialization.json)
 
     // Security & Crypto
     implementation(libs.androidx.security.crypto)
@@ -110,4 +112,34 @@ dependencies {
     implementation(libs.camerax.view)
     implementation(libs.mlkit.barcode.scanning)
     implementation(libs.accompanist.permissions)
+}
+
+tasks.register<Exec>("cargoBuild") {
+    workingDir = file("${project.rootDir}/../external/ckb-light-client")
+    commandLine("./build-android-jni.sh")
+    // 1. Try Android Gradle Plugin's detected NDK
+    var ndkDir = try { android.ndkDirectory } catch (e: Exception) { null }
+
+    // 2. Fallback: Check standard macOS NDK location
+    if (ndkDir == null || !ndkDir.exists()) {
+        val defaultNdkRoot = file("/Users/raheemjnr/Library/Android/sdk/ndk")
+        if (defaultNdkRoot.exists()) {
+            // Pick the latest valid version (must have toolchains)
+            ndkDir = defaultNdkRoot.listFiles()
+                ?.filter { it.isDirectory && File(it, "toolchains").exists() }
+                ?.sortedByDescending { it.name }
+                ?.firstOrNull()
+        }
+    }
+
+    if (ndkDir != null && ndkDir.exists()) {
+        println("Using NDK at: $ndkDir")
+        environment("ANDROID_NDK_HOME", ndkDir)
+    } else {
+        println("WARNING: Could not find Android NDK. Build may fail.")
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn("cargoBuild")
 }

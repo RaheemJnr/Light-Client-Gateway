@@ -59,7 +59,7 @@ fun ReceiveScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = uiState.walletInfo?.testnetAddress ?: "Loading...",
+                        text = if (uiState.address.isNotEmpty()) uiState.address else "Loading...",
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center
                     )
@@ -68,8 +68,8 @@ fun ReceiveScreen(
             
             Button(
                 onClick = {
-                    uiState.walletInfo?.testnetAddress?.let { address ->
-                        clipboardManager.setText(AnnotatedString(address))
+                    if (uiState.address.isNotEmpty()) {
+                        clipboardManager.setText(AnnotatedString(uiState.address))
                     }
                 },
                 modifier = Modifier.fillMaxWidth()

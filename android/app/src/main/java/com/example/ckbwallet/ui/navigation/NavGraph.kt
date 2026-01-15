@@ -14,6 +14,7 @@ sealed class Screen(val route: String) {
     object Send : Screen("send")
     object Receive : Screen("receive")
     object Scanner : Screen("scanner")
+    object NodeStatus : Screen("node_status")
 }
 
 @Composable
@@ -25,7 +26,8 @@ fun CkbNavGraph(navController: NavHostController) {
         composable(Screen.Home.route) {
             HomeScreen(
                 onNavigateToSend = { navController.navigate(Screen.Send.route) },
-                onNavigateToReceive = { navController.navigate(Screen.Receive.route) }
+                onNavigateToReceive = { navController.navigate(Screen.Receive.route) },
+                onNavigateToStatus = { navController.navigate(Screen.NodeStatus.route) }
             )
         }
 
@@ -54,6 +56,12 @@ fun CkbNavGraph(navController: NavHostController) {
                     navController.popBackStack()
                 },
                 onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.NodeStatus.route) {
+            com.example.ckbwallet.ui.screens.status.NodeStatusScreen(
+                navController = navController
             )
         }
     }

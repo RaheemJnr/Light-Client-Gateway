@@ -1,5 +1,6 @@
 package com.example.ckbwallet.data.transaction
 
+import android.util.Log
 import com.example.ckbwallet.data.gateway.models.*
 import com.example.ckbwallet.data.wallet.AddressUtils
 import org.nervos.ckb.crypto.Blake2b
@@ -15,10 +16,19 @@ import javax.inject.Singleton
 class TransactionBuilder @Inject constructor() {
 
     companion object {
+        private const val TAG = "TransactionBuilder"
         const val SECP256K1_CODE_HASH =
             "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8"
         const val MIN_CELL_CAPACITY = 61_00000000L
         const val DEFAULT_FEE = 100_000L
+
+        // SECP256K1 cell deps for different networks
+        // Testnet (Pudge)
+        private const val TESTNET_SECP256K1_TX_HASH =
+            "0xf8de3bb47d055cdf460d93a2a6e1b05f7432f9777c8c474abf4eec1d4aee5d37"
+        // Mainnet (Mirana)
+        private const val MAINNET_SECP256K1_TX_HASH =
+            "0x71a7ba8fc96349fea0ed3a5c47992e3b4084b031a42264a018e0072e8172e46c"
     }
 
     fun buildTransfer(
@@ -28,20 +38,33 @@ class TransactionBuilder @Inject constructor() {
         availableCells: List<Cell>,
         privateKey: ByteArray
     ): Transaction {
+        Log.d(TAG, "🔨 Building transfer transaction")
+        Log.d(TAG, "  From: $fromAddress")
+        Log.d(TAG, "  To: $toAddress")
+        Log.d(TAG, "  Amount: $amountShannons shannons")
+
         val senderScript = AddressUtils.parseAddress(fromAddress)
             ?: throw IllegalArgumentException("Invalid sender address")
         val recipientScript = AddressUtils.parseAddress(toAddress)
             ?: throw IllegalArgumentException("Invalid recipient address")
 
+        // Detect network from address prefix
+        val isMainnet = fromAddress.startsWith("ckb1")
+        val secp256k1TxHash = if (isMainnet) MAINNET_SECP256K1_TX_HASH else TESTNET_SECP256K1_TX_HASH
+        Log.d(TAG, "  Network: ${if (isMainnet) "MAINNET" else "TESTNET"}")
+        Log.d(TAG, "  Using SECP256K1 cell dep: $secp256k1TxHash")
+
         val totalRequired = amountShannons + DEFAULT_FEE
         val (selectedCells, totalInput) = selectCells(availableCells, totalRequired)
+
+        Log.d(TAG, "  Selected ${selectedCells.size} cells with total: $totalInput shannons")
 
         if (selectedCells.isEmpty()) {
             throw IllegalStateException("No cells available")
         }
 
         if (totalInput < totalRequired) {
-            throw IllegalStateException("Insufficient balance")
+            throw IllegalStateException("Insufficient balance: have $totalInput, need $totalRequired")
         }
 
         val inputs = selectedCells.map { cell ->
@@ -57,6 +80,7 @@ class TransactionBuilder @Inject constructor() {
         val outputs = mutableListOf<CellOutput>()
         val outputsData = mutableListOf<String>()
 
+        // Output to recipient
         outputs.add(
             CellOutput(
                 capacity = "0x${amountShannons.toString(16)}",
@@ -66,6 +90,7 @@ class TransactionBuilder @Inject constructor() {
         )
         outputsData.add("0x")
 
+        // Change output back to sender
         val change = totalInput - amountShannons - DEFAULT_FEE
         if (change >= MIN_CELL_CAPACITY) {
             outputs.add(
@@ -76,12 +101,16 @@ class TransactionBuilder @Inject constructor() {
                 )
             )
             outputsData.add("0x")
+            Log.d(TAG, "  Change output: $change shannons")
+        } else {
+            Log.d(TAG, "  No change output (change $change < min $MIN_CELL_CAPACITY)")
         }
 
+        // Use network-appropriate cell dependency
         val cellDeps = listOf(
             CellDep(
                 outPoint = OutPoint(
-                    txHash = "0xf8de3bb47d055cdf460d93a2a6e1b05f7432f9777c8c474abf4eec1d4aee5d37",
+                    txHash = secp256k1TxHash,
                     index = "0x0"
                 ),
                 depType = "dep_group"
@@ -98,6 +127,7 @@ class TransactionBuilder @Inject constructor() {
             witnesses = inputs.map { "0x" }
         )
 
+        Log.d(TAG, "  Signing transaction with ${inputs.size} inputs, ${outputs.size} outputs")
         return signTransaction(unsignedTx, privateKey, selectedCells.size)
     }
 

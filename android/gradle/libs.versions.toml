@@ -12,14 +12,16 @@ ktor = "3.3.3"
 securityCrypto = "1.1.0"
 secp256k1 = "0.21.0"
 room = "2.8.4"
-ksp = "2.0.21-1.0.28"
+ksp = "2.1.0-1.0.29"
 ckbSdk = "4.0.0"
 bouncycastle = "1.70"
 cameraX = "1.4.2"
 mlkitBarcodeScanning = "17.3.0"
 accompanistPermissions = "0.34.0"
+serializationJson = "1.8.0"
 
 [libraries]
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serializationJson" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
 androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycleRuntimeKtx" }
