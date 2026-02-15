@@ -96,6 +96,7 @@ dependencies {
     // Security & Crypto
     implementation(libs.androidx.security.crypto)
     implementation(libs.secp256k1.kmp.jni.android)
+    implementation(libs.kotlin.bip39)
 
     // CKB SDK
     implementation(libs.ckb.sdk.core)
@@ -118,6 +119,9 @@ dependencies {
     // Firebase
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
+
+    // Testing
+    testImplementation("junit:junit:4.13.2")
 }
 
 tasks.register<Exec>("cargoBuild") {

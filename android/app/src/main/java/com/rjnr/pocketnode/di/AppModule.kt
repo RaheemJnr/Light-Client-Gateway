@@ -4,6 +4,7 @@ import android.content.Context
 import com.rjnr.pocketnode.data.crypto.Blake2b
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.wallet.KeyManager
+import com.rjnr.pocketnode.data.wallet.MnemonicManager
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
 import dagger.Module
 import dagger.Provides
@@ -26,6 +27,10 @@ object AppModule {
     fun provideKeyManager(
         @ApplicationContext context: Context
     ): KeyManager = KeyManager(context)
+
+    @Provides
+    @Singleton
+    fun provideMnemonicManager(): MnemonicManager = MnemonicManager()
 
     @Provides
     @Singleton
