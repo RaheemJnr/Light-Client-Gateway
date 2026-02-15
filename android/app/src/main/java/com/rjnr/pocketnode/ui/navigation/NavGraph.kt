@@ -39,10 +39,14 @@ fun CkbNavGraph(
                     }
                 },
                 onNavigateToBackup = {
-                    navController.navigate(Screen.MnemonicBackup.route)
+                    navController.navigate(Screen.MnemonicBackup.route) {
+                        popUpTo(Screen.Onboarding.route) { inclusive = true }
+                    }
                 },
                 onNavigateToImport = {
-                    navController.navigate(Screen.MnemonicImport.route)
+                    navController.navigate(Screen.MnemonicImport.route) {
+                        popUpTo(Screen.Onboarding.route) { inclusive = true }
+                    }
                 }
             )
         }
@@ -51,7 +55,7 @@ fun CkbNavGraph(
             MnemonicBackupScreen(
                 onNavigateToHome = {
                     navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Onboarding.route) { inclusive = true }
+                        popUpTo(Screen.Home.route) { inclusive = true }
                     }
                 },
                 onNavigateBack = { navController.popBackStack() }
@@ -62,7 +66,7 @@ fun CkbNavGraph(
             MnemonicImportScreen(
                 onNavigateToHome = {
                     navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Onboarding.route) { inclusive = true }
+                        popUpTo(Screen.Home.route) { inclusive = true }
                     }
                 },
                 onNavigateBack = { navController.popBackStack() }

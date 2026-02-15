@@ -64,7 +64,11 @@ class MnemonicBackupViewModel @Inject constructor(
         val positions = words.indices.toList().shuffled(random).take(3).sorted()
         val options = positions.associateWith { pos ->
             val correct = words[pos]
-            val decoys = words.filterIndexed { i, _ -> i != pos }.shuffled(random).take(3)
+            val decoys = words.filterIndexed { i, _ -> i != pos }
+                .distinct()
+                .filter { it != correct }
+                .shuffled(random)
+                .take(3)
             val choices = mutableListOf(correct).apply { addAll(decoys) }
             choices.apply { shuffle(random) }.toList()
         }
