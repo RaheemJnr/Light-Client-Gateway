@@ -180,6 +180,39 @@ class GatewayRepository @Inject constructor(
         importExistingWallet(privateKeyHex).getOrThrow()
     }
 
+    /**
+     * Create a new wallet with BIP39 mnemonic.
+     * Returns wallet info and the 12/24 mnemonic words for backup.
+     */
+    suspend fun createWalletWithMnemonic(): Result<Pair<WalletInfo, List<String>>> = runCatching {
+        Log.d(TAG, "Creating mnemonic wallet...")
+        val (info, words) = keyManager.generateWalletWithMnemonic()
+        _walletInfo.value = info
+        registerAccount(syncMode = SyncMode.NEW_WALLET)
+        Pair(info, words)
+    }
+
+    /**
+     * Import wallet from BIP39 mnemonic words.
+     */
+    suspend fun importFromMnemonic(
+        words: List<String>,
+        passphrase: String = "",
+        syncMode: SyncMode = SyncMode.RECENT
+    ): Result<WalletInfo> = runCatching {
+        Log.d(TAG, "Importing wallet from mnemonic...")
+        val info = keyManager.importWalletFromMnemonic(words, passphrase)
+        _walletInfo.value = info
+        _isRegistered.value = false
+        registerAccount(syncMode = syncMode)
+        info
+    }
+
+    fun getWalletType(): String = keyManager.getWalletType()
+    fun getMnemonic(): List<String>? = keyManager.getMnemonic()
+    fun hasMnemonicBackup(): Boolean = keyManager.hasMnemonicBackup()
+    fun setMnemonicBackedUp(backedUp: Boolean) = keyManager.setMnemonicBackedUp(backedUp)
+
     fun getSavedSyncMode(): SyncMode = walletPreferences.getSyncMode()
     fun getSavedCustomBlockHeight(): Long? = walletPreferences.getCustomBlockHeight()
 
