@@ -280,48 +280,54 @@ private fun MnemonicVerifyStep(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        Text(
-            "Select the correct word for each position to verify your backup.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            Text(
+                "Select the correct word for each position to verify your backup.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
-        verifyPositions.forEach { position ->
-            val options = verifyOptions[position] ?: return@forEach
-            val selected = userSelections[position]
+            verifyPositions.forEach { position ->
+                val options = verifyOptions[position] ?: return@forEach
+                val selected = userSelections[position]
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "Word #${position + 1}",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
-
-                // 2x2 grid of options
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (row in options.chunked(2)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            row.forEach { word ->
-                                val isSelected = selected == word
-                                OutlinedButton(
-                                    onClick = { onSelectWord(position, word) },
-                                    modifier = Modifier.weight(1f),
-                                    colors = if (isSelected) {
-                                        ButtonDefaults.outlinedButtonColors(
-                                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                                        )
-                                    } else {
-                                        ButtonDefaults.outlinedButtonColors()
+                    Text(
+                        "Word #${position + 1}",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    // 2x2 grid of options
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (row in options.chunked(2)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                row.forEach { word ->
+                                    val isSelected = selected == word
+                                    OutlinedButton(
+                                        onClick = { onSelectWord(position, word) },
+                                        modifier = Modifier.weight(1f),
+                                        colors = if (isSelected) {
+                                            ButtonDefaults.outlinedButtonColors(
+                                                containerColor = MaterialTheme.colorScheme.primaryContainer
+                                            )
+                                        } else {
+                                            ButtonDefaults.outlinedButtonColors()
+                                        }
+                                    ) {
+                                        Text(word)
                                     }
-                                ) {
-                                    Text(word)
                                 }
                             }
                         }
@@ -329,8 +335,6 @@ private fun MnemonicVerifyStep(
                 }
             }
         }
-
-        Spacer(Modifier.weight(1f))
 
         Button(
             onClick = onVerify,

@@ -55,7 +55,8 @@ fun CkbNavGraph(
             MnemonicBackupScreen(
                 onNavigateToHome = {
                     navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Home.route) { inclusive = true }
+                        popUpTo(Screen.MnemonicBackup.route) { inclusive = true }
+                        launchSingleTop = true
                     }
                 },
                 onNavigateBack = { navController.popBackStack() }
@@ -66,7 +67,8 @@ fun CkbNavGraph(
             MnemonicImportScreen(
                 onNavigateToHome = {
                     navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Home.route) { inclusive = true }
+                        popUpTo(Screen.MnemonicImport.route) { inclusive = true }
+                        launchSingleTop = true
                     }
                 },
                 onNavigateBack = { navController.popBackStack() }
