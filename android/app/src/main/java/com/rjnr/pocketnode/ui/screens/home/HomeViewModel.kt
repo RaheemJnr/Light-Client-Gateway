@@ -7,6 +7,7 @@ import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.BalanceResponse
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
+import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.WalletInfo
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -28,6 +29,8 @@ class HomeViewModel @Inject constructor(
     private var syncPollingJob: Job? = null
 
     init {
+        checkBackupStatus()
+
         viewModelScope.launch {
             initializeWallet()
         }
@@ -269,9 +272,11 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * Show the backup wallet dialog with the private key
+     * Show the backup wallet dialog with the private key (raw key wallets only).
+     * For mnemonic wallets, HomeScreen navigates to MnemonicBackupScreen directly.
      */
     fun showBackup() {
+        if (isMnemonicWallet()) return // handled by navigation in HomeScreen
         try {
             val privateKey = repository.getPrivateKey()
             val hex = org.nervos.ckb.utils.Numeric.toHexStringNoPrefix(privateKey)
@@ -281,6 +286,18 @@ class HomeViewModel @Inject constructor(
             _uiState.update { it.copy(error = "Failed to access wallet keys") }
         }
     }
+
+    private fun checkBackupStatus() {
+        val type = repository.getWalletType()
+        val needsBackup = type == KeyManager.WALLET_TYPE_MNEMONIC && !repository.hasMnemonicBackup()
+        _uiState.update { it.copy(walletType = type, showBackupReminder = needsBackup) }
+    }
+
+    fun dismissBackupReminder() {
+        _uiState.update { it.copy(showBackupReminder = false) }
+    }
+
+    fun isMnemonicWallet(): Boolean = _uiState.value.walletType == KeyManager.WALLET_TYPE_MNEMONIC
 
     /**
      * Hide the backup wallet dialog
@@ -361,5 +378,7 @@ data class HomeUiState(
     val showBackupDialog: Boolean = false,
     val privateKeyHex: String? = null,
     val showImportDialog: Boolean = false,
-    val showImportSyncReminder: Boolean = false
+    val showImportSyncReminder: Boolean = false,
+    val showBackupReminder: Boolean = false,
+    val walletType: String = KeyManager.WALLET_TYPE_RAW_KEY
 )

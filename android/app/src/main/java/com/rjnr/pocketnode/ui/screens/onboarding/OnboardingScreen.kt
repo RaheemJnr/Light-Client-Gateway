@@ -1,38 +1,36 @@
 package com.rjnr.pocketnode.ui.screens.onboarding
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.FileUpload
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 
 @Composable
 fun OnboardingScreen(
     onNavigateToHome: () -> Unit,
+    onNavigateToBackup: () -> Unit,
+    onNavigateToImport: () -> Unit,
     viewModel: OnboardingViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // After wallet creation, navigate to backup screen (not Home)
     LaunchedEffect(uiState.isWalletCreated) {
         if (uiState.isWalletCreated) {
-            onNavigateToHome()
+            onNavigateToBackup()
         }
     }
 
@@ -86,7 +84,7 @@ fun OnboardingScreen(
             // Options
             OnboardingOption(
                 title = "Create New Wallet",
-                description = "Perfect for new users. Optimized sync starts instantly.",
+                description = "Generate a new wallet with a 12-word recovery phrase.",
                 icon = Icons.Default.Add,
                 onClick = { viewModel.createNewWallet() },
                 isLoading = uiState.isLoading
@@ -95,10 +93,10 @@ fun OnboardingScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             OnboardingOption(
-                title = "Import Existing Wallet",
-                description = "Recover via private key. History will be synced separately.",
-                icon = Icons.Default.FileUpload,
-                onClick = { viewModel.showImport() },
+                title = "Recover from Seed Phrase",
+                description = "Import wallet using your 12-word recovery phrase.",
+                icon = Icons.Default.Key,
+                onClick = onNavigateToImport,
                 isLoading = uiState.isLoading
             )
 
@@ -112,13 +110,6 @@ fun OnboardingScreen(
                 textAlign = TextAlign.Center
             )
         }
-    }
-
-    if (uiState.showImportDialog) {
-        ImportWalletDialog(
-            onDismiss = { viewModel.hideImport() },
-            onImport = { viewModel.importWallet(it) }
-        )
     }
 }
 
@@ -175,49 +166,6 @@ private fun OnboardingOption(
             }
         }
     }
-}
-
-@Composable
-private fun ImportWalletDialog(
-    onDismiss: () -> Unit,
-    onImport: (String) -> Unit
-) {
-    var privateKey by remember { mutableStateOf("") }
-    
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Import Wallet", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "Enter your 64-character private key (hex) to restore your wallet.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                
-                OutlinedTextField(
-                    value = privateKey,
-                    onValueChange = { privateKey = it.trim() },
-                    label = { Text("Private Key") },
-                    placeholder = { Text("0x...") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onImport(privateKey) },
-                enabled = privateKey.length >= 64
-            ) {
-                Text("Import")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
 }
 
 // Dummy object to satisfy M3 shape tokens if they aren't directly available in this compose version
