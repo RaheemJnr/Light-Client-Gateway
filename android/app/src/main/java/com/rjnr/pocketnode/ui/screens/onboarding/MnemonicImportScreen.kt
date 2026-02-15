@@ -49,6 +49,15 @@ class MnemonicImportViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(MnemonicImportUiState())
     val uiState: StateFlow<MnemonicImportUiState> = _uiState.asStateFlow()
 
+    /**
+     * Update the mnemonic word at the given position and refresh its suggestions and validation state.
+     *
+     * Sets the word at `index` (trimmed and lowercased), updates per-index suggestions when the entry is long enough,
+     * and adjusts the set of invalid-word indices accordingly.
+     *
+     * @param index The word position (0-based).
+     * @param text The new text for the word input.
+     */
     fun updateWord(index: Int, text: String) {
         val trimmed = text.trim().lowercase()
         val newWords = _uiState.value.words.toMutableList().apply { set(index, trimmed) }
@@ -73,6 +82,12 @@ class MnemonicImportViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Sets the selected suggestion into the mnemonic words at the given index and clears any suggestions and validation error for that position.
+     *
+     * @param index Zero-based position in the 12-word mnemonic to update.
+     * @param word The suggested word to insert at the specified index.
+     */
     fun selectSuggestion(index: Int, word: String) {
         val newWords = _uiState.value.words.toMutableList().apply { set(index, word) }
         val newSuggestions = _uiState.value.suggestions.toMutableMap().apply { remove(index) }
@@ -82,6 +97,10 @@ class MnemonicImportViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Populate the 12 mnemonic word inputs from a pasted string, validating each word and updating suggestions and error indices.
+     *
+     * @param text A string containing a mnemonic phrase (words separated by whitespace); may contain fewer than 12 words.
     fun pasteMnemonic(text: String) {
         val parts = text.trim().lowercase().split("\\s+".toRegex()).take(12)
         val newWords = List(12) { i -> parts.getOrElse(i) { "" } }
@@ -93,6 +112,14 @@ class MnemonicImportViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Initiates import of the current 12-word mnemonic from UI state into the repository.
+     *
+     * Trims and lowercases the stored words, validates presence of all 12 words and the mnemonic itself,
+     * and then performs the import asynchronously. On validation failure sets `uiState.error` with a
+     * descriptive message. During the import updates `uiState.isImporting`, and on completion sets
+     * `uiState.importSuccess` on success or `uiState.error` with the failure message on error.
+     */
     fun importMnemonic() {
         val words = _uiState.value.words.map { it.trim().lowercase() }
 
@@ -118,14 +145,32 @@ class MnemonicImportViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Shows the private key import dialog.
+     *
+     * Sets the UI state flag to display the private key import dialog.
+     */
     fun showPrivateKeyImport() {
         _uiState.update { it.copy(showPrivateKeyDialog = true) }
     }
 
+    /**
+     * Closes the private key import dialog in the UI.
+     *
+     * Updates the view model state so the private key dialog is not shown.
+     */
     fun hidePrivateKeyImport() {
         _uiState.update { it.copy(showPrivateKeyDialog = false) }
     }
 
+    /**
+     * Imports a wallet from the given hex private key and updates the UI state to reflect progress and outcome.
+     *
+     * While the import is in progress the UI state is set to indicate loading and the private key dialog is dismissed.
+     * On success the UI state is updated to mark import success; on failure the UI state records the error message.
+     *
+     * @param hex The private key as a hex string (typically 64 hex characters, with or without a leading "0x").
+     */
     fun importPrivateKey(hex: String) {
         viewModelScope.launch {
             _uiState.update { it.copy(isImporting = true, showPrivateKeyDialog = false, error = null) }
@@ -139,12 +184,23 @@ class MnemonicImportViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Clears the general error message from the UI state.
+     */
     fun clearError() {
         _uiState.update { it.copy(error = null) }
     }
 }
 
-// -- Screen --
+/**
+ * Composable screen that lets the user restore a wallet from a 12-word mnemonic or import a private key.
+ *
+ * Displays inputs for the 12 recovery words with per-word suggestions, a "Paste from Clipboard" action,
+ * an option to import a private key, and an import button that shows progress and error feedback via a Snackbar.
+ *
+ * @param onNavigateToHome Callback invoked when the import completes successfully; should navigate to the app's home.
+ * @param onNavigateBack Callback invoked when the user requests back navigation from this screen.
+ * @param viewModel ViewModel that supplies UI state and handles actions for mnemonic and private-key import.
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -263,6 +319,19 @@ fun MnemonicImportScreen(
     }
 }
 
+/**
+ * Input field for a single mnemonic word that shows selectable suggestions.
+ *
+ * Displays a labeled single-line text field for the word at the given index and, when available,
+ * presents a dropdown of suggested BIP-39 words to choose from.
+ *
+ * @param index Zero-based position of this word in the 12-word mnemonic.
+ * @param value Current text value of the field.
+ * @param suggestions List of suggested words to display in the dropdown for this position.
+ * @param isError Whether the field is currently in an error state (invalid word).
+ * @param onValueChange Called when the text value changes.
+ * @param onSuggestionSelected Called with the selected suggestion when the user picks one.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun WordInputField(
@@ -313,6 +382,14 @@ private fun WordInputField(
     }
 }
 
+/**
+ * Shows a dialog that lets the user enter a 64-character hex private key to restore a wallet.
+ *
+ * The dialog disables the confirm button until the entered key has at least 64 characters.
+ *
+ * @param onDismiss Called when the dialog is dismissed or the user cancels.
+ * @param onImport Called with the entered private key when the user confirms import.
+ */
 @Composable
 private fun PrivateKeyImportDialog(
     onDismiss: () -> Unit,

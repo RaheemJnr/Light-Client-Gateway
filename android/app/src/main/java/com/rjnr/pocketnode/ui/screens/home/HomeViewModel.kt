@@ -272,8 +272,10 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * Show the backup wallet dialog with the private key (raw key wallets only).
-     * For mnemonic wallets, HomeScreen navigates to MnemonicBackupScreen directly.
+     * Display the backup dialog containing the wallet's private key for raw-key wallets.
+     *
+     * If the current wallet is mnemonic, the function returns immediately (mnemonic backup is handled elsewhere).
+     * On success updates the UI state to set `privateKeyHex` and show the backup dialog; on failure updates the UI `error` field.
      */
     fun showBackup() {
         if (isMnemonicWallet()) return // handled by navigation in HomeScreen
@@ -287,17 +289,33 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Updates the UI state with the current wallet type and whether a mnemonic backup is needed.
+     *
+     * The `showBackupReminder` flag is set to `true` when the wallet type equals
+     * `KeyManager.WALLET_TYPE_MNEMONIC` and the repository reports no recorded mnemonic backup.
+     */
     private fun checkBackupStatus() {
         val type = repository.getWalletType()
         val needsBackup = type == KeyManager.WALLET_TYPE_MNEMONIC && !repository.hasMnemonicBackup()
         _uiState.update { it.copy(walletType = type, showBackupReminder = needsBackup) }
     }
 
+    /**
+     * Hides the wallet backup reminder in the current UI state.
+     *
+     * Updates the UI state so `showBackupReminder` is `false`.
+     */
     fun dismissBackupReminder() {
         _uiState.update { it.copy(showBackupReminder = false) }
     }
 
-    fun isMnemonicWallet(): Boolean = _uiState.value.walletType == KeyManager.WALLET_TYPE_MNEMONIC
+    /**
+ * Indicates whether the current wallet is a mnemonic wallet.
+ *
+ * @return `true` if the current wallet type equals `KeyManager.WALLET_TYPE_MNEMONIC`, `false` otherwise.
+ */
+fun isMnemonicWallet(): Boolean = _uiState.value.walletType == KeyManager.WALLET_TYPE_MNEMONIC
 
     /**
      * Hide the backup wallet dialog

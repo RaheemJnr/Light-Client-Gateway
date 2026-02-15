@@ -22,6 +22,16 @@ sealed class Screen(val route: String) {
     object MnemonicImport : Screen("mnemonic_import")
 }
 
+/**
+ * Hosts the app's navigation graph and registers all navigation destinations used by the UI.
+ *
+ * This composable wires the provided NavHostController to a NavHost and defines routes for
+ * onboarding, mnemonic backup/import, home, send, receive, QR scanner, and node status,
+ * including the navigation actions between them.
+ *
+ * @param navController Controller used to perform navigation actions and manage back stack.
+ * @param startDestination The initial route shown when the NavHost is first composed (defaults to Home).
+ */
 @Composable
 fun CkbNavGraph(
     navController: NavHostController,

@@ -54,6 +54,14 @@ class MnemonicBackupViewModel @Inject constructor(
         loadMnemonic()
     }
 
+    /**
+     * Initializes the UI state with the repository mnemonic and verification data.
+     *
+     * If no mnemonic is available, sets the UI state's error to "No mnemonic found".
+     * Otherwise selects three distinct word positions and, for each position, builds a
+     * shuffled list containing the correct word plus three other words from the mnemonic.
+     * Updates the UI state with `words`, `verifyPositions`, and `verifyOptions`.
+     */
     private fun loadMnemonic() {
         val words = repository.getMnemonic()
         if (words.isNullOrEmpty()) {
@@ -73,16 +81,35 @@ class MnemonicBackupViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Advance the UI to the verification step and clear any existing error.
+     *
+     * Updates the internal UI state by setting `currentStep` to 2 and clearing the `error` field.
+     */
     fun advanceToVerify() {
         _uiState.update { it.copy(currentStep = 2, error = null) }
     }
 
+    /**
+     * Records the user's chosen word for a verification position and clears any existing error.
+     *
+     * @param position The zero-based index of the mnemonic word being verified.
+     * @param word The word selected by the user for the given position.
+     */
     fun selectWord(position: Int, word: String) {
         _uiState.update {
             it.copy(userSelections = it.userSelections + (position to word), error = null)
         }
     }
 
+    /**
+     * Validate the user's selected words for the verification positions and update state.
+     *
+     * Compares the user's selections for each verify position with the corresponding mnemonic words.
+     * If every selection is correct, marks the mnemonic as backed up in the repository and advances
+     * the UI to the completion step. If any selection is incorrect, sets an error message and
+     * clears the user's selections.
+     */
     fun verify() {
         val state = _uiState.value
         val allCorrect = state.verifyPositions.all { pos ->
@@ -98,12 +125,24 @@ class MnemonicBackupViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Clears the error message stored in the UI state.
+     */
     fun clearError() {
         _uiState.update { it.copy(error = null) }
     }
 }
 
-// -- Screen --
+/**
+ * Composable screen for the mnemonic backup onboarding flow.
+ *
+ * Shows three step states: display mnemonic words, verify selected words, and success completion.
+ * Enables FLAG_SECURE while visible to prevent screenshots and displays transient errors in a snackbar (errors are cleared after being shown).
+ *
+ * @param onNavigateToHome Callback invoked when the flow completes and navigation to home should occur.
+ * @param onNavigateBack Callback invoked to navigate back while the flow is in progress.
+ * @param viewModel ViewModel that provides and manages the UI state for this screen (defaults to Hilt-provided instance).
+ */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -180,6 +219,16 @@ fun MnemonicBackupScreen(
     }
 }
 
+/**
+ * Shows the ordered mnemonic words with a prominent warning and a continue button.
+ *
+ * Displays a warning card instructing the user to write down the recovery phrase, renders the
+ * provided words in a 3-column grid with their indices, and enables a button to proceed once
+ * words are present.
+ *
+ * @param words The ordered list of mnemonic words to display.
+ * @param onNext Called when the user confirms they have written the words down.
+ */
 @Composable
 private fun MnemonicDisplayStep(
     words: List<String>,
@@ -264,6 +313,18 @@ private fun MnemonicDisplayStep(
     }
 }
 
+/**
+ * Renders the verification UI where the user selects the correct mnemonic word for each requested position.
+ *
+ * @param verifyPositions List of zero-based word indices that must be verified.
+ * @param verifyOptions Mapping from a verify position to the list of option words displayed for that position.
+ * @param userSelections Current selections keyed by position with the chosen word as value.
+ * @param onSelectWord Callback invoked with the position and chosen word when the user selects an option.
+ * @param onVerify Callback invoked when the user taps the Verify button.
+ * @param modifier Compose [Modifier] to apply to the root layout.
+ *
+ * The Verify button is enabled only when every position in [verifyPositions] has a corresponding entry in [userSelections].
+ */
 @Composable
 private fun MnemonicVerifyStep(
     verifyPositions: List<Int>,
@@ -338,6 +399,13 @@ private fun MnemonicVerifyStep(
     }
 }
 
+/**
+ * Shows a completion step confirming the mnemonic backup.
+ *
+ * Displays a success icon, title, subtitle and a full-width Continue button.
+ *
+ * @param onComplete Called when the user taps the Continue button.
+ */
 @Composable
 private fun MnemonicSuccessStep(
     onComplete: () -> Unit,

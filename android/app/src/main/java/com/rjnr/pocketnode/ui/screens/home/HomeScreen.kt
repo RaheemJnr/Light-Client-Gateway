@@ -95,6 +95,19 @@ import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
 import kotlinx.coroutines.launch
 
+/**
+ * Main composable for the Home screen that displays wallet state, actions, and transaction list.
+ *
+ * Shows top app bar controls (sync menu, backup/import, node status, refresh), balance and action buttons,
+ * conditional banners and dialogs (sync options, backup, import, reminders), a transaction list, and a
+ * transaction detail sheet. Handles clipboard copy actions and shows snackbars for user feedback.
+ *
+ * @param onNavigateToSend Invoked to navigate to the Send flow.
+ * @param onNavigateToReceive Invoked to navigate to the Receive flow.
+ * @param onNavigateToStatus Invoked to navigate to the Node Status screen.
+ * @param onNavigateToBackup Invoked to navigate to the mnemonic backup flow (used when the wallet is mnemonic).
+ * @param viewModel View model providing UI state and actions for the screen.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
@@ -479,6 +492,14 @@ private fun ImportWalletDialog(
     )
 }
 
+/**
+ * Banner prompting the user to configure sync settings after importing a wallet.
+ *
+ * Shows a brief explanation, a dismiss control, and a "Configure Sync" action.
+ *
+ * @param onDismiss Called when the user dismisses the banner.
+ * @param onSettingsClick Called when the user selects "Configure Sync".
+ */
 @Composable
 private fun SyncModeReminderBanner(
     onDismiss: () -> Unit,
@@ -535,6 +556,12 @@ private fun SyncModeReminderBanner(
     }
 }
 
+/**
+ * Displays a prominent error-styled banner prompting the user to back up their wallet.
+ *
+ * @param onDismiss Called when the user dismisses the banner.
+ * @param onBackup Called when the user taps the "Backup Now" action.
+ */
 @Composable
 private fun BackupReminderBanner(
     onDismiss: () -> Unit,
@@ -591,6 +618,19 @@ private fun BackupReminderBanner(
     }
 }
 
+/**
+ * Displays a banner card showing sync progress with a progress bar and contextual status text.
+ *
+ * When `showDataWarning` is true the banner shows a warning icon and a message indicating balance
+ * and transactions may be inaccurate until sync completes; otherwise it shows a regular syncing
+ * message and an "Almost done..." status. The banner also renders a linear progress indicator and
+ * a percentage complete line.
+ *
+ * @param syncProgress Fractional progress value where 0.0 represents 0% and 1.0 represents 100%; values
+ *        outside this range will be coerced to the 0.0–1.0 interval for display.
+ * @param showDataWarning When true, switch to the warning presentation and wording that alerts the
+ *        user that data may be temporarily inaccurate. Default is false.
+ */
 @Composable
 private fun SyncStatusBanner(
     syncProgress: Double,

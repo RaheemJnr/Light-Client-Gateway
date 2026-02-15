@@ -25,6 +25,12 @@ class OnboardingViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(OnboardingUiState())
     val uiState: StateFlow<OnboardingUiState> = _uiState.asStateFlow()
 
+    /**
+     * Starts a wallet creation operation and updates the onboarding UI state accordingly.
+     *
+     * Sets `isLoading` to true and clears `error` before starting. On success, sets `isWalletCreated` to true and `isLoading` to false.
+     * On failure, sets `error` to the failure message and `isLoading` to false.
+     */
     fun createNewWallet() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
@@ -38,6 +44,11 @@ class OnboardingViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Clears the error stored in the onboarding UI state.
+     *
+     * Sets the state's `error` property to `null`.
+     */
     fun clearError() {
         _uiState.update { it.copy(error = null) }
     }

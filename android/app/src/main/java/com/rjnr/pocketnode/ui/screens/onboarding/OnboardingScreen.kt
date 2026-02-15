@@ -17,6 +17,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 
+/**
+ * Presents onboarding options and drives navigation and transient UI (snackbars) based on view model state.
+ *
+ * Observes the onboarding UI state: when a wallet is created it invokes the backup navigation callback,
+ * and when an error appears it shows a snackbar with the error message and clears it from the view model.
+ *
+ * @param onNavigateToHome Callback invoked to navigate to the home screen.
+ * @param onNavigateToBackup Callback invoked to navigate to the backup flow after wallet creation.
+ * @param onNavigateToImport Callback invoked to navigate to the import/recover screen.
+ */
 @Composable
 fun OnboardingScreen(
     onNavigateToHome: () -> Unit,
@@ -113,6 +123,15 @@ fun OnboardingScreen(
     }
 }
 
+/**
+ * Renders a clickable onboarding option as a card containing an icon, title, and descriptive text.
+ *
+ * @param title The option title.
+ * @param description The descriptive text shown below the title.
+ * @param icon The leading `ImageVector` displayed inside a square surface.
+ * @param onClick Callback invoked when the card is tapped.
+ * @param isLoading When `true`, the card is disabled and interaction is prevented.
+ */
 @Composable
 private fun OnboardingOption(
     title: String,
