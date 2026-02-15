@@ -14,6 +14,7 @@ room = "2.8.4"
 ksp = "2.1.0-1.0.29"
 ckbSdk = "4.0.0"
 bouncycastle = "1.70"
+biometric = "1.1.0"
 bip39 = "1.0.8"
 cameraX = "1.4.2"
 mlkitBarcodeScanning = "17.3.0"
@@ -44,6 +45,7 @@ hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.r
 hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
 
 # Security & Crypto
+androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 secp256k1-kmp-jni-android = { group = "fr.acinq.secp256k1", name = "secp256k1-kmp-jni-android", version.ref = "secp256k1" }
 kotlin-bip39 = { group = "cash.z.ecc.android", name = "kotlin-bip39", version.ref = "bip39" }
