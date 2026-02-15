@@ -60,11 +60,13 @@ class MnemonicBackupViewModel @Inject constructor(
             _uiState.update { it.copy(error = "No mnemonic found") }
             return
         }
-        val positions = (words.indices).shuffled().take(3).sorted()
+        val random = java.util.Random(System.nanoTime())
+        val positions = words.indices.toList().shuffled(random).take(3).sorted()
         val options = positions.associateWith { pos ->
             val correct = words[pos]
-            val decoys = words.filterIndexed { i, _ -> i != pos }.shuffled().take(3)
-            (decoys + correct).shuffled()
+            val decoys = words.filterIndexed { i, _ -> i != pos }.shuffled(random).take(3)
+            val choices = mutableListOf(correct).apply { addAll(decoys) }
+            choices.apply { shuffle(random) }.toList()
         }
         _uiState.update {
             it.copy(words = words, verifyPositions = positions, verifyOptions = options)
