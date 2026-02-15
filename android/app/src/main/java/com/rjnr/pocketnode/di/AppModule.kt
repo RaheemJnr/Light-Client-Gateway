@@ -1,6 +1,8 @@
 package com.rjnr.pocketnode.di
 
 import android.content.Context
+import com.rjnr.pocketnode.data.auth.AuthManager
+import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.crypto.Blake2b
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.wallet.KeyManager
@@ -39,6 +41,19 @@ object AppModule {
         ignoreUnknownKeys = true 
         encodeDefaults = true
     }
+
+    @Provides
+    @Singleton
+    fun provideAuthManager(
+        @ApplicationContext context: Context
+    ): AuthManager = AuthManager(context)
+
+    @Provides
+    @Singleton
+    fun providePinManager(
+        @ApplicationContext context: Context,
+        blake2b: Blake2b
+    ): PinManager = PinManager(context, blake2b)
 
     @Provides
     @Singleton

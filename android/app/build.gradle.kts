@@ -94,6 +94,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     // Security & Crypto
+    implementation(libs.androidx.biometric)
     implementation(libs.androidx.security.crypto)
     implementation(libs.secp256k1.kmp.jni.android)
     implementation(libs.kotlin.bip39)
