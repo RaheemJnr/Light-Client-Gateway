@@ -44,20 +44,6 @@ fun SyncMode.toFromBlock(customBlockHeight: Long? = null, tipHeight: Long = 0): 
     }
 }
 
-// ============ Requests ============
-
-@Serializable
-data class RegisterAccountRequest(
-    val address: String? = null,
-    val script: Script? = null,
-    @SerialName("from_block") val fromBlock: String? = null
-)
-
-@Serializable
-data class SendTransactionRequest(
-    val transaction: Transaction
-)
-
 // ============ Responses ============
 
 @Serializable
@@ -68,14 +54,6 @@ data class StatusResponse(
     @SerialName("peer_count") val peerCount: Int,
     @SerialName("is_synced") val isSynced: Boolean,
     @SerialName("is_healthy") val isHealthy: Boolean
-)
-
-@Serializable
-data class RegisterResponse(
-    val ok: Boolean? = null,
-    @SerialName("syncing_from") val syncingFrom: String? = null,
-    // Error fields when registration fails
-    val error: ErrorDetail? = null
 )
 
 @Serializable
@@ -112,11 +90,6 @@ data class TransactionsResponse(
 )
 
 @Serializable
-data class SendTransactionResponse(
-    @SerialName("tx_hash") val txHash: String
-)
-
-@Serializable
 data class TransactionStatusResponse(
     @SerialName("tx_hash") val txHash: String,
     val status: String, // "pending", "proposed", "committed", "unknown"
@@ -129,18 +102,6 @@ data class TransactionStatusResponse(
     fun isPending(): Boolean = status == "pending" || status == "proposed"
     fun isUnknown(): Boolean = status == "unknown"
 }
-
-@Serializable
-data class ApiError(
-    val error: ErrorDetail
-)
-
-@Serializable
-data class ErrorDetail(
-    val code: String,
-    val message: String,
-    val details: Map<String, String> = emptyMap()
-)
 
 // ============ JNI Response Models ============
 // These match the JSON structure returned by the Rust JNI bridge

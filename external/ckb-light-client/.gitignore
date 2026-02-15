@@ -1,0 +1,8 @@
+/target/
+/.vscode
+/data
+
+# Build artifacts
+*.o
+*.a
+*.so

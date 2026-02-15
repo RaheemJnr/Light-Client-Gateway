@@ -87,7 +87,7 @@ class GatewayRepository @Inject constructor(
             }
             
             val newConfig = configContent
-                .replace("path = \"data/store\"", "path = \"${File(dataDir, "store").absolutePath}\"")
+                .replace("path = \"data/store\"", "path = \"${File(dataDir, "store.db").absolutePath}\"")
                 .replace("path = \"data/network\"", "path = \"${File(dataDir, "network").absolutePath}\"")
             configFile.writeText(newConfig)
             Log.d(TAG, "📝 Config updated with absolute paths")

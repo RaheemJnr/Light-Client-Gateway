@@ -22,8 +22,6 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Gateway URL - change for production
-        buildConfigField("String", "GATEWAY_URL", "\"http://10.0.2.2:8080\"")
     }
 
     buildTypes {
@@ -34,8 +32,6 @@ android {
                 "proguard-rules.pro"
             )
             signingConfig = signingConfigs.getByName("debug")
-            buildConfigField("String", "GATEWAY_URL", "\"https://your-gateway.example.com\"")
-            
             // Firebase App Distribution
             firebaseAppDistribution {
                 artifactType = "APK"
@@ -94,11 +90,7 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
 
-    // Ktor
-    implementation(libs.ktor.client.core)
-    implementation(libs.ktor.client.android)
-    implementation(libs.ktor.client.content.negotiation)
-    implementation(libs.ktor.serialization.kotlinx.json)
+    // Serialization
     implementation(libs.kotlinx.serialization.json)
 
     // Security & Crypto

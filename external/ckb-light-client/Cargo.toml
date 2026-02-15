@@ -1,0 +1,9 @@
+[workspace]
+members = [
+    "light-client-lib",
+]
+
+resolver = "2"
+
+[profile.release]
+overflow-checks = true
