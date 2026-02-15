@@ -5,6 +5,8 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.rjnr.pocketnode.ui.screens.home.HomeScreen
+import com.rjnr.pocketnode.ui.screens.onboarding.MnemonicBackupScreen
+import com.rjnr.pocketnode.ui.screens.onboarding.MnemonicImportScreen
 import com.rjnr.pocketnode.ui.screens.receive.ReceiveScreen
 import com.rjnr.pocketnode.ui.screens.scanner.QrScannerScreen
 import com.rjnr.pocketnode.ui.screens.send.SendScreen
@@ -16,6 +18,8 @@ sealed class Screen(val route: String) {
     object Scanner : Screen("scanner")
     object NodeStatus : Screen("node_status")
     object Onboarding : Screen("onboarding")
+    object MnemonicBackup : Screen("mnemonic_backup")
+    object MnemonicImport : Screen("mnemonic_import")
 }
 
 @Composable
@@ -33,14 +37,50 @@ fun CkbNavGraph(
                     navController.navigate(Screen.Home.route) {
                         popUpTo(Screen.Onboarding.route) { inclusive = true }
                     }
+                },
+                onNavigateToBackup = {
+                    navController.navigate(Screen.MnemonicBackup.route) {
+                        popUpTo(Screen.Onboarding.route) { inclusive = true }
+                    }
+                },
+                onNavigateToImport = {
+                    navController.navigate(Screen.MnemonicImport.route) {
+                        popUpTo(Screen.Onboarding.route) { inclusive = true }
+                    }
                 }
             )
         }
+
+        composable(Screen.MnemonicBackup.route) {
+            MnemonicBackupScreen(
+                onNavigateToHome = {
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.MnemonicBackup.route) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.MnemonicImport.route) {
+            MnemonicImportScreen(
+                onNavigateToHome = {
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.MnemonicImport.route) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
         composable(Screen.Home.route) {
             HomeScreen(
                 onNavigateToSend = { navController.navigate(Screen.Send.route) },
                 onNavigateToReceive = { navController.navigate(Screen.Receive.route) },
-                onNavigateToStatus = { navController.navigate(Screen.NodeStatus.route) }
+                onNavigateToStatus = { navController.navigate(Screen.NodeStatus.route) },
+                onNavigateToBackup = { navController.navigate(Screen.MnemonicBackup.route) }
             )
         }
 

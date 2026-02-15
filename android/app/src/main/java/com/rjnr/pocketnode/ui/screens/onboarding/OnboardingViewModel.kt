@@ -14,8 +14,7 @@ import javax.inject.Inject
 data class OnboardingUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
-    val isWalletCreated: Boolean = false,
-    val showImportDialog: Boolean = false
+    val isWalletCreated: Boolean = false
 )
 
 @HiltViewModel
@@ -29,7 +28,7 @@ class OnboardingViewModel @Inject constructor(
     fun createNewWallet() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
-            repository.createNewWallet()
+            repository.createWalletWithMnemonic()
                 .onSuccess {
                     _uiState.update { it.copy(isLoading = false, isWalletCreated = true) }
                 }
@@ -37,27 +36,6 @@ class OnboardingViewModel @Inject constructor(
                     _uiState.update { it.copy(isLoading = false, error = error.message) }
                 }
         }
-    }
-
-    fun importWallet(privateKey: String) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null, showImportDialog = false) }
-            repository.importExistingWallet(privateKey)
-                .onSuccess {
-                    _uiState.update { it.copy(isLoading = false, isWalletCreated = true) }
-                }
-                .onFailure { error ->
-                    _uiState.update { it.copy(isLoading = false, error = error.message) }
-                }
-        }
-    }
-
-    fun showImport() {
-        _uiState.update { it.copy(showImportDialog = true) }
-    }
-
-    fun hideImport() {
-        _uiState.update { it.copy(showImportDialog = false) }
     }
 
     fun clearError() {

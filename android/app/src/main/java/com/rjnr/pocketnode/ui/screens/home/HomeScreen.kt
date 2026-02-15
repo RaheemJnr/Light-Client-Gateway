@@ -101,6 +101,7 @@ fun HomeScreen(
     onNavigateToSend: () -> Unit = {},
     onNavigateToReceive: () -> Unit = {},
     onNavigateToStatus: () -> Unit = {},
+    onNavigateToBackup: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -197,7 +198,11 @@ fun HomeScreen(
                                 text = { Text("Backup Wallet") },
                                 onClick = {
                                     showSyncMenu = false
-                                    viewModel.showBackup()
+                                    if (viewModel.isMnemonicWallet()) {
+                                        onNavigateToBackup()
+                                    } else {
+                                        viewModel.showBackup()
+                                    }
                                 },
                                 leadingIcon = {
                                     Icon(Icons.Default.Security, contentDescription = null)
@@ -265,6 +270,16 @@ fun HomeScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // Mnemonic Backup Reminder
+                if (uiState.showBackupReminder) {
+                    item {
+                        BackupReminderBanner(
+                            onDismiss = { viewModel.dismissBackupReminder() },
+                            onBackup = onNavigateToBackup
+                        )
+                    }
+                }
+
                 // Sync Mode Reminder for Imported Wallets
                 if (uiState.showImportSyncReminder) {
                     item {
@@ -515,6 +530,62 @@ private fun SyncModeReminderBanner(
                 modifier = Modifier.align(Alignment.End)
             ) {
                 Text("Configure Sync")
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackupReminderBanner(
+    onDismiss: () -> Unit,
+    onBackup: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Back Up Your Wallet",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Dismiss",
+                        tint = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.6f)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Your recovery phrase hasn't been backed up yet. Back it up now to protect your funds.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = onBackup,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                ),
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Text("Backup Now")
             }
         }
     }
