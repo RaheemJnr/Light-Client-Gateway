@@ -1,3 +1,4 @@
+
 # ===================
 # OS Generated Files
 # ===================
@@ -30,6 +31,7 @@ android/build/
 android/**/build/
 gen/
 out/
+android/app/src/main/jniLibs/
 
 # Gradle files
 android/.gradle/
@@ -58,6 +60,7 @@ proguard/
 
 # Log Files
 *.log
+build_log.txt
 
 # Android Studio captures folder
 captures/
@@ -157,7 +160,7 @@ debug/
 
 # Emacs
 *~
-\#*\#
+#*#
 /.emacs.desktop
 /.emacs.desktop.lock
 *.elc

@@ -1,0 +1,421 @@
+package com.rjnr.pocketnode.data.transaction
+
+import android.util.Log
+import com.rjnr.pocketnode.data.gateway.models.*
+import com.rjnr.pocketnode.data.wallet.AddressUtils
+import org.nervos.ckb.crypto.Blake2b
+import org.nervos.ckb.crypto.secp256k1.ECKeyPair
+import org.nervos.ckb.crypto.secp256k1.Sign
+import org.nervos.ckb.utils.Numeric
+import java.io.ByteArrayOutputStream
+import java.math.BigInteger
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class TransactionBuilder @Inject constructor() {
+
+    companion object {
+        private const val TAG = "TransactionBuilder"
+        const val SECP256K1_CODE_HASH =
+            "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8"
+        const val MIN_CELL_CAPACITY = 61_00000000L
+        const val DEFAULT_FEE = 100_000L
+
+        // SECP256K1 cell deps for different networks
+        // Testnet (Pudge)
+        private const val TESTNET_SECP256K1_TX_HASH =
+            "0xf8de3bb47d055cdf460d93a2a6e1b05f7432f9777c8c474abf4eec1d4aee5d37"
+        // Mainnet (Mirana)
+        private const val MAINNET_SECP256K1_TX_HASH =
+            "0x71a7ba8fc96349fea0ed3a5c47992e3b4084b031a42264a018e0072e8172e46c"
+    }
+
+    fun buildTransfer(
+        fromAddress: String,
+        toAddress: String,
+        amountShannons: Long,
+        availableCells: List<Cell>,
+        privateKey: ByteArray
+    ): Transaction {
+        Log.d(TAG, "🔨 Building transfer transaction")
+        Log.d(TAG, "  From: $fromAddress")
+        Log.d(TAG, "  To: $toAddress")
+        Log.d(TAG, "  Amount: $amountShannons shannons")
+
+        val senderScript = AddressUtils.parseAddress(fromAddress)
+            ?: throw IllegalArgumentException("Invalid sender address")
+        val recipientScript = AddressUtils.parseAddress(toAddress)
+            ?: throw IllegalArgumentException("Invalid recipient address")
+
+        // Detect network from address prefix
+        val isMainnet = fromAddress.startsWith("ckb1")
+        val secp256k1TxHash = if (isMainnet) MAINNET_SECP256K1_TX_HASH else TESTNET_SECP256K1_TX_HASH
+        Log.d(TAG, "  Network: ${if (isMainnet) "MAINNET" else "TESTNET"}")
+        Log.d(TAG, "  Using SECP256K1 cell dep: $secp256k1TxHash")
+
+        val totalRequired = amountShannons + DEFAULT_FEE
+        val (selectedCells, totalInput) = selectCells(availableCells, totalRequired)
+
+        Log.d(TAG, "  Selected ${selectedCells.size} cells with total: $totalInput shannons")
+
+        if (selectedCells.isEmpty()) {
+            throw IllegalStateException("No cells available")
+        }
+
+        if (totalInput < totalRequired) {
+            throw IllegalStateException("Insufficient balance: have $totalInput, need $totalRequired")
+        }
+
+        val inputs = selectedCells.map { cell ->
+            CellInput(
+                previousOutput = OutPoint(
+                    txHash = cell.outPoint.txHash,
+                    index = cell.outPoint.index
+                ),
+                since = "0x0"
+            )
+        }
+
+        val outputs = mutableListOf<CellOutput>()
+        val outputsData = mutableListOf<String>()
+
+        // Output to recipient
+        outputs.add(
+            CellOutput(
+                capacity = "0x${amountShannons.toString(16)}",
+                lock = recipientScript,
+                type = null
+            )
+        )
+        outputsData.add("0x")
+
+        // Change output back to sender
+        val change = totalInput - amountShannons - DEFAULT_FEE
+        if (change >= MIN_CELL_CAPACITY) {
+            outputs.add(
+                CellOutput(
+                    capacity = "0x${change.toString(16)}",
+                    lock = senderScript,
+                    type = null
+                )
+            )
+            outputsData.add("0x")
+            Log.d(TAG, "  Change output: $change shannons")
+        } else {
+            Log.d(TAG, "  No change output (change $change < min $MIN_CELL_CAPACITY)")
+        }
+
+        // Use network-appropriate cell dependency
+        val cellDeps = listOf(
+            CellDep(
+                outPoint = OutPoint(
+                    txHash = secp256k1TxHash,
+                    index = "0x0"
+                ),
+                depType = "dep_group"
+            )
+        )
+
+        val unsignedTx = Transaction(
+            version = "0x0",
+            cellDeps = cellDeps,
+            headerDeps = emptyList(),
+            cellInputs = inputs,
+            cellOutputs = outputs,
+            outputsData = outputsData,
+            witnesses = inputs.map { "0x" }
+        )
+
+        Log.d(TAG, "  Signing transaction with ${inputs.size} inputs, ${outputs.size} outputs")
+        return signTransaction(unsignedTx, privateKey, selectedCells.size)
+    }
+
+    private fun selectCells(cells: List<Cell>, requiredCapacity: Long): Pair<List<Cell>, Long> {
+        val sortedCells = cells
+            .filter { it.type == null }
+            .sortedByDescending { parseCapacity(it.capacity) }
+
+        val selected = mutableListOf<Cell>()
+        var total = 0L
+
+        for (cell in sortedCells) {
+            if (total >= requiredCapacity) break
+            selected.add(cell)
+            total += parseCapacity(cell.capacity)
+        }
+
+        return Pair(selected, total)
+    }
+
+    private fun parseCapacity(hex: String): Long {
+        return hex.removePrefix("0x").toLong(16)
+    }
+
+    private fun signTransaction(
+        tx: Transaction,
+        privateKey: ByteArray,
+        inputCount: Int
+    ): Transaction {
+        // 1. Serialize the raw transaction and compute its hash
+        val rawTxBytes = serializeRawTransaction(tx)
+        val txHash = blake2bHash(rawTxBytes)
+
+        // 2. Create empty witness args (65 zero bytes for signature placeholder)
+        val emptyWitnessArgs = serializeWitnessArgs(ByteArray(65), null, null)
+
+        // 3. Build the signing message
+        val blake2b = Blake2b()
+        blake2b.update(txHash)
+        blake2b.update(littleEndianLong(emptyWitnessArgs.size.toLong()))
+        blake2b.update(emptyWitnessArgs)
+
+        // For additional witnesses in the same lock group
+        for (i in 1 until inputCount) {
+            val emptyWitness = byteArrayOf()
+            blake2b.update(littleEndianLong(emptyWitness.size.toLong()))
+        }
+
+        val message = blake2b.doFinal()
+
+        // 4. Sign the message
+        val keyPair = ECKeyPair.create(BigInteger(1, privateKey))
+        val signatureData = Sign.signMessage(message, keyPair)
+        val signature = signatureData.signature
+
+        // 5. Create signed witness
+        val signedWitnessArgs = serializeWitnessArgs(signature, null, null)
+        val signedWitnessHex = "0x" + signedWitnessArgs.joinToString("") { "%02x".format(it) }
+
+        // 6. Build witnesses list
+        val witnesses = mutableListOf(signedWitnessHex)
+        for (i in 1 until inputCount) {
+            witnesses.add("0x")
+        }
+
+        return tx.copy(witnesses = witnesses)
+    }
+
+    /**
+     * Serialize raw transaction using molecule encoding.
+     * RawTransaction = version (Uint32) + cell_deps (CellDepVec) + header_deps (Byte32Vec)
+     *                + inputs (CellInputVec) + outputs (CellOutputVec) + outputs_data (BytesVec)
+     */
+    private fun serializeRawTransaction(tx: Transaction): ByteArray {
+        val version = serializeUint32(tx.version.removePrefix("0x").toInt(16))
+        val cellDeps = serializeCellDepVec(tx.cellDeps)
+        val headerDeps = serializeByte32Vec(tx.headerDeps)
+        val inputs = serializeCellInputVec(tx.cellInputs)
+        val outputs = serializeCellOutputVec(tx.cellOutputs)
+        val outputsData = serializeBytesVec(tx.outputsData)
+
+        // RawTransaction is a table with 6 fields
+        return serializeTable(listOf(version, cellDeps, headerDeps, inputs, outputs, outputsData))
+    }
+
+    private fun serializeTable(fields: List<ByteArray>): ByteArray {
+        val headerSize = 4 + fields.size * 4 // full_size + offsets
+        var currentOffset = headerSize
+
+        val offsets = mutableListOf<Int>()
+        for (field in fields) {
+            offsets.add(currentOffset)
+            currentOffset += field.size
+        }
+
+        val output = ByteArrayOutputStream()
+        output.write(littleEndianInt(currentOffset)) // full size
+        for (offset in offsets) {
+            output.write(littleEndianInt(offset))
+        }
+        for (field in fields) {
+            output.write(field)
+        }
+        return output.toByteArray()
+    }
+
+    private fun serializeFixVec(items: List<ByteArray>): ByteArray {
+        val output = ByteArrayOutputStream()
+        output.write(littleEndianInt(items.size))
+        for (item in items) {
+            output.write(item)
+        }
+        return output.toByteArray()
+    }
+
+    private fun serializeDynVec(items: List<ByteArray>): ByteArray {
+        if (items.isEmpty()) {
+            return littleEndianInt(4) // just the header (full_size = 4)
+        }
+
+        val headerSize = 4 + items.size * 4 // full_size + offsets
+        var currentOffset = headerSize
+
+        val offsets = mutableListOf<Int>()
+        for (item in items) {
+            offsets.add(currentOffset)
+            currentOffset += item.size
+        }
+
+        val output = ByteArrayOutputStream()
+        output.write(littleEndianInt(currentOffset)) // full size
+        for (offset in offsets) {
+            output.write(littleEndianInt(offset))
+        }
+        for (item in items) {
+            output.write(item)
+        }
+        return output.toByteArray()
+    }
+
+    private fun serializeUint32(value: Int): ByteArray {
+        return littleEndianInt(value)
+    }
+
+    private fun serializeUint64(value: Long): ByteArray {
+        return littleEndianLong(value)
+    }
+
+    private fun serializeByte32(hex: String): ByteArray {
+        return Numeric.hexStringToByteArray(hex)
+    }
+
+    private fun serializeBytes(hex: String): ByteArray {
+        val bytes = Numeric.hexStringToByteArray(hex)
+        val output = ByteArrayOutputStream()
+        output.write(littleEndianInt(bytes.size))
+        output.write(bytes)
+        return output.toByteArray()
+    }
+
+    private fun serializeByte32Vec(hashes: List<String>): ByteArray {
+        val items = hashes.map { serializeByte32(it) }
+        return serializeFixVec(items)
+    }
+
+    private fun serializeBytesVec(dataList: List<String>): ByteArray {
+        val items = dataList.map { serializeBytes(it) }
+        return serializeDynVec(items)
+    }
+
+    private fun serializeOutPoint(outPoint: OutPoint): ByteArray {
+        val txHash = serializeByte32(outPoint.txHash)
+        val index = serializeUint32(outPoint.index.removePrefix("0x").toInt(16))
+        return txHash + index
+    }
+
+    private fun serializeCellDep(cellDep: CellDep): ByteArray {
+        val outPoint = serializeOutPoint(cellDep.outPoint)
+        val depType = when (cellDep.depType) {
+            "code" -> byteArrayOf(0)
+            "dep_group" -> byteArrayOf(1)
+            else -> byteArrayOf(0)
+        }
+        return outPoint + depType
+    }
+
+    private fun serializeCellDepVec(cellDeps: List<CellDep>): ByteArray {
+        val items = cellDeps.map { serializeCellDep(it) }
+        return serializeFixVec(items)
+    }
+
+    private fun serializeCellInput(input: CellInput): ByteArray {
+        val since = serializeUint64(input.since.removePrefix("0x").toLong(16))
+        val previousOutput = serializeOutPoint(input.previousOutput)
+        return since + previousOutput
+    }
+
+    private fun serializeCellInputVec(inputs: List<CellInput>): ByteArray {
+        val items = inputs.map { serializeCellInput(it) }
+        return serializeFixVec(items)
+    }
+
+    private fun serializeScript(script: Script): ByteArray {
+        val codeHash = serializeByte32(script.codeHash)
+        val hashType = when (script.hashType) {
+            "data" -> byteArrayOf(0)
+            "type" -> byteArrayOf(1)
+            "data1" -> byteArrayOf(2)
+            "data2" -> byteArrayOf(4)
+            else -> byteArrayOf(1)
+        }
+        val args = serializeBytes(script.args)
+        return serializeTable(listOf(codeHash, hashType, args))
+    }
+
+    private fun serializeScriptOpt(script: Script?): ByteArray {
+        return if (script == null) {
+            byteArrayOf() // None option is empty
+        } else {
+            serializeScript(script)
+        }
+    }
+
+    private fun serializeCellOutput(output: CellOutput): ByteArray {
+        val capacity = serializeUint64(output.capacity.removePrefix("0x").toLong(16))
+        val lock = serializeScript(output.lock)
+        val type = serializeScriptOpt(output.type)
+        return serializeTable(listOf(capacity, lock, type))
+    }
+
+    private fun serializeCellOutputVec(outputs: List<CellOutput>): ByteArray {
+        val items = outputs.map { serializeCellOutput(it) }
+        return serializeDynVec(items)
+    }
+
+    /**
+     * Serialize WitnessArgs as molecule table.
+     * WitnessArgs = lock (BytesOpt) + input_type (BytesOpt) + output_type (BytesOpt)
+     */
+    private fun serializeWitnessArgs(
+        lock: ByteArray?,
+        inputType: ByteArray?,
+        outputType: ByteArray?
+    ): ByteArray {
+        val lockOpt = serializeBytesOpt(lock)
+        val inputTypeOpt = serializeBytesOpt(inputType)
+        val outputTypeOpt = serializeBytesOpt(outputType)
+        return serializeTable(listOf(lockOpt, inputTypeOpt, outputTypeOpt))
+    }
+
+    private fun serializeBytesOpt(data: ByteArray?): ByteArray {
+        return if (data == null || data.isEmpty()) {
+            byteArrayOf() // None
+        } else {
+            serializeBytesRaw(data)
+        }
+    }
+
+    private fun serializeBytesRaw(data: ByteArray): ByteArray {
+        val output = ByteArrayOutputStream()
+        output.write(littleEndianInt(data.size))
+        output.write(data)
+        return output.toByteArray()
+    }
+
+    private fun blake2bHash(data: ByteArray): ByteArray {
+        return Blake2b.digest(data)
+    }
+
+    private fun littleEndianInt(value: Int): ByteArray {
+        return byteArrayOf(
+            (value and 0xFF).toByte(),
+            ((value shr 8) and 0xFF).toByte(),
+            ((value shr 16) and 0xFF).toByte(),
+            ((value shr 24) and 0xFF).toByte()
+        )
+    }
+
+    private fun littleEndianLong(value: Long): ByteArray {
+        return byteArrayOf(
+            (value and 0xFF).toByte(),
+            ((value shr 8) and 0xFF).toByte(),
+            ((value shr 16) and 0xFF).toByte(),
+            ((value shr 24) and 0xFF).toByte(),
+            ((value shr 32) and 0xFF).toByte(),
+            ((value shr 40) and 0xFF).toByte(),
+            ((value shr 48) and 0xFF).toByte(),
+            ((value shr 56) and 0xFF).toByte()
+        )
+    }
+}

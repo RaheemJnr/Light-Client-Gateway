@@ -5,23 +5,23 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.google.services)
+    alias(libs.plugins.firebase.appdistribution)
 }
 
 android {
-    namespace = "com.example.ckbwallet"
+    namespace = "com.rjnr.pocketnode"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.ckbwallet"
+        applicationId = "com.rjnr.pocketnode"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Gateway URL - change for production
-        buildConfigField("String", "GATEWAY_URL", "\"http://10.0.2.2:8080\"")
     }
 
     buildTypes {
@@ -31,7 +31,13 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            buildConfigField("String", "GATEWAY_URL", "\"https://your-gateway.example.com\"")
+            signingConfig = signingConfigs.getByName("debug")
+            // Firebase App Distribution
+            firebaseAppDistribution {
+                artifactType = "APK"
+                testers = "neon@nervos.community"
+                releaseNotes = "v1.0.1: Fixed launch crash on Samsung devices. Includes multi-ABI support and debug signing."
+            }
         }
     }
 
@@ -59,6 +65,7 @@ android {
             }
         }
     }
+
 }
 
 dependencies {
@@ -83,11 +90,8 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
 
-    // Ktor
-    implementation(libs.ktor.client.core)
-    implementation(libs.ktor.client.android)
-    implementation(libs.ktor.client.content.negotiation)
-    implementation(libs.ktor.serialization.kotlinx.json)
+    // Serialization
+    implementation(libs.kotlinx.serialization.json)
 
     // Security & Crypto
     implementation(libs.androidx.security.crypto)
@@ -110,4 +114,38 @@ dependencies {
     implementation(libs.camerax.view)
     implementation(libs.mlkit.barcode.scanning)
     implementation(libs.accompanist.permissions)
+
+    // Firebase
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.analytics)
+}
+
+tasks.register<Exec>("cargoBuild") {
+    workingDir = file("${project.rootDir}/../external/ckb-light-client")
+    commandLine("./build-android-jni.sh")
+    // 1. Try Android Gradle Plugin's detected NDK
+    var ndkDir = try { android.ndkDirectory } catch (e: Exception) { null }
+
+    // 2. Fallback: Check standard macOS NDK location
+    if (ndkDir == null || !ndkDir.exists()) {
+        val defaultNdkRoot = file("/Users/raheemjnr/Library/Android/sdk/ndk")
+        if (defaultNdkRoot.exists()) {
+            // Pick the latest valid version (must have toolchains)
+            ndkDir = defaultNdkRoot.listFiles()
+                ?.filter { it.isDirectory && File(it, "toolchains").exists() }
+                ?.sortedByDescending { it.name }
+                ?.firstOrNull()
+        }
+    }
+
+    if (ndkDir != null && ndkDir.exists()) {
+        println("Using NDK at: $ndkDir")
+        environment("ANDROID_NDK_HOME", ndkDir)
+    } else {
+        println("WARNING: Could not find Android NDK. Build may fail.")
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn("cargoBuild")
 }
