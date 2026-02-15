@@ -25,8 +25,9 @@ object AppModule {
     @Provides
     @Singleton
     fun provideKeyManager(
-        @ApplicationContext context: Context
-    ): KeyManager = KeyManager(context)
+        @ApplicationContext context: Context,
+        mnemonicManager: MnemonicManager
+    ): KeyManager = KeyManager(context, mnemonicManager)
 
     @Provides
     @Singleton

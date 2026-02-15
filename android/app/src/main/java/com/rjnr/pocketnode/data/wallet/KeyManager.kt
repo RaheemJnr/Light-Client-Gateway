@@ -6,6 +6,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.Script
+import androidx.annotation.VisibleForTesting
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.nervos.ckb.crypto.Blake2b
 import org.nervos.ckb.crypto.secp256k1.ECKeyPair
@@ -18,11 +19,19 @@ import javax.inject.Singleton
 
 @Singleton
 class KeyManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val mnemonicManager: MnemonicManager
 ) {
-    private val prefs: SharedPreferences by lazy {
+    @VisibleForTesting
+    internal var testPrefs: SharedPreferences? = null
+
+    private val prefs: SharedPreferences
+        get() = testPrefs ?: encryptedPrefs
+
+    private val encryptedPrefs: SharedPreferences by lazy {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .setRequestStrongBoxBacked(true)
             .build()
 
         EncryptedSharedPreferences.create(
@@ -36,12 +45,14 @@ class KeyManager @Inject constructor(
 
     fun hasWallet(): Boolean = prefs.contains(KEY_PRIVATE_KEY)
 
+    // -- Existing methods (raw key) --
+
     fun generateWallet(): WalletInfo {
         val privateKeyBytes = ByteArray(32)
         SecureRandom().nextBytes(privateKeyBytes)
         val privateKey = BigInteger(1, privateKeyBytes)
 
-        savePrivateKey(privateKey)
+        savePrivateKey(privateKey, WALLET_TYPE_RAW_KEY)
         return getWalletInfo()
     }
 
@@ -50,9 +61,56 @@ class KeyManager @Inject constructor(
         require(privateKeyBytes.size == 32) { "Private key must be 32 bytes" }
         val privateKey = BigInteger(1, privateKeyBytes)
 
-        savePrivateKey(privateKey)
+        savePrivateKey(privateKey, WALLET_TYPE_RAW_KEY)
         return getWalletInfo()
     }
+
+    // -- New mnemonic methods --
+
+    fun generateWalletWithMnemonic(
+        wordCount: MnemonicManager.WordCount = MnemonicManager.WordCount.TWELVE
+    ): Pair<WalletInfo, List<String>> {
+        val words = mnemonicManager.generateMnemonic(wordCount)
+        val privateKeyBytes = mnemonicManager.mnemonicToPrivateKey(words)
+        val privateKey = BigInteger(1, privateKeyBytes)
+
+        savePrivateKey(privateKey, WALLET_TYPE_MNEMONIC)
+        storeMnemonic(words)
+        return Pair(getWalletInfo(), words)
+    }
+
+    fun importWalletFromMnemonic(
+        words: List<String>,
+        passphrase: String = ""
+    ): WalletInfo {
+        require(mnemonicManager.validateMnemonic(words)) { "Invalid mnemonic" }
+
+        val privateKeyBytes = mnemonicManager.mnemonicToPrivateKey(words, passphrase)
+        val privateKey = BigInteger(1, privateKeyBytes)
+
+        savePrivateKey(privateKey, WALLET_TYPE_MNEMONIC)
+        storeMnemonic(words)
+        return getWalletInfo()
+    }
+
+    fun getMnemonic(): List<String>? {
+        val joined = prefs.getString(KEY_MNEMONIC, null) ?: return null
+        return joined.split(" ")
+    }
+
+    fun getWalletType(): String {
+        return prefs.getString(KEY_WALLET_TYPE, WALLET_TYPE_RAW_KEY) ?: WALLET_TYPE_RAW_KEY
+    }
+
+    fun hasMnemonicBackup(): Boolean {
+        return prefs.getBoolean(KEY_MNEMONIC_BACKED_UP, false)
+    }
+
+    fun setMnemonicBackedUp(backedUp: Boolean) {
+        prefs.edit().putBoolean(KEY_MNEMONIC_BACKED_UP, backedUp).apply()
+    }
+
+    // -- Shared methods --
 
     fun getWalletInfo(): WalletInfo {
         val keyPair = getKeyPair()
@@ -75,9 +133,6 @@ class KeyManager @Inject constructor(
         return Numeric.hexStringToByteArray(hex)
     }
 
-    /**
-     * Get the ECKeyPair for signing operations.
-     */
     fun getKeyPair(): ECKeyPair {
         val hex = prefs.getString(KEY_PRIVATE_KEY, null)
             ?: throw IllegalStateException("No wallet found")
@@ -85,23 +140,13 @@ class KeyManager @Inject constructor(
         return ECKeyPair.create(privateKey)
     }
 
-    /**
-     * Derive public key from private key using secp256k1.
-     * Returns compressed public key (33 bytes).
-     */
     fun derivePublicKey(privateKey: ByteArray): ByteArray {
         val keyPair = ECKeyPair.create(BigInteger(1, privateKey))
         return keyPair.getEncodedPublicKey(true)
     }
 
-    /**
-     * Derive lock script from public key using official CKB SDK Blake2b.
-     * This creates a secp256k1_blake160 lock script.
-     */
     fun deriveLockScript(publicKey: ByteArray): Script {
-        // Use official CKB SDK Blake2b to hash public key
         val pubKeyHash = Blake2b.digest(publicKey)
-        // Take first 20 bytes (blake160)
         val args = pubKeyHash.copyOfRange(0, 20)
 
         return Script(
@@ -111,30 +156,43 @@ class KeyManager @Inject constructor(
         )
     }
 
-    /**
-     * Sign a message using secp256k1 with recoverable signature.
-     * Returns 65-byte signature (64 bytes compact + 1 byte recovery ID).
-     */
     fun sign(message: ByteArray): ByteArray {
         val keyPair = getKeyPair()
         val signatureData = Sign.signMessage(message, keyPair)
-
-        // Get 65-byte signature (r[32] + s[32] + v[1])
         return signatureData.signature
     }
 
     fun deleteWallet() {
-        prefs.edit().remove(KEY_PRIVATE_KEY).apply()
+        prefs.edit()
+            .remove(KEY_PRIVATE_KEY)
+            .remove(KEY_MNEMONIC)
+            .remove(KEY_MNEMONIC_BACKED_UP)
+            .remove(KEY_WALLET_TYPE)
+            .apply()
     }
 
-    private fun savePrivateKey(privateKey: BigInteger) {
-        // Store as hex without leading zeros stripped
+    private fun savePrivateKey(privateKey: BigInteger, walletType: String) {
         val hex = Numeric.toHexStringNoPrefixZeroPadded(privateKey, 64)
-        prefs.edit().putString(KEY_PRIVATE_KEY, hex).apply()
+        prefs.edit()
+            .putString(KEY_PRIVATE_KEY, hex)
+            .putString(KEY_WALLET_TYPE, walletType)
+            .apply()
+    }
+
+    private fun storeMnemonic(words: List<String>) {
+        prefs.edit()
+            .putString(KEY_MNEMONIC, words.joinToString(" "))
+            .putBoolean(KEY_MNEMONIC_BACKED_UP, false)
+            .apply()
     }
 
     companion object {
         private const val KEY_PRIVATE_KEY = "private_key"
+        private const val KEY_MNEMONIC = "mnemonic_words"
+        private const val KEY_MNEMONIC_BACKED_UP = "mnemonic_backed_up"
+        private const val KEY_WALLET_TYPE = "wallet_type"
+        const val WALLET_TYPE_MNEMONIC = "mnemonic"
+        const val WALLET_TYPE_RAW_KEY = "raw_key"
     }
 }
 
