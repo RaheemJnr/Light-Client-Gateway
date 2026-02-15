@@ -40,6 +40,16 @@ jobs:
       # (light-client-db-common). Full JNI CI will be restored in Issue #7.
       # For now, CI validates Kotlin compilation and unit tests.
 
+      - name: Create dummy google-services.json
+        run: |
+          cat > android/app/google-services.json << 'GSEOF'
+          {
+            "project_info": { "project_number": "0", "project_id": "dummy", "storage_bucket": "dummy.appspot.com" },
+            "client": [{ "client_info": { "mobilesdk_app_id": "1:0:android:0", "android_client_info": { "package_name": "com.rjnr.pocketnode" } }, "api_key": [{ "current_key": "dummy" }] }],
+            "configuration_version": "1"
+          }
+          GSEOF
+
       - name: Build debug APK
         working-directory: android
         run: ./gradlew assembleDebug -x cargoBuild
