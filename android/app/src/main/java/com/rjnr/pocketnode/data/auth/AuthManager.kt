@@ -1,7 +1,9 @@
 package com.rjnr.pocketnode.data.auth
 
+import android.app.KeyguardManager
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Build
 import androidx.annotation.VisibleForTesting
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricManager.Authenticators
@@ -55,15 +57,27 @@ class AuthManager @Inject constructor(
         prefs.edit().putBoolean(KEY_BIOMETRIC_ENABLED, enabled).apply()
     }
 
-    fun hasDeviceCredential(): Boolean =
-        biometricMgr.canAuthenticate(Authenticators.DEVICE_CREDENTIAL) ==
-            BiometricManager.BIOMETRIC_SUCCESS
+    fun hasDeviceCredential(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            biometricMgr.canAuthenticate(Authenticators.DEVICE_CREDENTIAL) ==
+                BiometricManager.BIOMETRIC_SUCCESS
+        } else {
+            val keyguard = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+            keyguard.isDeviceSecure
+        }
+    }
 
     fun getAllowedAuthenticators(): Int {
         return if (isBiometricEnrolled() && isBiometricEnabled()) {
-            Authenticators.BIOMETRIC_STRONG or Authenticators.DEVICE_CREDENTIAL
-        } else {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Authenticators.BIOMETRIC_STRONG or Authenticators.DEVICE_CREDENTIAL
+            } else {
+                Authenticators.BIOMETRIC_STRONG
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             Authenticators.DEVICE_CREDENTIAL
+        } else {
+            Authenticators.BIOMETRIC_STRONG
         }
     }
 
