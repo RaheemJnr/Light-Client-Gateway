@@ -58,18 +58,10 @@ jobs:
         working-directory: android
         run: ./gradlew test -x cargoBuild
 
-      - name: Upload debug APK
-        if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
-          retention-days: 14
-
       - name: Upload test results
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: android/app/build/reports/tests/
-          retention-days: 14
+          retention-days: 7
