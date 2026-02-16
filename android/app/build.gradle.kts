@@ -17,26 +17,52 @@ android {
         applicationId = "com.rjnr.pocketnode"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePath = System.getenv("KEYSTORE_PATH")
+            val keystorePassword = System.getenv("KEYSTORE_PASSWORD")
+            val keyAliasEnv = System.getenv("KEY_ALIAS")
+            val keyPasswordEnv = System.getenv("KEY_PASSWORD")
+            if (keystorePath != null && keystorePassword != null && keyAliasEnv != null && keyPasswordEnv != null) {
+                storeFile = file(keystorePath)
+                storePassword = keystorePassword
+                keyAlias = keyAliasEnv
+                keyPassword = keyPasswordEnv
+            } else {
+                if (keystorePath != null) {
+                    logger.warn("KEYSTORE_PATH is set but other signing env vars are missing — falling back to debug keystore")
+                }
+                // Fall back to debug keystore for local dev
+                val debugKeystore = signingConfigs.getByName("debug")
+                storeFile = debugKeystore.storeFile
+                storePassword = debugKeystore.storePassword
+                keyAlias = debugKeystore.keyAlias
+                keyPassword = debugKeystore.keyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
             // Firebase App Distribution
             firebaseAppDistribution {
                 artifactType = "APK"
                 testers = "neon@nervos.community"
-                releaseNotes = "v1.0.1: Fixed launch crash on Samsung devices. Includes multi-ABI support and debug signing."
+                releaseNotes = "v1.1.0: Mainnet hardening — network validation, retry logic, log stripping, backup disabled."
             }
         }
     }
