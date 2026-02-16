@@ -150,7 +150,7 @@ fun PinEntryScreen(
                 }
                 uiState.errorMessage != null -> {
                     Text(
-                        text = uiState.errorMessage!!,
+                        text = uiState.errorMessage.orEmpty(),
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall
                     )

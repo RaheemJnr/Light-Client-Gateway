@@ -1,11 +1,15 @@
 package com.rjnr.pocketnode.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.rjnr.pocketnode.ui.screens.auth.AuthScreen
 import com.rjnr.pocketnode.ui.screens.auth.PinEntryScreen
 import com.rjnr.pocketnode.ui.screens.auth.PinMode
@@ -16,6 +20,7 @@ import com.rjnr.pocketnode.ui.screens.receive.ReceiveScreen
 import com.rjnr.pocketnode.ui.screens.scanner.QrScannerScreen
 import com.rjnr.pocketnode.ui.screens.send.SendScreen
 import com.rjnr.pocketnode.ui.screens.settings.SecuritySettingsScreen
+import com.rjnr.pocketnode.ui.screens.settings.SecuritySettingsViewModel
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
@@ -143,12 +148,25 @@ fun CkbNavGraph(
             )
         }
 
-        composable(Screen.SecuritySettings.route) {
+        composable(Screen.SecuritySettings.route) { backStackEntry ->
+            val viewModel: SecuritySettingsViewModel = hiltViewModel()
+
+            DisposableEffect(backStackEntry) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_RESUME) {
+                        viewModel.refreshState()
+                    }
+                }
+                backStackEntry.lifecycle.addObserver(observer)
+                onDispose { backStackEntry.lifecycle.removeObserver(observer) }
+            }
+
             SecuritySettingsScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToPinSetup = {
                     navController.navigate(Screen.PinEntry.createRoute("setup"))
-                }
+                },
+                viewModel = viewModel
             )
         }
 

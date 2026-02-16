@@ -112,8 +112,21 @@ class PinViewModel @Inject constructor(
                     if (pinManager.isLockedOut()) {
                         startLockoutTimer()
                     } else {
-                        showError("Wrong PIN. $remaining attempts remaining.")
-                        _uiState.update { it.copy(remainingAttempts = remaining) }
+//                        showError("Wrong PIN. $remaining attempts remaining.")
+//                        _uiState.update { it.copy(remainingAttempts = remaining) }
+                        _uiState.update {
+                            it.copy(
+                                isError = true,
+                                errorMessage = "Wrong PIN. $remaining attempts remaining.",
+                                enteredDigits = "",
+                                remainingAttempts = remaining
+                            )
+                        }
+                        viewModelScope.launch {
+                            delay(500)
+                            _uiState.update { it.copy(isError = false) }
+                        }
+
                     }
                 }
             }
