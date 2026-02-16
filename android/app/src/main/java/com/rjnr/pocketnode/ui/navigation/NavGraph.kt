@@ -104,7 +104,8 @@ fun CkbNavGraph(
             arguments = listOf(navArgument("mode") { type = NavType.StringType })
         ) { backStackEntry ->
             val modeString = backStackEntry.arguments?.getString("mode") ?: "verify"
-            val mode = PinMode.valueOf(modeString.uppercase())
+            val mode = runCatching { PinMode.valueOf(modeString.uppercase()) }
+                .getOrDefault(PinMode.VERIFY)
             val setupPin = navController.previousBackStackEntry
                 ?.savedStateHandle
                 ?.get<String>("setup_pin")
@@ -134,7 +135,9 @@ fun CkbNavGraph(
                     }
                 },
                 onForgotPin = {
-                    navController.navigate(Screen.MnemonicImport.route)
+                    navController.navigate(Screen.MnemonicImport.route) {
+                        popUpTo(Screen.Auth.route) { inclusive = true }
+                    }
                 },
                 onNavigateBack = { navController.popBackStack() }
             )

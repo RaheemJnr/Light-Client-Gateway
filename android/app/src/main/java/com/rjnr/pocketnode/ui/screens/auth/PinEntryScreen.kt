@@ -62,7 +62,11 @@ fun PinEntryScreen(
     }
 
     LaunchedEffect(uiState.pinComplete) {
-        if (uiState.pinComplete) onPinComplete(viewModel.getEnteredPin())
+        if (uiState.pinComplete) {
+            val pin = viewModel.getEnteredPin()
+            viewModel.consumePinComplete()
+            onPinComplete(pin)
+        }
     }
 
     LaunchedEffect(uiState.isError) {

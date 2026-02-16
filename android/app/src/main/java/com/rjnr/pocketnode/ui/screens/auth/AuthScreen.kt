@@ -44,7 +44,7 @@ fun AuthScreen(
     val context = LocalContext.current
 
     fun launchBiometric() {
-        val activity = context as FragmentActivity
+        val activity = context as? FragmentActivity ?: return
         val executor = ContextCompat.getMainExecutor(context)
         val prompt = BiometricPrompt(
             activity, executor,

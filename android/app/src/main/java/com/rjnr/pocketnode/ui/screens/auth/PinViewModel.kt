@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.auth.PinManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +37,7 @@ class PinViewModel @Inject constructor(
     val uiState: StateFlow<PinUiState> = _uiState.asStateFlow()
 
     private var setupPin: String? = null
+    private var lockoutTimerJob: Job? = null
 
     fun setMode(mode: PinMode) {
         val (title, subtitle) = when (mode) {
@@ -64,6 +66,10 @@ class PinViewModel @Inject constructor(
     }
 
     fun getEnteredPin(): String = _uiState.value.enteredDigits
+
+    fun consumePinComplete() {
+        _uiState.update { it.copy(pinComplete = false) }
+    }
 
     fun onDigitEntered(digit: Char) {
         val current = _uiState.value
@@ -137,8 +143,9 @@ class PinViewModel @Inject constructor(
     }
 
     private fun startLockoutTimer() {
+        lockoutTimerJob?.cancel()
         _uiState.update { it.copy(isLockedOut = true, enteredDigits = "", errorMessage = null) }
-        viewModelScope.launch {
+        lockoutTimerJob = viewModelScope.launch {
             while (pinManager.isLockedOut()) {
                 val remainingMs = pinManager.getLockoutRemainingMs()
                 _uiState.update {
