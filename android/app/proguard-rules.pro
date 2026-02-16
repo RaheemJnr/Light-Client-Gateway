@@ -22,3 +22,28 @@
 
 # Keep the data classes used in API models just in case serialization needs them via reflection
 -keep class com.rjnr.pocketnode.data.gateway.models.** { *; }
+
+# Strip all Log calls in release builds
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+    public static int i(...);
+    public static int w(...);
+    public static int e(...);
+    public static int wtf(...);
+}
+
+# Keep CKB SDK (uses reflection for crypto operations)
+-keep class org.nervos.ckb.** { *; }
+
+# Keep BouncyCastle (crypto provider)
+-keep class org.bouncycastle.** { *; }
+
+# Keep secp256k1-kmp (JNI-based crypto)
+-keep class fr.acinq.secp256k1.** { *; }
+
+# Suppress warnings for classes not available on Android
+-dontwarn javax.naming.**
+-dontwarn org.bouncycastle.jsse.**
+-dontwarn org.conscrypt.**
+-dontwarn org.openjsse.**

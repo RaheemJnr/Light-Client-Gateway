@@ -2,6 +2,7 @@ package com.rjnr.pocketnode.data.transaction
 
 import android.util.Log
 import com.rjnr.pocketnode.data.gateway.models.*
+import com.rjnr.pocketnode.data.validation.NetworkValidator
 import com.rjnr.pocketnode.data.wallet.AddressUtils
 import org.nervos.ckb.crypto.Blake2b
 import org.nervos.ckb.crypto.secp256k1.ECKeyPair
@@ -13,7 +14,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class TransactionBuilder @Inject constructor() {
+class TransactionBuilder @Inject constructor(
+    private val networkValidator: NetworkValidator
+) {
 
     companion object {
         private const val TAG = "TransactionBuilder"
@@ -21,6 +24,7 @@ class TransactionBuilder @Inject constructor() {
             "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8"
         const val MIN_CELL_CAPACITY = 61_00000000L
         const val DEFAULT_FEE = 100_000L
+        private const val MAX_TX_SIZE = 596 * 1024 // 596KB CKB protocol limit
 
         // SECP256K1 cell deps for different networks
         // Testnet (Pudge)
@@ -43,13 +47,24 @@ class TransactionBuilder @Inject constructor() {
         Log.d(TAG, "  To: $toAddress")
         Log.d(TAG, "  Amount: $amountShannons shannons")
 
+        // Validate recipient amount meets minimum cell capacity
+        if (amountShannons < MIN_CELL_CAPACITY) {
+            throw IllegalArgumentException(
+                "Transfer amount must be at least ${MIN_CELL_CAPACITY / 100_000_000} CKB (minimum cell capacity)"
+            )
+        }
+
         val senderScript = AddressUtils.parseAddress(fromAddress)
             ?: throw IllegalArgumentException("Invalid sender address")
         val recipientScript = AddressUtils.parseAddress(toAddress)
             ?: throw IllegalArgumentException("Invalid recipient address")
 
-        // Detect network from address prefix
+        // Detect network and validate address consistency
         val isMainnet = fromAddress.startsWith("ckb1")
+        val expectedNetwork = if (isMainnet) NetworkType.MAINNET else NetworkType.TESTNET
+        networkValidator.validateTransferAddresses(fromAddress, toAddress, expectedNetwork)
+            .getOrThrow()
+
         val secp256k1TxHash = if (isMainnet) MAINNET_SECP256K1_TX_HASH else TESTNET_SECP256K1_TX_HASH
         Log.d(TAG, "  Network: ${if (isMainnet) "MAINNET" else "TESTNET"}")
         Log.d(TAG, "  Using SECP256K1 cell dep: $secp256k1TxHash")
@@ -127,8 +142,27 @@ class TransactionBuilder @Inject constructor() {
             witnesses = inputs.map { "0x" }
         )
 
-        Log.d(TAG, "  Signing transaction with ${inputs.size} inputs, ${outputs.size} outputs")
+        // Validate transaction size before signing
+        val estimatedSize = estimateTransactionSize(unsignedTx)
+        if (estimatedSize > MAX_TX_SIZE) {
+            throw IllegalStateException(
+                "Transaction too large: $estimatedSize bytes (max: $MAX_TX_SIZE). " +
+                        "Try sending a smaller amount or consolidate cells first."
+            )
+        }
+
+        Log.d(TAG, "  Signing transaction with ${inputs.size} inputs, ${outputs.size} outputs (est. ${estimatedSize} bytes)")
         return signTransaction(unsignedTx, privateKey, selectedCells.size)
+    }
+
+    private fun estimateTransactionSize(tx: Transaction): Int {
+        return try {
+            val rawSize = serializeRawTransaction(tx).size
+            val witnessOverhead = tx.cellInputs.size * 69 // 65-byte sig + 4-byte length
+            rawSize + witnessOverhead + 100 // buffer for witness structure
+        } catch (_: Exception) {
+            0 // if estimation fails, let it proceed
+        }
     }
 
     private fun selectCells(cells: List<Cell>, requiredCapacity: Long): Pair<List<Cell>, Long> {

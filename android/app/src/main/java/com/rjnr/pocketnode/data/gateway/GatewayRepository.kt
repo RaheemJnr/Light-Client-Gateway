@@ -59,8 +59,8 @@ class GatewayRepository @Inject constructor(
             Log.d(TAG, "🚀 Initializing embedded node...")
             val configName = "mainnet.toml"
             val configFile = File(context.filesDir, configName)
-            
-            // For debugging: Always overwrite config to ensure it's up to date
+
+            // Copy config from assets (deterministic, no retry needed)
             Log.d(TAG, "📁 Copying config from assets to: ${configFile.absolutePath}")
             try {
                 context.assets.open(configName).use { input ->
@@ -73,7 +73,7 @@ class GatewayRepository @Inject constructor(
                 nodeReady.complete(false)
                 return
             }
-            
+
             // Update paths in config
             val configContent = configFile.readText()
             val dataDir = File(context.filesDir, "data")
@@ -85,7 +85,7 @@ class GatewayRepository @Inject constructor(
                     return
                 }
             }
-            
+
             val newConfig = configContent
                 .replace("path = \"data/store\"", "path = \"${File(dataDir, "store.db").absolutePath}\"")
                 .replace("path = \"data/network\"", "path = \"${File(dataDir, "network").absolutePath}\"")
@@ -93,33 +93,46 @@ class GatewayRepository @Inject constructor(
             Log.d(TAG, "📝 Config updated with absolute paths")
             Log.d(TAG, "📄 Final config content:\n$newConfig")
 
-            // Init JNI
-            Log.d(TAG, "⚙️ Calling LightClientNative.nativeInit...")
-            val initResult = LightClientNative.nativeInit(
-                configFile.absolutePath,
-                object : LightClientNative.StatusCallback {
-                    override fun onStatusChange(status: String, data: String) {
-                        Log.d(TAG, "📡 Native Status Change: $status")
-                        _nodeStatus.value = status
-                    }
-                }
-            )
+            // Init and start JNI with retry (transient failures can occur)
+            val maxRetries = 3
+            val backoffMs = longArrayOf(2_000, 4_000, 8_000)
 
-            if (initResult) {
-                Log.d(TAG, "✅ Native init successful, starting node...")
+            for (attempt in 1..maxRetries) {
+                Log.d(TAG, "⚙️ JNI init attempt $attempt/$maxRetries...")
+
+                val initResult = LightClientNative.nativeInit(
+                    configFile.absolutePath,
+                    object : LightClientNative.StatusCallback {
+                        override fun onStatusChange(status: String, data: String) {
+                            Log.d(TAG, "📡 Native Status Change: $status")
+                            _nodeStatus.value = status
+                        }
+                    }
+                )
+
+                if (!initResult) {
+                    Log.e(TAG, "❌ nativeInit returned false (attempt $attempt)")
+                    if (attempt < maxRetries) {
+                        Thread.sleep(backoffMs[attempt - 1])
+                        continue
+                    }
+                    nodeReady.complete(false)
+                    return
+                }
+
                 val startResult = LightClientNative.nativeStart()
                 if (startResult) {
-                    Log.d(TAG, "🚀 Node started successfully")
+                    Log.d(TAG, "🚀 Node started successfully (attempt $attempt)")
                     nodeReady.complete(true)
+                    return
+                }
+
+                Log.e(TAG, "❌ nativeStart returned false (attempt $attempt)")
+                if (attempt < maxRetries) {
+                    Thread.sleep(backoffMs[attempt - 1])
                 } else {
-                    Log.e(TAG, "❌ Node failed to start (nativeStart returned false)")
                     nodeReady.complete(false)
                 }
-            } else {
-                Log.e(TAG, "❌ Failed to init node (nativeInit returned false)")
-                // If init fails, maybe it's because of existing data? 
-                // We could try to clear it, but let's log first.
-                nodeReady.complete(false)
             }
 
         } catch (e: Exception) {
@@ -558,6 +571,16 @@ class GatewayRepository @Inject constructor(
         Log.d(TAG, "📤 sendTransaction: Building transaction JSON...")
         Log.d(TAG, "  Inputs: ${transaction.cellInputs.size}, Outputs: ${transaction.cellOutputs.size}")
 
+        // Pre-flight checks (defense-in-depth, TransactionBuilder also validates)
+        require(transaction.cellInputs.isNotEmpty()) { "Transaction has no inputs" }
+        require(transaction.cellOutputs.isNotEmpty()) { "Transaction has no outputs" }
+        for (output in transaction.cellOutputs) {
+            val capacity = output.capacity.removePrefix("0x").toLong(16)
+            require(capacity >= MIN_CELL_CAPACITY) {
+                "Output capacity ${capacity / 100_000_000.0} CKB is below minimum 61 CKB"
+            }
+        }
+
         val txJson = json.encodeToString(transaction)
         Log.d(TAG, "📤 sendTransaction: JSON length=${txJson.length}")
         Log.d(TAG, "📤 sendTransaction: JSON preview: ${txJson.take(300)}...")
@@ -764,5 +787,6 @@ class GatewayRepository @Inject constructor(
 
     companion object {
         private const val TAG = "GatewayRepository"
+        private const val MIN_CELL_CAPACITY = 61_00000000L // 61 CKB in shannons
     }
 }
