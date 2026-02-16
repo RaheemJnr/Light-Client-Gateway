@@ -130,7 +130,7 @@ class GatewayRepository @Inject constructor(
 
                 Log.e(TAG, "❌ nativeStart returned false (attempt $attempt)")
                 if (attempt < maxRetries) {
-                    Thread.sleep(backoffMs[attempt - 1])
+                    delay(backoffMs[attempt - 1])
                 } else {
                     nodeReady.complete(false)
                 }
