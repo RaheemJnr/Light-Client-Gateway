@@ -46,7 +46,7 @@ Data flows unidirectionally: UI observes StateFlow from ViewModels. ViewModels c
 ## Project Structure
 
 ```
-ckb-wallet-gateway/
+Light-Client-Gateway/
 ├── android/                         # Android project root
 │   ├── app/
 │   │   ├── build.gradle.kts         # Build config, dependencies, signing
