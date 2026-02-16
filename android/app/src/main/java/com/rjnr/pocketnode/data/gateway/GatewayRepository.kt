@@ -55,7 +55,7 @@ class GatewayRepository @Inject constructor(
         }
     }
 
-    private fun initializeNode() {
+    private suspend fun initializeNode() {
         try {
             Log.d(TAG, "🚀 Initializing embedded node...")
             val configName = "mainnet.toml"
@@ -114,7 +114,7 @@ class GatewayRepository @Inject constructor(
                 if (!initResult) {
                     Log.e(TAG, "❌ nativeInit returned false (attempt $attempt)")
                     if (attempt < maxRetries) {
-                        Thread.sleep(backoffMs[attempt - 1])
+                        delay(backoffMs[attempt - 1])
                         continue
                     }
                     nodeReady.complete(false)

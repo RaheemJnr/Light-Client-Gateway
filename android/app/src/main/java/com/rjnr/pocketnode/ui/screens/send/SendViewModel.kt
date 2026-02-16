@@ -156,7 +156,8 @@ class SendViewModel @Inject constructor(
                     toAddress = state.recipientAddress,
                     amountShannons = amountShannons,
                     availableCells = cells,
-                    privateKey = keyManager.getPrivateKey()
+                    privateKey = keyManager.getPrivateKey(),
+                    network = repository.network
                 )
                 Log.d(TAG, "✅ Transaction built: ${signedTx.cellInputs.size} inputs, ${signedTx.cellOutputs.size} outputs")
 

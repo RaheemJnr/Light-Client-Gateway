@@ -40,7 +40,8 @@ class TransactionBuilder @Inject constructor(
         toAddress: String,
         amountShannons: Long,
         availableCells: List<Cell>,
-        privateKey: ByteArray
+        privateKey: ByteArray,
+        network: NetworkType
     ): Transaction {
         Log.d(TAG, "🔨 Building transfer transaction")
         Log.d(TAG, "  From: $fromAddress")
@@ -59,14 +60,13 @@ class TransactionBuilder @Inject constructor(
         val recipientScript = AddressUtils.parseAddress(toAddress)
             ?: throw IllegalArgumentException("Invalid recipient address")
 
-        // Detect network and validate address consistency
-        val isMainnet = fromAddress.startsWith("ckb1")
-        val expectedNetwork = if (isMainnet) NetworkType.MAINNET else NetworkType.TESTNET
-        networkValidator.validateTransferAddresses(fromAddress, toAddress, expectedNetwork)
+        // Validate addresses match the app-level network config
+        networkValidator.validateTransferAddresses(fromAddress, toAddress, network)
             .getOrThrow()
 
+        val isMainnet = network == NetworkType.MAINNET
         val secp256k1TxHash = if (isMainnet) MAINNET_SECP256K1_TX_HASH else TESTNET_SECP256K1_TX_HASH
-        Log.d(TAG, "  Network: ${if (isMainnet) "MAINNET" else "TESTNET"}")
+        Log.d(TAG, "  Network: ${network.name}")
         Log.d(TAG, "  Using SECP256K1 cell dep: $secp256k1TxHash")
 
         val totalRequired = amountShannons + DEFAULT_FEE
@@ -158,8 +158,12 @@ class TransactionBuilder @Inject constructor(
     private fun estimateTransactionSize(tx: Transaction): Int {
         return try {
             val rawSize = serializeRawTransaction(tx).size
-            val witnessOverhead = tx.cellInputs.size * 69 // 65-byte sig + 4-byte length
-            rawSize + witnessOverhead + 100 // buffer for witness structure
+            // 69 bytes per input: 65-byte secp256k1 signature + 4-byte molecule length prefix.
+            // Only the first witness has a full WitnessArgs table (~16 byte header); subsequent
+            // witnesses are empty ("0x"). The +100 buffer covers the first witness table header,
+            // the molecule dynvec wrapper, and any rounding in the molecule encoding.
+            val witnessOverhead = tx.cellInputs.size * 69
+            rawSize + witnessOverhead + 100
         } catch (e: Exception) {
             Log.w(TAG, "Transaction size estimation failed: ${e.message}")
             Int.MAX_VALUE // fail-safe: reject if we can't estimate size
