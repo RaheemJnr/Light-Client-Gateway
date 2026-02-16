@@ -2,6 +2,7 @@ package com.rjnr.pocketnode.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavHostController
@@ -114,6 +115,12 @@ fun CkbNavGraph(
             val setupPin = navController.previousBackStackEntry
                 ?.savedStateHandle
                 ?.get<String>("setup_pin")
+
+            // If CONFIRM mode but setupPin was lost (e.g. process death), go back to SETUP
+            if (mode == PinMode.CONFIRM && setupPin == null) {
+                LaunchedEffect(Unit) { navController.popBackStack() }
+                return@composable
+            }
 
             PinEntryScreen(
                 mode = mode,
