@@ -2,7 +2,7 @@
 
 A sovereign Android wallet for [Nervos CKB](https://www.nervos.org/) that runs an embedded light client directly on your device via JNI. No remote servers, no third-party dependencies for blockchain access — your keys, your node, your wallet.
 
-![CI](https://github.com/RaheemJnr/Light-Client-Gateway/actions/workflows/android-ci.yml/badge.svg)
+![CI](https://github.com/RaheemJnr/pocket-node/actions/workflows/android-ci.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Android-green)
 ![Kotlin](https://img.shields.io/badge/kotlin-2.1-blue)
 ![Min SDK](https://img.shields.io/badge/minSdk-26-brightgreen)
@@ -46,7 +46,7 @@ Data flows unidirectionally: UI observes StateFlow from ViewModels. ViewModels c
 ## Project Structure
 
 ```
-Light-Client-Gateway/
+pocket-node/
 ├── android/                         # Android project root
 │   ├── app/
 │   │   ├── build.gradle.kts         # Build config, dependencies, signing

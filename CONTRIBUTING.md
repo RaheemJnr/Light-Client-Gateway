@@ -17,8 +17,8 @@ Thank you for your interest in contributing to Pocket Node! This document covers
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/RaheemJnr/Light-Client-Gateway.git
-   cd Light-Client-Gateway
+   git clone https://github.com/RaheemJnr/pocket-node.git
+   cd pocket-node
    ```
 
 2. Open the `android/` directory in Android Studio.
