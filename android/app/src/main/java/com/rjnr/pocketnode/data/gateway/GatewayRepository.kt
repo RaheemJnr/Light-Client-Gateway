@@ -3,6 +3,7 @@ package com.rjnr.pocketnode.data.gateway
 import android.content.Context
 import android.util.Log
 import com.rjnr.pocketnode.data.gateway.models.*
+import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.WalletInfo
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
@@ -576,7 +577,7 @@ class GatewayRepository @Inject constructor(
         require(transaction.cellOutputs.isNotEmpty()) { "Transaction has no outputs" }
         for (output in transaction.cellOutputs) {
             val capacity = output.capacity.removePrefix("0x").toLong(16)
-            require(capacity >= MIN_CELL_CAPACITY) {
+            require(capacity >= TransactionBuilder.MIN_CELL_CAPACITY) {
                 "Output capacity ${capacity / 100_000_000.0} CKB is below minimum 61 CKB"
             }
         }
@@ -787,6 +788,5 @@ class GatewayRepository @Inject constructor(
 
     companion object {
         private const val TAG = "GatewayRepository"
-        private const val MIN_CELL_CAPACITY = 61_00000000L // 61 CKB in shannons
     }
 }

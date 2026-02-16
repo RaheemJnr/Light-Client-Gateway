@@ -160,8 +160,9 @@ class TransactionBuilder @Inject constructor(
             val rawSize = serializeRawTransaction(tx).size
             val witnessOverhead = tx.cellInputs.size * 69 // 65-byte sig + 4-byte length
             rawSize + witnessOverhead + 100 // buffer for witness structure
-        } catch (_: Exception) {
-            0 // if estimation fails, let it proceed
+        } catch (e: Exception) {
+            Log.w(TAG, "Transaction size estimation failed: ${e.message}")
+            Int.MAX_VALUE // fail-safe: reject if we can't estimate size
         }
     }
 
