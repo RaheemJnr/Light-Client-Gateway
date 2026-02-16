@@ -102,6 +102,7 @@ fun HomeScreen(
     onNavigateToReceive: () -> Unit = {},
     onNavigateToStatus: () -> Unit = {},
     onNavigateToBackup: () -> Unit = {},
+    onNavigateToSecuritySettings: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -216,6 +217,16 @@ fun HomeScreen(
                                 },
                                 leadingIcon = {
                                     Icon(Icons.Default.FileUpload, contentDescription = null)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Security Settings") },
+                                onClick = {
+                                    showSyncMenu = false
+                                    onNavigateToSecuritySettings()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Security, contentDescription = null)
                                 }
                             )
                         }

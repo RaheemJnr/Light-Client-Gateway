@@ -9,6 +9,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
+import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.ui.navigation.CkbNavGraph
 import com.rjnr.pocketnode.ui.navigation.Screen
@@ -21,14 +22,17 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var repository: GatewayRepository
 
+    @Inject
+    lateinit var pinManager: PinManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        
-        val startDestination = if (repository.hasWallet()) {
-            Screen.Home.route
-        } else {
-            Screen.Onboarding.route
+
+        val startDestination = when {
+            !repository.hasWallet() -> Screen.Onboarding.route
+            pinManager.hasPin() -> Screen.Auth.route
+            else -> Screen.Home.route
         }
 
         setContent {
