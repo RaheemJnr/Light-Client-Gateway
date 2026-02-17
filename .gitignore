@@ -177,6 +177,11 @@ coverage/
 .coverage
 
 # ===================
+# Documentation (local only)
+# ===================
+docs/
+
+# ===================
 # Misc
 # ===================
 *.bak

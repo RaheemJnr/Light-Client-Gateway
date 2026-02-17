@@ -5,8 +5,9 @@
 If you discover a security vulnerability in Pocket Node, please report it responsibly:
 
 1. **Do NOT open a public issue.** Security vulnerabilities should be reported privately.
-2. Use [GitHub Security Advisories](https://github.com/RaheemJnr/pocket-node/security/advisories/new) to report the vulnerability.
-3. Include:
+2. **Email**: [mumedian6@gmail.com](mailto:mumedian6@gmail.com) for critical vulnerabilities.
+3. **GitHub**: Use [Security Advisories](https://github.com/RaheemJnr/pocket-node/security/advisories/new) for non-critical reports.
+4. Include:
    - Description of the vulnerability
    - Steps to reproduce
    - Potential impact
