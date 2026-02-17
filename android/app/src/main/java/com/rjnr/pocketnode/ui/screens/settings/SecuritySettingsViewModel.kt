@@ -1,5 +1,6 @@
 package com.rjnr.pocketnode.ui.screens.settings
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.auth.PinManager
@@ -26,6 +27,7 @@ data class SecuritySettingsUiState(
 
 @HiltViewModel
 class SecuritySettingsViewModel @Inject constructor(
+    private val savedStateHandle: SavedStateHandle,
     private val authManager: AuthManager,
     private val pinManager: PinManager
 ) : ViewModel() {
@@ -33,21 +35,25 @@ class SecuritySettingsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(SecuritySettingsUiState())
     val uiState: StateFlow<SecuritySettingsUiState> = _uiState.asStateFlow()
 
-    var pendingAction: PendingSecurityAction? = null
-        private set
+    private companion object {
+        const val KEY_PENDING_ACTION = "pending_action"
+    }
 
     fun setPendingAction(action: PendingSecurityAction) {
-        pendingAction = action
+        savedStateHandle[KEY_PENDING_ACTION] = action.name
     }
 
     fun executePendingAction() {
-        when (pendingAction) {
+        val action = savedStateHandle.get<String>(KEY_PENDING_ACTION)?.let {
+            runCatching { PendingSecurityAction.valueOf(it) }.getOrNull()
+        }
+        when (action) {
             PendingSecurityAction.REMOVE_PIN -> removePin()
             PendingSecurityAction.ENABLE_BIOMETRIC -> toggleBiometric(true)
             PendingSecurityAction.DISABLE_BIOMETRIC -> toggleBiometric(false)
             null -> {}
         }
-        pendingAction = null
+        savedStateHandle.remove<String>(KEY_PENDING_ACTION)
     }
 
     init {
