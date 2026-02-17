@@ -78,7 +78,7 @@ class SecuritySettingsViewModel @Inject constructor(
         }
     }
 
-    fun toggleBiometric(enabled: Boolean) {
+    private fun toggleBiometric(enabled: Boolean) {
         if (enabled && !pinManager.hasPin()) {
             _uiState.update { it.copy(error = "Set a PIN first to enable biometric unlock") }
             return
@@ -87,7 +87,7 @@ class SecuritySettingsViewModel @Inject constructor(
         _uiState.update { it.copy(isBiometricEnabled = enabled, error = null) }
     }
 
-    fun removePin() {
+    private fun removePin() {
         pinManager.removePin()
         authManager.setBiometricEnabled(false)
         _uiState.update {
