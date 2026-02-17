@@ -1,5 +1,6 @@
 package com.rjnr.pocketnode.ui.screens.settings
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.auth.PinManager
@@ -9,6 +10,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import javax.inject.Inject
+
+enum class PendingSecurityAction {
+    REMOVE_PIN,
+    ENABLE_BIOMETRIC,
+    DISABLE_BIOMETRIC
+}
 
 data class SecuritySettingsUiState(
     val isBiometricAvailable: Boolean = false,
@@ -20,12 +27,34 @@ data class SecuritySettingsUiState(
 
 @HiltViewModel
 class SecuritySettingsViewModel @Inject constructor(
+    private val savedStateHandle: SavedStateHandle,
     private val authManager: AuthManager,
     private val pinManager: PinManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SecuritySettingsUiState())
     val uiState: StateFlow<SecuritySettingsUiState> = _uiState.asStateFlow()
+
+    private companion object {
+        const val KEY_PENDING_ACTION = "pending_action"
+    }
+
+    fun setPendingAction(action: PendingSecurityAction) {
+        savedStateHandle[KEY_PENDING_ACTION] = action.name
+    }
+
+    fun executePendingAction() {
+        val action = savedStateHandle.get<String>(KEY_PENDING_ACTION)?.let {
+            runCatching { PendingSecurityAction.valueOf(it) }.getOrNull()
+        }
+        when (action) {
+            PendingSecurityAction.REMOVE_PIN -> removePin()
+            PendingSecurityAction.ENABLE_BIOMETRIC -> toggleBiometric(true)
+            PendingSecurityAction.DISABLE_BIOMETRIC -> toggleBiometric(false)
+            null -> {}
+        }
+        savedStateHandle.remove<String>(KEY_PENDING_ACTION)
+    }
 
     init {
         refreshState()
@@ -49,7 +78,7 @@ class SecuritySettingsViewModel @Inject constructor(
         }
     }
 
-    fun toggleBiometric(enabled: Boolean) {
+    private fun toggleBiometric(enabled: Boolean) {
         if (enabled && !pinManager.hasPin()) {
             _uiState.update { it.copy(error = "Set a PIN first to enable biometric unlock") }
             return
@@ -58,7 +87,7 @@ class SecuritySettingsViewModel @Inject constructor(
         _uiState.update { it.copy(isBiometricEnabled = enabled, error = null) }
     }
 
-    fun removePin() {
+    private fun removePin() {
         pinManager.removePin()
         authManager.setBiometricEnabled(false)
         _uiState.update {

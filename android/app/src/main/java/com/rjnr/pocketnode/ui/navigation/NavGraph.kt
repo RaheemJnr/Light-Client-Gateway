@@ -140,8 +140,17 @@ fun CkbNavGraph(
                             )
                         }
                         PinMode.VERIFY -> {
-                            navController.navigate(Screen.Home.route) {
-                                popUpTo(Screen.Auth.route) { inclusive = true }
+                            val fromSettings = navController.previousBackStackEntry
+                                ?.destination?.route == Screen.SecuritySettings.route
+                            if (fromSettings) {
+                                navController.previousBackStackEntry
+                                    ?.savedStateHandle
+                                    ?.set("pin_verified", true)
+                                navController.popBackStack()
+                            } else {
+                                navController.navigate(Screen.Home.route) {
+                                    popUpTo(Screen.Auth.route) { inclusive = true }
+                                }
                             }
                         }
                     }
@@ -168,10 +177,23 @@ fun CkbNavGraph(
                 onDispose { backStackEntry.lifecycle.removeObserver(observer) }
             }
 
+            // Observe pin_verified result from PinEntry screen
+            val pinVerified = backStackEntry.savedStateHandle
+                .get<Boolean>("pin_verified") == true
+            if (pinVerified) {
+                LaunchedEffect(Unit) {
+                    backStackEntry.savedStateHandle.remove<Boolean>("pin_verified")
+                    viewModel.executePendingAction()
+                }
+            }
+
             SecuritySettingsScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToPinSetup = {
                     navController.navigate(Screen.PinEntry.createRoute("setup"))
+                },
+                onNavigateToPinVerify = {
+                    navController.navigate(Screen.PinEntry.createRoute("verify"))
                 },
                 viewModel = viewModel
             )
