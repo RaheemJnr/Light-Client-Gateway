@@ -46,6 +46,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 fun SecuritySettingsScreen(
     onNavigateBack: () -> Unit = {},
     onNavigateToPinSetup: () -> Unit = {},
+    onNavigateToPinVerify: () -> Unit = {},
     viewModel: SecuritySettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -68,8 +69,9 @@ fun SecuritySettingsScreen(
             },
             confirmButton = {
                 Button(onClick = {
-                    viewModel.removePin()
                     showRemoveDialog = false
+                    viewModel.setPendingAction(PendingSecurityAction.REMOVE_PIN)
+                    onNavigateToPinVerify()
                 }) {
                     Text("Remove")
                 }
@@ -187,7 +189,12 @@ fun SecuritySettingsScreen(
 
                         Switch(
                             checked = uiState.isBiometricEnabled,
-                            onCheckedChange = { viewModel.toggleBiometric(it) },
+                            onCheckedChange = { enabled ->
+                                val action = if (enabled) PendingSecurityAction.ENABLE_BIOMETRIC
+                                    else PendingSecurityAction.DISABLE_BIOMETRIC
+                                viewModel.setPendingAction(action)
+                                onNavigateToPinVerify()
+                            },
                             enabled = uiState.isBiometricAvailable && uiState.hasPin
                         )
                     }

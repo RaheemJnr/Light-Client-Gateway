@@ -10,6 +10,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import javax.inject.Inject
 
+enum class PendingSecurityAction {
+    REMOVE_PIN,
+    ENABLE_BIOMETRIC,
+    DISABLE_BIOMETRIC
+}
+
 data class SecuritySettingsUiState(
     val isBiometricAvailable: Boolean = false,
     val isBiometricEnabled: Boolean = false,
@@ -26,6 +32,23 @@ class SecuritySettingsViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(SecuritySettingsUiState())
     val uiState: StateFlow<SecuritySettingsUiState> = _uiState.asStateFlow()
+
+    var pendingAction: PendingSecurityAction? = null
+        private set
+
+    fun setPendingAction(action: PendingSecurityAction) {
+        pendingAction = action
+    }
+
+    fun executePendingAction() {
+        when (pendingAction) {
+            PendingSecurityAction.REMOVE_PIN -> removePin()
+            PendingSecurityAction.ENABLE_BIOMETRIC -> toggleBiometric(true)
+            PendingSecurityAction.DISABLE_BIOMETRIC -> toggleBiometric(false)
+            null -> {}
+        }
+        pendingAction = null
+    }
 
     init {
         refreshState()
