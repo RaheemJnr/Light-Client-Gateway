@@ -48,8 +48,10 @@ fun ReceiveScreen(
         ) {
             Spacer(modifier = Modifier.height(32.dp))
             
+            val networkLabel = uiState.currentNetwork.name.lowercase()
+                .replaceFirstChar { it.uppercase() }
             Text(
-                text = "Your CKB Address",
+                text = "Your CKB Address ($networkLabel)",
                 style = MaterialTheme.typography.titleLarge
             )
             

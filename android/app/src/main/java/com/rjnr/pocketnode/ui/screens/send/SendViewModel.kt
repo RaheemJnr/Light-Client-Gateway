@@ -61,6 +61,24 @@ class SendViewModel @Inject constructor(
                 _uiState.update { it.copy(availableBalance = balance?.capacityAsLong() ?: 0L) }
             }
         }
+
+        // Cancel in-flight transaction if network changes mid-send
+        viewModelScope.launch {
+            repository.network.collect {
+                val state = _uiState.value.transactionState
+                if (state != TransactionState.IDLE && state != TransactionState.CONFIRMED && state != TransactionState.FAILED) {
+                    pollingJob?.cancel()
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = "Network changed. Transaction cancelled.",
+                            transactionState = TransactionState.FAILED,
+                            statusMessage = "Transaction cancelled due to network switch"
+                        )
+                    }
+                }
+            }
+        }
     }
 
     fun updateRecipient(address: String) {
@@ -136,8 +154,8 @@ class SendViewModel @Inject constructor(
                 Log.d(TAG, "  Recipient: ${state.recipientAddress}")
                 Log.d(TAG, "  Amount: ${state.amountCkb} CKB ($amountShannons shannons)")
 
-                val walletInfo = keyManager.getWalletInfo()
-                val address = walletInfo.mainnetAddress
+                val address = repository.getCurrentAddress()
+                    ?: throw Exception("Wallet not initialized")
                 Log.d(TAG, "  From address: $address")
 
                 Log.d(TAG, "🔍 Fetching available cells...")
@@ -157,7 +175,7 @@ class SendViewModel @Inject constructor(
                     amountShannons = amountShannons,
                     availableCells = cells,
                     privateKey = keyManager.getPrivateKey(),
-                    network = repository.network
+                    network = repository.currentNetwork
                 )
                 Log.d(TAG, "✅ Transaction built: ${signedTx.cellInputs.size} inputs, ${signedTx.cellOutputs.size} outputs")
 

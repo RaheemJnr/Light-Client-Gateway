@@ -64,7 +64,8 @@ pocket-node/
 │   │   └── src/main/
 │   │       ├── AndroidManifest.xml   # Permissions: INTERNET, CAMERA
 │   │       ├── assets/
-│   │       │   └── mainnet.toml      # CKB light client config (bootnodes, RPC)
+│   │       │   ├── mainnet.toml      # CKB mainnet light client config (bootnodes, RPC)
+│   │       │   └── testnet.toml      # CKB testnet (Pudge) light client config
 │   │       └── java/
 │   │           ├── com/nervosnetwork/ckblightclient/
 │   │           │   └── LightClientNative.kt   # JNI bridge (17 query fns + lifecycle)
@@ -239,7 +240,8 @@ Use this MCP server when working on CKB-specific logic:
 - Hardcoded checkpoint: block 18,300,000
 
 ### Light Client Config
-- Location: `assets/mainnet.toml`, copied to `context.filesDir` at runtime
+- Location: `assets/mainnet.toml` and `assets/testnet.toml`, copied to `context.filesDir` at runtime
+- Data directories: `data/mainnet/` and `data/testnet/` (isolated per network)
 - RPC binds to `127.0.0.1:9000` (internal only)
 - 15 globally distributed bootnodes
 - Storage: ~5MB on mainnet (per Magickbase/Tea measurements)
@@ -248,7 +250,7 @@ Use this MCP server when working on CKB-specific logic:
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `GatewayRepository.kt` | ~735 | Central repository: node init, balance, cells, transactions, send, sync |
+| `GatewayRepository.kt` | ~885 | Central repository: node init, balance, cells, transactions, send, sync, network switching |
 | `KeyManager.kt` | ~147 | Private key gen/import, storage (EncryptedSharedPreferences), signing |
 | `TransactionBuilder.kt` | ~421 | Tx construction, molecule encoding, cell selection, signing |
 | `LightClientNative.kt` | ~233 | JNI bridge: nativeInit/Start/Stop + 17 query functions |
@@ -286,12 +288,10 @@ Use this MCP server when working on CKB-specific logic:
 
 ## Current Limitations
 - Single wallet only (no multi-wallet support)
-- No BIP39 mnemonic (keys are raw secp256k1 private keys)
-- No biometric or PIN authentication
-- Backup is raw private key hex (not mnemonic words)
 - Release signing uses debug keystore
 - No unit tests or instrumentation tests yet
 - No pagination beyond initial page for cells/transactions
+- Network switch requires JNI re-initialization (nativeStop → nativeInit → nativeStart); unknown if Rust side fully supports this within a single process lifetime
 
 ## DAO Grant Milestones
 
