@@ -13,7 +13,9 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.rjnr.pocketnode.data.gateway.models.displayName
 import com.rjnr.pocketnode.ui.screens.home.HomeViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -24,6 +26,7 @@ fun ReceiveScreen(
     val uiState by viewModel.uiState.collectAsState()
     val clipboardManager = LocalClipboardManager.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     
     Scaffold(
         topBar = {
@@ -48,10 +51,8 @@ fun ReceiveScreen(
         ) {
             Spacer(modifier = Modifier.height(32.dp))
             
-            val networkLabel = uiState.currentNetwork.name.lowercase()
-                .replaceFirstChar { it.uppercase() }
             Text(
-                text = "Your CKB Address ($networkLabel)",
+                text = "Your CKB Address (${uiState.currentNetwork.displayName})",
                 style = MaterialTheme.typography.titleLarge
             )
             
@@ -72,6 +73,9 @@ fun ReceiveScreen(
                 onClick = {
                     if (uiState.address.isNotEmpty()) {
                         clipboardManager.setText(AnnotatedString(uiState.address))
+                        scope.launch {
+                            snackbarHostState.showSnackbar("Address copied to clipboard")
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth()

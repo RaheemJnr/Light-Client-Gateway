@@ -99,6 +99,8 @@ class WalletPreferences @Inject constructor(
 
     // --- Utilities ---
 
+    // Clearing prefs removes KEY_SELECTED_NETWORK, so migrateIfNeeded() re-runs on next startup.
+    // That's benign: old un-namespaced keys are already gone, it just re-sets default to MAINNET.
     fun clear() {
         prefs.edit().clear().apply()
     }
@@ -112,44 +114,40 @@ class WalletPreferences @Inject constructor(
         if (prefs.contains(KEY_SELECTED_NETWORK)) return // already migrated
 
         val editor = prefs.edit()
-        var needsMigration = false
+        val mainnetPrefix = "${NetworkType.MAINNET.name.lowercase()}_"
 
         // Migrate sync_mode
         prefs.getString(KEY_SYNC_MODE, null)?.let { oldValue ->
-            editor.putString("mainnet_$KEY_SYNC_MODE", oldValue)
+            editor.putString("${mainnetPrefix}$KEY_SYNC_MODE", oldValue)
             editor.remove(KEY_SYNC_MODE)
-            needsMigration = true
         }
 
         // Migrate custom_block_height
         if (prefs.contains(KEY_CUSTOM_BLOCK_HEIGHT)) {
             val oldValue = prefs.getLong(KEY_CUSTOM_BLOCK_HEIGHT, -1L)
             if (oldValue >= 0) {
-                editor.putLong("mainnet_$KEY_CUSTOM_BLOCK_HEIGHT", oldValue)
+                editor.putLong("${mainnetPrefix}$KEY_CUSTOM_BLOCK_HEIGHT", oldValue)
             }
             editor.remove(KEY_CUSTOM_BLOCK_HEIGHT)
-            needsMigration = true
         }
 
         // Migrate initial_sync_completed
         if (prefs.contains(KEY_INITIAL_SYNC_COMPLETED)) {
             val oldValue = prefs.getBoolean(KEY_INITIAL_SYNC_COMPLETED, false)
-            editor.putBoolean("mainnet_$KEY_INITIAL_SYNC_COMPLETED", oldValue)
+            editor.putBoolean("${mainnetPrefix}$KEY_INITIAL_SYNC_COMPLETED", oldValue)
             editor.remove(KEY_INITIAL_SYNC_COMPLETED)
-            needsMigration = true
         }
 
         // Migrate last_synced_block
         if (prefs.contains(KEY_LAST_SYNCED_BLOCK)) {
             val oldValue = prefs.getLong(KEY_LAST_SYNCED_BLOCK, 0L)
-            editor.putLong("mainnet_$KEY_LAST_SYNCED_BLOCK", oldValue)
+            editor.putLong("${mainnetPrefix}$KEY_LAST_SYNCED_BLOCK", oldValue)
             editor.remove(KEY_LAST_SYNCED_BLOCK)
-            needsMigration = true
         }
 
         // Set default network (always, even if no old keys existed)
         editor.putString(KEY_SELECTED_NETWORK, NetworkType.MAINNET.name)
-        editor.apply()
+        editor.commit() // Synchronous to ensure migration guard persists before process death
     }
 
     companion object {

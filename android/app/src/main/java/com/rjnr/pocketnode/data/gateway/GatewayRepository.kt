@@ -88,15 +88,30 @@ class GatewayRepository @Inject constructor(
         if (mainnetDir.exists() || (!storeDb.exists() && !networkDir.exists())) return
 
         Log.d(TAG, "Migrating data directory to per-network layout...")
-        mainnetDir.mkdirs()
+        if (!mainnetDir.mkdirs() && !mainnetDir.exists()) {
+            Log.e(TAG, "Failed to create mainnet directory, skipping migration")
+            return
+        }
 
+        var migrationOk = true
         if (storeDb.exists()) {
-            storeDb.renameTo(File(mainnetDir, "store.db"))
-            Log.d(TAG, "Moved store.db -> mainnet/store.db")
+            if (storeDb.renameTo(File(mainnetDir, "store.db"))) {
+                Log.d(TAG, "Moved store.db -> mainnet/store.db")
+            } else {
+                Log.e(TAG, "Failed to move store.db to mainnet/store.db")
+                migrationOk = false
+            }
         }
         if (networkDir.exists()) {
-            networkDir.renameTo(File(mainnetDir, "network"))
-            Log.d(TAG, "Moved network/ -> mainnet/network/")
+            if (networkDir.renameTo(File(mainnetDir, "network"))) {
+                Log.d(TAG, "Moved network/ -> mainnet/network/")
+            } else {
+                Log.e(TAG, "Failed to move network/ to mainnet/network/")
+                migrationOk = false
+            }
+        }
+        if (!migrationOk) {
+            Log.e(TAG, "Migration incomplete — manual intervention may be needed")
         }
     }
 
@@ -202,7 +217,8 @@ class GatewayRepository @Inject constructor(
         if (_isSwitchingNetwork.value) throw Exception("Network switch already in progress")
 
         _isSwitchingNetwork.value = true
-        Log.d(TAG, "Switching network: ${currentNetwork.name} -> ${target.name}")
+        val previousNetwork = currentNetwork
+        Log.d(TAG, "Switching network: ${previousNetwork.name} -> ${target.name}")
 
         try {
             // 1. Stop current node with timeout
@@ -218,13 +234,22 @@ class GatewayRepository @Inject constructor(
             _isRegistered.value = false
             _nodeReady.value = null
 
-            // 3. Persist new network (commit point)
+            // 3. Attempt to initialize the new network BEFORE persisting
             _network.value = target
-            walletPreferences.setSelectedNetwork(target)
-
-            // 4. Re-initialize node for the new network
             initializeNode(target)
-            if (!awaitNodeReady()) throw Exception("Node failed to initialize on ${target.name}")
+            if (!awaitNodeReady()) {
+                // Init failed — fall back to previous network
+                Log.w(TAG, "Init failed on ${target.name}, falling back to ${previousNetwork.name}")
+                _network.value = previousNetwork
+                initializeNode(previousNetwork)
+                if (!awaitNodeReady()) {
+                    throw Exception("Node failed to initialize on both ${target.name} and ${previousNetwork.name}")
+                }
+                throw Exception("Node failed to initialize on ${target.name}, reverted to ${previousNetwork.name}")
+            }
+
+            // 4. Persist new network (commit point — only after successful init)
+            walletPreferences.setSelectedNetwork(target)
 
             // 5. Re-register wallet script with the new network's sync preferences
             val info = _walletInfo.value

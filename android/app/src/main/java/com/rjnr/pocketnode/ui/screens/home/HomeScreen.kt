@@ -94,6 +94,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
+import com.rjnr.pocketnode.data.gateway.models.displayName
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -128,8 +129,7 @@ fun HomeScreen(
     // Network switch confirmation dialog
     val pendingSwitch = uiState.pendingNetworkSwitch
     if (uiState.showNetworkSwitchDialog && pendingSwitch != null) {
-        val targetName = pendingSwitch.name.lowercase()
-            .replaceFirstChar { it.uppercase() }
+        val targetName = pendingSwitch.displayName
         AlertDialog(
             onDismissRequest = { viewModel.cancelNetworkSwitch() },
             title = { Text("Switch to $targetName?") },
@@ -253,8 +253,7 @@ fun HomeScreen(
                             )
                             val switchTarget = if (uiState.currentNetwork == NetworkType.MAINNET)
                                 NetworkType.TESTNET else NetworkType.MAINNET
-                            val switchLabel = "Switch to ${switchTarget.name.lowercase()
-                                .replaceFirstChar { it.uppercase() }}"
+                            val switchLabel = "Switch to ${switchTarget.displayName}"
                             DropdownMenuItem(
                                 text = { Text(switchLabel) },
                                 onClick = {
@@ -305,7 +304,7 @@ fun HomeScreen(
     ) { padding ->
         if (uiState.isSwitchingNetwork) {
             Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
                 Column(
@@ -322,7 +321,7 @@ fun HomeScreen(
             }
         } else if (uiState.isLoading) {
             Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
                 Column(
@@ -1515,7 +1514,7 @@ private fun DetailRow(
 private fun NetworkBadge(network: NetworkType) {
     val isTestnet = network == NetworkType.TESTNET
     val backgroundColor = if (isTestnet) Color(0xFFF57C00) else MaterialTheme.colorScheme.primary
-    val label = if (isTestnet) "Testnet" else "Mainnet"
+    val textColor = if (isTestnet) Color.White else MaterialTheme.colorScheme.onPrimary
 
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -1523,10 +1522,10 @@ private fun NetworkBadge(network: NetworkType) {
         modifier = Modifier.padding(vertical = 4.dp)
     ) {
         Text(
-            text = label,
+            text = network.displayName,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White
+            color = textColor
         )
     }
 }

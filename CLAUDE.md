@@ -237,7 +237,7 @@ Use this MCP server when working on CKB-specific logic:
 - `RECENT`: last ~200,000 blocks (~30 days)
 - `FULL_HISTORY`: from genesis (block 0)
 - `CUSTOM`: user-specified block height
-- Hardcoded checkpoint: block 18,300,000
+- Per-network checkpoint via `getCheckpoint()` in ApiModels.kt (mainnet: 18,300,000, testnet: 0)
 
 ### Light Client Config
 - Location: `assets/mainnet.toml` and `assets/testnet.toml`, copied to `context.filesDir` at runtime

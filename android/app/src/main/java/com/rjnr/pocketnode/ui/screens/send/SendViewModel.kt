@@ -47,6 +47,7 @@ class SendViewModel @Inject constructor(
     val uiState: StateFlow<SendUiState> = _uiState.asStateFlow()
 
     private var pollingJob: Job? = null
+    private var sendJob: Job? = null
 
     companion object {
         private const val TAG = "SendViewModel"
@@ -67,6 +68,7 @@ class SendViewModel @Inject constructor(
             repository.network.collect {
                 val state = _uiState.value.transactionState
                 if (state != TransactionState.IDLE && state != TransactionState.CONFIRMED && state != TransactionState.FAILED) {
+                    sendJob?.cancel()
                     pollingJob?.cancel()
                     _uiState.update {
                         it.copy(
@@ -139,7 +141,7 @@ class SendViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
+        sendJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isLoading = true,
@@ -455,6 +457,7 @@ class SendViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        sendJob?.cancel()
         pollingJob?.cancel()
     }
 }
