@@ -7,6 +7,7 @@ import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.TransactionStatusResponse
 import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
+import com.rjnr.pocketnode.util.sanitizeAmount
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -88,26 +89,25 @@ class SendViewModel @Inject constructor(
     }
 
     fun updateAmount(amount: String) {
-        if (amount.isEmpty() || amount.matches(Regex("^\\d*\\.?\\d*$"))) {
-            val amountShannons = try {
-                if (amount.isEmpty()) 0L else (amount.toDouble() * 100_000_000).toLong()
-            } catch (e: Exception) {
-                0L
-            }
-
-            val estimatedFee = 1000L // Default placeholder fee
-            val potentialChange = _uiState.value.availableBalance - amountShannons - estimatedFee
-            val minCapacity = 61_00000000L
-
-            val warning = if (potentialChange in 1 until minCapacity) {
-                val lostCkb = potentialChange / 100_000_000.0
-                "Warning: Your remaining %.4f CKB is below the 61 CKB minimum and will be lost as a fee.".format(lostCkb)
-            } else {
-                null
-            }
-
-            _uiState.update { it.copy(amountCkb = amount, error = null, burnWarning = warning) }
+        val sanitized = sanitizeAmount(amount) ?: return  // silently reject invalid chars
+        val amountShannons = try {
+            if (sanitized.isEmpty()) 0L else (sanitized.toDouble() * 100_000_000).toLong()
+        } catch (e: Exception) {
+            0L
         }
+
+        val estimatedFee = 1000L // Default placeholder fee
+        val potentialChange = _uiState.value.availableBalance - amountShannons - estimatedFee
+        val minCapacity = 61_00000000L
+
+        val warning = if (potentialChange in 1 until minCapacity) {
+            val lostCkb = potentialChange / 100_000_000.0
+            "Warning: Your remaining %.4f CKB is below the 61 CKB minimum and will be lost as a fee.".format(lostCkb)
+        } else {
+            null
+        }
+
+        _uiState.update { it.copy(amountCkb = sanitized, error = null, burnWarning = warning) }
     }
 
     fun sendTransaction() {
