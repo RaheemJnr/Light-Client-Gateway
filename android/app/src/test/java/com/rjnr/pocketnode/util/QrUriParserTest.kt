@@ -40,4 +40,9 @@ class QrUriParserTest {
         assertNull(extractCkbAddress("not-an-address"))
         assertNull(extractCkbAddress("https://example.com/no-ckb"))
     }
+
+    @Test
+    fun `null input returns null`() {
+        assertNull(extractCkbAddress(null))
+    }
 }
