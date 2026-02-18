@@ -57,6 +57,7 @@ class SendViewModel @Inject constructor(
         private const val POLLING_INTERVAL_MS = 3000L // Poll every 3 seconds
         private const val MAX_POLLING_ATTEMPTS = 120  // Stop after ~6 minutes
         private const val REQUIRED_CONFIRMATIONS = 3  // Consider fully confirmed after 3 confirmations
+        private const val DEFAULT_FEE_SHANNONS = 100_000L // 0.001 CKB
     }
 
     init {
@@ -101,7 +102,7 @@ class SendViewModel @Inject constructor(
             0L
         }
 
-        val estimatedFee = 1000L // Default placeholder fee
+        val estimatedFee = DEFAULT_FEE_SHANNONS
         val potentialChange = _uiState.value.availableBalance - amountShannons - estimatedFee
         val minCapacity = 61_00000000L
 
@@ -117,7 +118,7 @@ class SendViewModel @Inject constructor(
 
     fun setMaxAmount() {
         val balanceShannons = _uiState.value.availableBalance
-        val feeShannons = 100_000L // 0.001 CKB default fee
+        val feeShannons = DEFAULT_FEE_SHANNONS
         val maxShannons = (balanceShannons - feeShannons).coerceAtLeast(0L)
         val maxCkb = maxShannons / 100_000_000.0
         // Format to 8 decimal places, then strip trailing zeros (and trailing dot)
