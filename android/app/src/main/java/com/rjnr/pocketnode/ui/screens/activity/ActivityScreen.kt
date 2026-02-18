@@ -87,21 +87,11 @@ fun ActivityScreen(
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
 
-    val filtered = viewModel.filteredTransactions(uiState)
-    val grouped = groupByDate(filtered)
-
-    selectedTransaction?.let { tx ->
-        TransactionDetailSheet(
-            transaction = tx,
-            network = uiState.currentNetwork,
-            onDismiss = { selectedTransaction = null },
-            onCopyTxHash = { hash ->
-                clipboardManager.setText(AnnotatedString(hash))
-            },
-            onOpenExplorer = { url ->
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-            }
-        )
+    val filtered = remember(uiState.transactions, uiState.filter) {
+        viewModel.filteredTransactions(uiState)
+    }
+    val grouped = remember(filtered) {
+        groupByDate(filtered)
     }
 
     Scaffold(
@@ -176,29 +166,22 @@ fun ActivityScreen(
                                 )
                             }
                         }
-
-                        if (uiState.hasMore) {
-                            item(key = "load_more") {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Button(
-                                        onClick = { viewModel.loadTransactions() },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Green,
-                                            contentColor = Color.Black
-                                        )
-                                    ) {
-                                        Text("Load more", fontWeight = FontWeight.SemiBold)
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
+            }
+
+            selectedTransaction?.let { tx ->
+                TransactionDetailSheet(
+                    transaction = tx,
+                    network = uiState.currentNetwork,
+                    onDismiss = { selectedTransaction = null },
+                    onCopyTxHash = { hash ->
+                        clipboardManager.setText(AnnotatedString(hash))
+                    },
+                    onOpenExplorer = { url ->
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    }
+                )
             }
         }
     }
