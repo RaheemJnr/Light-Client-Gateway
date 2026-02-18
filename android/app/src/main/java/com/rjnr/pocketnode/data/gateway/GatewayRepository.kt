@@ -761,6 +761,18 @@ class GatewayRepository @Inject constructor(
             // For display, we show the absolute value as the amount
             val amount = if (netChangeShannons < 0) -netChangeShannons else netChangeShannons
 
+            // Attempt to fetch block header to get real timestamp.
+            // nativeGetTransaction gives us the blockHash, then nativeGetHeader gives the timestamp.
+            val blockTimestampHex: String? = runCatching {
+                val txWithStatus = LightClientNative.nativeGetTransaction(txHash)
+                    ?.let { json.decodeFromString<JniTransactionWithStatus>(it) }
+                val blockHash = txWithStatus?.txStatus?.blockHash
+                if (blockHash != null) {
+                    val headerJson = LightClientNative.nativeGetHeader(blockHash)
+                    headerJson?.let { json.decodeFromString<JniHeaderView>(it).timestamp }
+                } else null
+            }.getOrNull()
+
             TransactionRecord(
                 txHash = txHash,
                 blockNumber = firstInteraction.blockNumber,
@@ -769,7 +781,8 @@ class GatewayRepository @Inject constructor(
                 balanceChange = "0x${amount.toString(16)}",
                 direction = direction,
                 fee = "0x0", // Fee calculation could be added if needed: Sum(Inputs) - Sum(Outputs)
-                confirmations = 10 // Placeholder
+                confirmations = 10, // Placeholder
+                blockTimestampHex = blockTimestampHex
             )
         }
 

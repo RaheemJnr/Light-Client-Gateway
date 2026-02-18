@@ -95,6 +95,7 @@ import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
 import com.rjnr.pocketnode.data.gateway.models.displayName
+import com.rjnr.pocketnode.util.formatBlockTimestamp
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1270,7 +1271,7 @@ private fun TransactionItem(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = transaction.getRelativeTimeString(),
+                        text = formatBlockTimestamp(transaction.blockTimestampHex),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1435,7 +1436,7 @@ private fun TransactionDetailSheet(
 
             DetailRow(
                 label = "Time",
-                value = transaction.getRelativeTimeString()
+                value = formatBlockTimestamp(transaction.blockTimestampHex)
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
