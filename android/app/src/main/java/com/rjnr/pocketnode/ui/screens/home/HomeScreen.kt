@@ -134,12 +134,13 @@ fun HomeScreen(
             onDismissRequest = { viewModel.cancelNetworkSwitch() },
             title = { Text("Switch to $targetName?") },
             text = {
-                Text("The light client will restart for the $targetName network. " +
-                    "Your data on the current network is preserved and will be available when you switch back.")
+                Text("The app will close and reopen on $targetName. " +
+                    "Your wallet and data on the current network are safe — " +
+                    "you can switch back at any time.")
             },
             confirmButton = {
                 Button(onClick = { viewModel.confirmNetworkSwitch() }) {
-                    Text("Switch")
+                    Text("Switch & Restart")
                 }
             },
             dismissButton = {

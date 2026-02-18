@@ -203,13 +203,15 @@ class GatewayRepository @Inject constructor(
     }
 
     /**
-     * Switches to a different network. Stops the current node, clears transient state,
-     * persists the new network selection, and re-initializes the node for the target network.
+     * Switches to a different network by persisting the selection and restarting the process.
      *
-     * Process death safety:
-     * - If killed before persist (step 3): restarts on old network, no corruption
-     * - If killed after persist (step 3): restarts on new network, normal init flow
-     * - Data directories are isolated per network, so no data corruption either way
+     * The JNI light client does not support in-process re-initialization: nativeStop() blocks
+     * indefinitely while peers are connected, and nativeInit() rejects calls when already
+     * initialized. Restarting the process gives a clean JNI state at zero engineering cost.
+     *
+     * Process death safety: setSelectedNetwork() uses commit() (synchronous) so the preference
+     * is guaranteed on disk before killProcess(). On restart, initializeNode() reads the new
+     * network from WalletPreferences. Data directories are isolated per network.
      */
     suspend fun switchNetwork(target: NetworkType): Result<Unit> = runCatching {
         if (target == currentNetwork) return@runCatching

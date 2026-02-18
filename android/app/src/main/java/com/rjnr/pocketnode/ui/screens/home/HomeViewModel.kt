@@ -95,8 +95,12 @@ class HomeViewModel @Inject constructor(
 
         _uiState.update { it.copy(currentSyncMode = savedSyncMode) }
 
-        // Use saved settings, or default to RECENT for first-time users
-        val syncMode = if (hasCompletedInitialSync) savedSyncMode else SyncMode.RECENT
+        // Use saved settings, or network-appropriate default for first-time users.
+        // Testnet defaults to NEW_WALLET (start from tip — testnet is small, no need for history).
+        // Mainnet defaults to RECENT (~30 days of history).
+        val firstTimeSyncMode = if (repository.currentNetwork == NetworkType.TESTNET)
+            SyncMode.NEW_WALLET else SyncMode.RECENT
+        val syncMode = if (hasCompletedInitialSync) savedSyncMode else firstTimeSyncMode
         val customBlockHeight = if (syncMode == SyncMode.CUSTOM) savedCustomBlockHeight else null
 
         Log.d(TAG, "Registering account with sync mode: $syncMode")
