@@ -123,6 +123,7 @@ internal fun SyncOptionsDialog(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
+                    val parsedHeight = customBlockHeight.toLongOrNull()
                     OutlinedTextField(
                         value = customBlockHeight,
                         onValueChange = { customBlockHeight = it.filter { c -> c.isDigit() } },
@@ -130,7 +131,11 @@ internal fun SyncOptionsDialog(
                         placeholder = { Text("e.g., 12000000") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        singleLine = true,
+                        isError = customBlockHeight.isNotBlank() && parsedHeight == null,
+                        supportingText = if (customBlockHeight.isNotBlank() && parsedHeight == null) {
+                            { Text("Invalid block height") }
+                        } else null
                     )
                 }
 
@@ -163,14 +168,13 @@ internal fun SyncOptionsDialog(
             }
         },
         confirmButton = {
+            val confirmParsedHeight = customBlockHeight.toLongOrNull()
             Button(
                 onClick = {
-                    val custom = if (selectedMode == SyncMode.CUSTOM) {
-                        customBlockHeight.toLongOrNull()
-                    } else null
+                    val custom = if (selectedMode == SyncMode.CUSTOM) confirmParsedHeight else null
                     onSelectMode(selectedMode, custom)
                 },
-                enabled = selectedMode != SyncMode.CUSTOM || customBlockHeight.isNotBlank()
+                enabled = selectedMode != SyncMode.CUSTOM || (confirmParsedHeight != null && confirmParsedHeight > 0)
             ) {
                 Text("Apply")
             }

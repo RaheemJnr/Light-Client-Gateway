@@ -179,7 +179,11 @@ fun ActivityScreen(
                         clipboardManager.setText(AnnotatedString(hash))
                     },
                     onOpenExplorer = { url ->
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        } catch (e: android.content.ActivityNotFoundException) {
+                            // No browser available — silently ignore
+                        }
                     }
                 )
             }

@@ -59,7 +59,7 @@ The current UI has several structural problems identified through:
 | Settings | Gear | Security, network, backup, node status | Live |
 
 ### Top Bar (Home)
-```
+```text
 [● App icon]  Pocket Node  [CKB Mainnet pill]  [⟳ Block 18.3M]  [Settings ⚙]
 ```
 - Network pill: green dot = Mainnet, amber dot = Testnet
@@ -106,7 +106,7 @@ The current UI has several structural problems identified through:
 **Layout:**
 - Filter tabs: All | Received | Sent
 - Date-grouped list:
-  ```
+  ```text
   TODAY
   ↓  +500 CKB    ckb1...xyz4   14:32   ✓
   ↑  -100 CKB    ckb1...abc1   09:15   ✓
@@ -138,7 +138,7 @@ The current UI has several structural problems identified through:
 ### 4.3 Receive Screen
 
 **Layout (centered, clean):**
-```
+```text
 [← back]  Receive CKB
 
            CKB Mainnet Address
@@ -156,7 +156,7 @@ The current UI has several structural problems identified through:
 ```
 
 **QR Code implementation:**
-- Library: `com.github.alexzhirkevich:qrose` or `io.github.g0dkar:qrcode-kotlin`
+- Library: `com.google.zxing:core` (ZXing)
 - Encodes: raw CKB address string
 - Size: 240dp × 240dp, centered
 - Network label above QR: "CKB Mainnet" or "CKB Testnet"
@@ -166,7 +166,7 @@ The current UI has several structural problems identified through:
 ### 4.4 Send Screen
 
 **Layout:**
-```
+```text
 [← back]  Send CKB
 
 Available: 12,450.00 CKB
@@ -196,7 +196,7 @@ Estimated Fee: ~0.001 CKB
 - JoyID address format: parse `joyid://...` URI and extract underlying CKB address
 
 **Transaction Success State:**
-```
+```text
 ✓ Transaction Sent!
 
 TX Hash: 0x1a2b3c4d...  [Copy] [🔗 View on Explorer]
@@ -209,7 +209,7 @@ Status: Pending confirmation...
 
 ### 4.5 DAO Screen (M2 Placeholder)
 
-```
+```text
 [← back]  Nervos DAO
 
      ┌────────────────────────────────┐
@@ -219,7 +219,7 @@ Status: Pending confirmation...
      │  depositing CKB into the       │
      │  Nervos DAO.                   │
      │                                │
-     │  Coming in the next update     │
+     │  Coming in M2                  │
      │                                │
      │  [ Notify me ] (disabled)      │
      └────────────────────────────────┘
@@ -231,7 +231,7 @@ Status: Pending confirmation...
 
 **Replaces the `⋮` dropdown entirely.**
 
-```
+```text
 Security
   › PIN Lock                    [enabled ✓]
   › Biometric Unlock            [enabled ✓]
@@ -265,6 +265,7 @@ Keep the current 2-option screen but improve:
 ## 5. Visual Design Language
 
 ### Color Palette (placeholder — final colors from icon designer)
+
 | Role | Hex | Usage |
 |------|-----|-------|
 | Background | `#0D0D0D` | Screen backgrounds |

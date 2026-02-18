@@ -87,6 +87,7 @@ import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
 import com.rjnr.pocketnode.data.gateway.models.displayName
 import com.rjnr.pocketnode.ui.components.SyncOptionsDialog
 import com.rjnr.pocketnode.util.formatBlockTimestamp
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -665,7 +666,7 @@ private fun BalanceHeroCard(
                 color = Color(0xFFA0A0A0)
             )
             Text(
-                text = String.format("%,.2f CKB", balanceCkb),
+                text = String.format(Locale.US, "%,.2f CKB", balanceCkb),
                 fontSize = 36.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF1ED882)
