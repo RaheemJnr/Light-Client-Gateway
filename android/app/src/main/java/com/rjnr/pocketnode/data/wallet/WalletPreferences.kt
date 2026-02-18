@@ -37,7 +37,8 @@ class WalletPreferences @Inject constructor(
     }
 
     fun setSelectedNetwork(network: NetworkType) {
-        prefs.edit().putString(KEY_SELECTED_NETWORK, network.name).apply()
+        // commit() instead of apply() — must flush synchronously before Process.killProcess()
+        prefs.edit().putString(KEY_SELECTED_NETWORK, network.name).commit()
     }
 
     // --- Per-network key helper ---

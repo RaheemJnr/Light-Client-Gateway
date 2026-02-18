@@ -19,7 +19,6 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -217,59 +216,17 @@ class GatewayRepository @Inject constructor(
         if (_isSwitchingNetwork.value) throw Exception("Network switch already in progress")
 
         _isSwitchingNetwork.value = true
-        val previousNetwork = currentNetwork
-        Log.d(TAG, "Switching network: ${previousNetwork.name} -> ${target.name}")
+        Log.d(TAG, "Switching network: ${currentNetwork.name} -> ${target.name}")
 
-        try {
-            // 1. Stop current node with timeout
-            Log.d(TAG, "Stopping current node...")
-            val stopped = withTimeoutOrNull(5_000) {
-                withContext(Dispatchers.IO) { LightClientNative.nativeStop() }
-            }
-            if (stopped == null) Log.w(TAG, "nativeStop timed out after 5s, proceeding anyway")
-            delay(1_000) // Allow JNI shutdown time
-
-            // 2. Clear transient state
-            _balance.value = null
-            _isRegistered.value = false
-            _nodeReady.value = null
-
-            // 3. Attempt to initialize the new network BEFORE persisting
-            _network.value = target
-            initializeNode(target)
-            if (!awaitNodeReady()) {
-                // Init failed — fall back to previous network
-                Log.w(TAG, "Init failed on ${target.name}, falling back to ${previousNetwork.name}")
-                _network.value = previousNetwork
-                initializeNode(previousNetwork)
-                if (!awaitNodeReady()) {
-                    throw Exception("Node failed to initialize on both ${target.name} and ${previousNetwork.name}")
-                }
-                // Re-register wallet scripts on the reverted network so sync continues
-                val info = _walletInfo.value
-                if (info != null) {
-                    val syncMode = walletPreferences.getSyncMode(previousNetwork)
-                    val customHeight = walletPreferences.getCustomBlockHeight(previousNetwork)
-                    registerAccount(syncMode = syncMode, customBlockHeight = customHeight)
-                }
-                throw Exception("Node failed to initialize on ${target.name}, reverted to ${previousNetwork.name}")
-            }
-
-            // 4. Persist new network (commit point — only after successful init)
-            walletPreferences.setSelectedNetwork(target)
-
-            // 5. Re-register wallet script with the new network's sync preferences
-            val info = _walletInfo.value
-            if (info != null) {
-                val syncMode = walletPreferences.getSyncMode(target)
-                val customHeight = walletPreferences.getCustomBlockHeight(target)
-                registerAccount(syncMode = syncMode, customBlockHeight = customHeight)
-            }
-
-            Log.d(TAG, "Network switch to ${target.name} complete")
-        } finally {
-            _isSwitchingNetwork.value = false
-        }
+        // The JNI light client does not support re-initialization in the same process lifetime:
+        // nativeStop() blocks indefinitely (peer disconnection loop) and nativeInit() rejects
+        // calls while already initialized ("Already initialized!"). The only reliable path is
+        // to persist the selection and restart the process — Android will relaunch the app and
+        // initializeNode() will pick up the new network from WalletPreferences.
+        walletPreferences.setSelectedNetwork(target) // uses commit() — synchronous flush
+        Log.d(TAG, "Persisted ${target.name}, restarting process for clean JNI init")
+        android.os.Process.killProcess(android.os.Process.myPid())
+        // Process is terminated above; code below is unreachable but satisfies the compiler
     }
 
     /**
