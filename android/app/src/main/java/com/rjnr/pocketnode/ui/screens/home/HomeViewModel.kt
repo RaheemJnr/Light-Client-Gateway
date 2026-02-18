@@ -129,7 +129,9 @@ class HomeViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         syncProgress = status.syncProgress,
-                        isSyncing = !status.isSynced
+                        isSyncing = !status.isSynced,
+                        syncedToBlock = status.syncedToBlock,
+                        tipBlockNumber = status.tipNumber
                     )
                 }
 
@@ -165,7 +167,9 @@ class HomeViewModel @Inject constructor(
                         _uiState.update {
                             it.copy(
                                 syncProgress = status.syncProgress,
-                                isSyncing = !status.isSynced
+                                isSyncing = !status.isSynced,
+                                syncedToBlock = status.syncedToBlock,
+                                tipBlockNumber = status.tipNumber
                             )
                         }
 
@@ -201,6 +205,18 @@ class HomeViewModel @Inject constructor(
                 .onFailure { error ->
                     Log.e(TAG, "Failed to refresh balance", error)
                 }
+
+            // Refresh peer count (best-effort: parse array size from JSON)
+            try {
+                val peersJson = repository.getPeers()
+                if (peersJson != null) {
+                    // Count top-level array elements by counting "addresses" key occurrences
+                    val count = peersJson.split("\"addresses\"").size - 1
+                    _uiState.update { it.copy(peerCount = count.coerceAtLeast(0)) }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to refresh peer count", e)
+            }
 
             refreshTransactionsOnly()
 
@@ -396,6 +412,9 @@ class HomeViewModel @Inject constructor(
                     balanceCkb = 0.0,
                     transactions = emptyList(),
                     syncProgress = 0.0,
+                    syncedToBlock = null,
+                    tipBlockNumber = "",
+                    peerCount = 0,
                     isSyncing = true,
                     error = null
                 )
@@ -432,10 +451,14 @@ data class HomeUiState(
     val isRefreshing: Boolean = false,
     val isSyncing: Boolean = false,
     val syncProgress: Double = 0.0,
+    val syncedToBlock: String? = null,
+    val tipBlockNumber: String = "",
     val walletInfo: WalletInfo? = null,
     val address: String = "",
     val balanceCkb: Double = 0.0,
+    val fiatBalance: String? = null,
     val balance: BalanceResponse? = null,
+    val peerCount: Int = 0,
     val transactions: List<TransactionRecord> = emptyList(),
     val error: String? = null,
     val currentSyncMode: SyncMode = SyncMode.RECENT,
