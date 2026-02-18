@@ -16,24 +16,24 @@ import javax.inject.Inject
 
 private const val TAG = "ActivityViewModel"
 
+data class ActivityUiState(
+    val transactions: List<TransactionRecord> = emptyList(),
+    val isLoading: Boolean = false,
+    val filter: ActivityViewModel.Filter = ActivityViewModel.Filter.ALL,
+    val hasMore: Boolean = false,
+    val error: String? = null,
+    val currentNetwork: NetworkType = NetworkType.MAINNET
+)
+
 @HiltViewModel
 class ActivityViewModel @Inject constructor(
     private val repository: GatewayRepository
 ) : ViewModel() {
 
-    data class UiState(
-        val transactions: List<TransactionRecord> = emptyList(),
-        val isLoading: Boolean = false,
-        val filter: Filter = Filter.ALL,
-        val hasMore: Boolean = false,
-        val error: String? = null,
-        val currentNetwork: NetworkType = NetworkType.MAINNET
-    )
-
     enum class Filter { ALL, RECEIVED, SENT }
 
-    private val _uiState = MutableStateFlow(UiState())
-    val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+    private val _uiState = MutableStateFlow(ActivityUiState())
+    val uiState: StateFlow<ActivityUiState> = _uiState.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -61,7 +61,7 @@ class ActivityViewModel @Inject constructor(
                 .onFailure { error ->
                     Log.e(TAG, "Failed to load transactions", error)
                     _uiState.update {
-                        it.copy(isLoading = false, error = error.message)
+                        it.copy(isLoading = false, error = error.message ?: "Failed to load transactions")
                     }
                 }
         }
@@ -72,7 +72,7 @@ class ActivityViewModel @Inject constructor(
     }
 
     /** Returns the full transaction list filtered by the current filter setting. */
-    fun filteredTransactions(state: UiState): List<TransactionRecord> {
+    fun filteredTransactions(state: ActivityUiState): List<TransactionRecord> {
         return when (state.filter) {
             Filter.ALL -> state.transactions
             Filter.RECEIVED -> state.transactions.filter { it.isIncoming() }

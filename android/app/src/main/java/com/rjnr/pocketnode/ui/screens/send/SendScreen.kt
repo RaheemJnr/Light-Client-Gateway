@@ -501,8 +501,11 @@ fun TransactionStatusDialog(
                                     } else {
                                         "https://explorer.nervos.org/transaction/"
                                     }
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("$explorerBase$txHash"))
-                                    context.startActivity(intent)
+                                    try {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$explorerBase$txHash")))
+                                    } catch (e: android.content.ActivityNotFoundException) {
+                                        // No browser available — silently ignore
+                                    }
                                 },
                                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
                             ) {
