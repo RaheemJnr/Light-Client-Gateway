@@ -243,8 +243,10 @@ fun AddressValidationIndicator(
 ) {
     if (address.isBlank()) return
 
-    val isValid = AddressUtils.isValid(address)
-    val addressNetwork = if (isValid) AddressUtils.getNetwork(address) else null
+    val (isValid, addressNetwork) = remember(address) {
+        val valid = AddressUtils.isValid(address)
+        Pair(valid, if (valid) AddressUtils.getNetwork(address) else null)
+    }
 
     val (symbol, message, color) = when {
         !isValid -> Triple("✗", "Invalid address format", ColorInvalidRed)
