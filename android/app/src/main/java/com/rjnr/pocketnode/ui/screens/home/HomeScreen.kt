@@ -210,7 +210,7 @@ fun HomeScreen(
                     NetworkBadge(network = uiState.currentNetwork)
                     Spacer(Modifier.width(4.dp))
                     if (uiState.isSyncing) {
-                        SyncingChip(syncProgress = uiState.syncProgress)
+                        SyncingChip(syncedToBlock = uiState.syncedToBlock)
                     } else {
                         SyncedChip()
                     }
@@ -326,7 +326,8 @@ fun HomeScreen(
                         item {
                             SyncProgressBar(
                                 syncProgress = uiState.syncProgress,
-                                syncedToBlock = uiState.syncedToBlock
+                                syncedToBlock = uiState.syncedToBlock,
+                                tipBlockNumber = uiState.tipBlockNumber
                             )
                         }
                     }
@@ -580,83 +581,10 @@ private fun BackupReminderBanner(
 }
 
 @Composable
-private fun SyncStatusBanner(
-    syncProgress: Double,
-    showDataWarning: Boolean = false
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer
-        ),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (showDataWarning) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.tertiary
-                    )
-                } else {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = if (showDataWarning) {
-                        "Syncing in progress..."
-                    } else {
-                        "Syncing transaction history..."
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            LinearProgressIndicator(
-                progress = { syncProgress.toFloat().coerceIn(0f, 1f) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp)),
-                color = MaterialTheme.colorScheme.tertiary,
-                trackColor = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.2f)
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = if (showDataWarning) {
-                    "${(syncProgress * 100).toInt()}% complete • Balance and transactions may be inaccurate until sync completes"
-                } else {
-                    "${(syncProgress * 100).toInt()}% complete • Almost done..."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
-            )
-        }
-    }
-}
-
-@Composable
 private fun SyncProgressBar(
     syncProgress: Double,
-    syncedToBlock: String?
+    syncedToBlock: String?,
+    tipBlockNumber: String
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         LinearProgressIndicator(
@@ -665,8 +593,13 @@ private fun SyncProgressBar(
             color = Color(0xFF1ED882),
             trackColor = Color(0xFF252525)
         )
+        val blockLabel = if (tipBlockNumber.isNotEmpty()) {
+            "Block ${syncedToBlock ?: "—"} / ~$tipBlockNumber"
+        } else {
+            "Block ${syncedToBlock ?: "—"}"
+        }
         Text(
-            text = "${(syncProgress * 100).toInt()}%  Block ${syncedToBlock ?: "—"}",
+            text = blockLabel,
             style = MaterialTheme.typography.bodySmall,
             color = Color(0xFFA0A0A0)
         )
@@ -674,7 +607,7 @@ private fun SyncProgressBar(
 }
 
 @Composable
-private fun SyncingChip(syncProgress: Double) {
+private fun SyncingChip(syncedToBlock: String?) {
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = Color(0xFF252525),
@@ -691,7 +624,7 @@ private fun SyncingChip(syncProgress: Double) {
                 color = Color(0xFF1ED882)
             )
             Text(
-                text = "${(syncProgress * 100).toInt()}%",
+                text = "Block ${syncedToBlock ?: "—"}",
                 style = MaterialTheme.typography.labelSmall,
                 color = Color(0xFF1ED882)
             )
@@ -711,13 +644,8 @@ private fun SyncedChip() {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .background(Color(0xFF1ED882), CircleShape)
-            )
             Text(
-                text = "Synced",
+                text = "✓ Synced",
                 style = MaterialTheme.typography.labelSmall,
                 color = Color(0xFF1ED882)
             )
@@ -1054,7 +982,7 @@ private fun BalanceHeroCard(
                             .background(Color(0xFF1ED882), CircleShape)
                     )
                     Text(
-                        text = "$peerCount peers",
+                        text = "$peerCount peers connected",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFFA0A0A0)
                     )
@@ -1535,17 +1463,28 @@ private fun NetworkBadge(network: NetworkType) {
     val isTestnet = network == NetworkType.TESTNET
     val backgroundColor = if (isTestnet) Color(0xFFF57C00) else MaterialTheme.colorScheme.primary
     val textColor = if (isTestnet) Color.White else MaterialTheme.colorScheme.onPrimary
+    val dotColor = if (isTestnet) Color(0xFFBF360C) else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f)
 
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = backgroundColor,
         modifier = Modifier.padding(vertical = 4.dp)
     ) {
-        Text(
-            text = network.displayName,
+        Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = textColor
-        )
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(dotColor, CircleShape)
+            )
+            Text(
+                text = network.displayName,
+                style = MaterialTheme.typography.labelSmall,
+                color = textColor
+            )
+        }
     }
 }
