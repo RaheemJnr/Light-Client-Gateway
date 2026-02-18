@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,36 +24,31 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.FiberNew
-import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Receipt
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -112,7 +109,6 @@ fun HomeScreen(
     val clipboardManager = LocalClipboardManager.current
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedTransaction by remember { mutableStateOf<TransactionRecord?>(null) }
-    var showSyncMenu by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     // Sync options dialog
@@ -203,101 +199,25 @@ fun HomeScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Pocket Node")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        NetworkBadge(network = uiState.currentNetwork)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("Pocket Node", fontWeight = FontWeight.SemiBold)
                     }
                 },
                 actions = {
-                    // Sync options menu
-                    Box {
-                        IconButton(onClick = { showSyncMenu = true }) {
-                            Icon(Icons.Outlined.History, "Sync Options")
-                        }
-                        DropdownMenu(
-                            expanded = showSyncMenu,
-                            onDismissRequest = { showSyncMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Sync Options...") },
-                                onClick = {
-                                    showSyncMenu = false
-                                    viewModel.showSyncOptions()
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Outlined.Sync, contentDescription = null)
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Backup Wallet") },
-                                onClick = {
-                                    showSyncMenu = false
-                                    if (viewModel.isMnemonicWallet()) {
-                                        onNavigateToBackup()
-                                    } else {
-                                        viewModel.showBackup()
-                                    }
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Default.Security, contentDescription = null)
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Import Wallet") },
-                                onClick = {
-                                    showSyncMenu = false
-                                    viewModel.showImport()
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Default.FileUpload, contentDescription = null)
-                                }
-                            )
-                            val switchTarget = if (uiState.currentNetwork == NetworkType.MAINNET)
-                                NetworkType.TESTNET else NetworkType.MAINNET
-                            val switchLabel = "Switch to ${switchTarget.displayName}"
-                            DropdownMenuItem(
-                                text = { Text(switchLabel) },
-                                onClick = {
-                                    showSyncMenu = false
-                                    viewModel.requestNetworkSwitch(switchTarget)
-                                },
-                                enabled = !uiState.isSwitchingNetwork,
-                                leadingIcon = {
-                                    Icon(Icons.Default.SwapHoriz, contentDescription = null)
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Security Settings") },
-                                onClick = {
-                                    showSyncMenu = false
-                                    onNavigateToSecuritySettings()
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Default.Security, contentDescription = null)
-                                }
-                            )
-                        }
+                    NetworkBadge(network = uiState.currentNetwork)
+                    Spacer(Modifier.width(4.dp))
+                    if (uiState.isSyncing) {
+                        SyncingChip(syncProgress = uiState.syncProgress)
+                    } else {
+                        SyncedChip()
                     }
-
-                    // Node Status Button
-                    IconButton(onClick = onNavigateToStatus) {
-                        Icon(Icons.Filled.Terminal, "Node Status")
-                    }
-
-                    // Refresh button
-                    IconButton(
-                        onClick = { viewModel.refresh() },
-                        enabled = !uiState.isRefreshing
-                    ) {
-                        if (uiState.isRefreshing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(Icons.Default.Refresh, "Refresh")
-                        }
+                    Spacer(Modifier.width(4.dp))
+                    // Gear icon — Settings tab is reached via bottom nav
+                    IconButton(onClick = {}) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 }
             )
@@ -339,123 +259,115 @@ fun HomeScreen(
                 }
             }
         } else {
-            LazyColumn(
+            PullToRefreshBox(
+                isRefreshing = uiState.isRefreshing,
+                onRefresh = { viewModel.refresh() },
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(padding)
             ) {
-                // Mnemonic Backup Reminder
-                if (uiState.showBackupReminder) {
-                    item {
-                        BackupReminderBanner(
-                            onDismiss = { viewModel.dismissBackupReminder() },
-                            onBackup = onNavigateToBackup
-                        )
-                    }
-                }
-
-                // Sync Mode Reminder for Imported Wallets
-                if (uiState.showImportSyncReminder) {
-                    item {
-                        SyncModeReminderBanner(
-                            onDismiss = { viewModel.dismissSyncReminder() },
-                            onSettingsClick = {
-                                viewModel.dismissSyncReminder()
-                                viewModel.showSyncOptions()
-                            }
-                        )
-                    }
-                }
-
-                // Sync Status Banner (if syncing)
-                if (uiState.isSyncing) {
-                    item {
-                        SyncStatusBanner(
-                            syncProgress = uiState.syncProgress,
-                            showDataWarning = uiState.syncProgress < 0.999
-                        )
-                    }
-                }
-
-                // Balance Card
-                item {
-                    BalanceCard(
-                        balanceCkb = uiState.balanceCkb,
-                        address = uiState.address,
-                        isRefreshing = uiState.isRefreshing,
-                        onCopyAddress = {
-                            clipboardManager.setText(AnnotatedString(uiState.address))
-                            scope.launch {
-                                snackbarHostState.showSnackbar(
-                                    message = "Address copied to clipboard",
-                                    duration = SnackbarDuration.Short
-                                )
-                            }
-                        }
-                    )
-                }
-
-                // Action Buttons
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        ActionButton(
-                            modifier = Modifier.weight(1f),
-                            icon = Icons.Default.ArrowUpward,
-                            label = "Send",
-                            onClick = onNavigateToSend,
-                            isPrimary = true
-                        )
-                        ActionButton(
-                            modifier = Modifier.weight(1f),
-                            icon = Icons.Default.ArrowDownward,
-                            label = "Receive",
-                            onClick = onNavigateToReceive,
-                            isPrimary = false
-                        )
-                    }
-                }
-
-                // Transactions Header
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Recent Transactions",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        if (uiState.transactions.isNotEmpty()) {
-                            Text(
-                                text = "${uiState.transactions.size} transactions",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Mnemonic Backup Reminder
+                    if (uiState.showBackupReminder) {
+                        item {
+                            BackupReminderBanner(
+                                onDismiss = { viewModel.dismissBackupReminder() },
+                                onBackup = onNavigateToBackup
                             )
                         }
                     }
-                }
 
-                // Transaction List
-                if (uiState.transactions.isEmpty()) {
-                    item {
-                        EmptyTransactionState()
+                    // Sync Mode Reminder for Imported Wallets
+                    if (uiState.showImportSyncReminder) {
+                        item {
+                            SyncModeReminderBanner(
+                                onDismiss = { viewModel.dismissSyncReminder() },
+                                onSettingsClick = {
+                                    viewModel.dismissSyncReminder()
+                                    viewModel.showSyncOptions()
+                                }
+                            )
+                        }
                     }
-                } else {
-                    items(
-                        items = uiState.transactions,
-                        key = { it.txHash }
-                    ) { tx ->
-                        TransactionItem(
-                            transaction = tx,
-                            onClick = { selectedTransaction = tx }
+
+                    // Balance Hero Card
+                    item {
+                        BalanceHeroCard(
+                            balanceCkb = uiState.balanceCkb,
+                            fiatBalance = uiState.fiatBalance,
+                            address = uiState.address,
+                            peerCount = uiState.peerCount,
+                            onCopyAddress = {
+                                clipboardManager.setText(AnnotatedString(uiState.address))
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        message = "Address copied to clipboard",
+                                        duration = SnackbarDuration.Short
+                                    )
+                                }
+                            }
                         )
+                    }
+
+                    // Quick Actions Row
+                    item {
+                        QuickActionsRow(
+                            onSend = onNavigateToSend,
+                            onReceive = onNavigateToReceive
+                        )
+                    }
+
+                    // Sync Progress Bar — only when actively syncing
+                    if (uiState.isSyncing) {
+                        item {
+                            SyncProgressBar(
+                                syncProgress = uiState.syncProgress,
+                                syncedToBlock = uiState.syncedToBlock
+                            )
+                        }
+                    }
+
+                    // Transactions Header
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Recent Transactions",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            TextButton(onClick = {}) {
+                                Text(
+                                    text = "See All →",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFF1ED882)
+                                )
+                            }
+                        }
+                    }
+
+                    // Transaction List (last 5)
+                    if (uiState.transactions.isEmpty()) {
+                        item {
+                            EmptyTransactionState()
+                        }
+                    } else {
+                        items(
+                            items = uiState.transactions.take(5),
+                            key = { it.txHash }
+                        ) { tx ->
+                            TransactionItem(
+                                transaction = tx,
+                                onClick = { selectedTransaction = tx }
+                            )
+                        }
                     }
                 }
             }
@@ -742,6 +654,78 @@ private fun SyncStatusBanner(
 }
 
 @Composable
+private fun SyncProgressBar(
+    syncProgress: Double,
+    syncedToBlock: String?
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        LinearProgressIndicator(
+            progress = { syncProgress.toFloat().coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth(),
+            color = Color(0xFF1ED882),
+            trackColor = Color(0xFF252525)
+        )
+        Text(
+            text = "${(syncProgress * 100).toInt()}%  Block ${syncedToBlock ?: "—"}",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color(0xFFA0A0A0)
+        )
+    }
+}
+
+@Composable
+private fun SyncingChip(syncProgress: Double) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0xFF252525),
+        modifier = Modifier.padding(vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(10.dp),
+                strokeWidth = 1.5.dp,
+                color = Color(0xFF1ED882)
+            )
+            Text(
+                text = "${(syncProgress * 100).toInt()}%",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF1ED882)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SyncedChip() {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0xFF1ED882).copy(alpha = 0.15f),
+        modifier = Modifier.padding(vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .background(Color(0xFF1ED882), CircleShape)
+            )
+            Text(
+                text = "Synced",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF1ED882)
+            )
+        }
+    }
+}
+
+@Composable
 private fun SyncOptionsDialog(
     currentMode: SyncMode,
     onDismiss: () -> Unit,
@@ -988,92 +972,91 @@ private fun SyncOptionItem(
 }
 
 @Composable
-private fun BalanceCard(
+private fun BalanceHeroCard(
     balanceCkb: Double,
+    fiatBalance: String?,
     address: String,
-    isRefreshing: Boolean,
+    peerCount: Int,
     onCopyAddress: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        ),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)),
+        border = BorderStroke(1.dp, Color(0xFF252525))
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = "Total Balance",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                text = "Wallet Balance",
+                style = MaterialTheme.typography.labelMedium,
+                color = Color(0xFFA0A0A0)
             )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
+            Text(
+                text = String.format("%,.2f CKB", balanceCkb),
+                fontSize = 36.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1ED882)
+            )
+            Text(
+                text = fiatBalance ?: "≈ — USD",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFFA0A0A0)
+            )
+            HorizontalDivider(
+                color = Color(0xFF252525),
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
             Row(
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = String.format("%,.2f", balanceCkb),
-                    style = MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "CKB",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-            }
-
-            if (isRefreshing) {
-                Spacer(modifier = Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth(0.5f)
-                        .height(2.dp)
-                        .clip(RoundedCornerShape(1.dp)),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Address section
-            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.1f),
-                shape = RoundedCornerShape(12.dp)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier
-                        .clickable(onClick = onCopyAddress)
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // Address chip
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF252525)
                 ) {
-                    Text(
-                        text = address,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.weight(1f)
+                    Row(
+                        modifier = Modifier
+                            .clickable(onClick = onCopyAddress)
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (address.length > 12) {
+                                "${address.take(6)}...${address.takeLast(4)}"
+                            } else address,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace
+                            ),
+                            color = Color(0xFFA0A0A0)
+                        )
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp),
+                            tint = Color(0xFFA0A0A0)
+                        )
+                    }
+                }
+                // Peer count
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(Color(0xFF1ED882), CircleShape)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(
-                        imageVector = Icons.Default.ContentCopy,
-                        contentDescription = "Copy address",
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    Text(
+                        text = "$peerCount peers",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFA0A0A0)
                     )
                 }
             }
@@ -1082,32 +1065,64 @@ private fun BalanceCard(
 }
 
 @Composable
-private fun ActionButton(
-    modifier: Modifier = Modifier,
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    isPrimary: Boolean
+private fun QuickActionsRow(
+    onSend: () -> Unit,
+    onReceive: () -> Unit
 ) {
-    if (isPrimary) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         Button(
-            onClick = onClick,
-            modifier = modifier.height(56.dp),
-            shape = RoundedCornerShape(16.dp)
+            onClick = onSend,
+            modifier = Modifier.weight(1f).height(52.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF1ED882),
+                contentColor = Color.Black
+            )
         ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(label, fontWeight = FontWeight.SemiBold)
+            Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Send", fontWeight = FontWeight.SemiBold)
         }
-    } else {
         OutlinedButton(
-            onClick = onClick,
-            modifier = modifier.height(56.dp),
-            shape = RoundedCornerShape(16.dp)
+            onClick = onReceive,
+            modifier = Modifier.weight(1f).height(52.dp),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.5.dp, Color(0xFF1ED882)),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF1ED882))
         ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(label, fontWeight = FontWeight.SemiBold)
+            Icon(Icons.Default.ArrowDownward, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Receive")
+        }
+        Box(modifier = Modifier.weight(1f)) {
+            OutlinedButton(
+                onClick = {},
+                enabled = false,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.AccountBalance, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Stake")
+            }
+            // M2 milestone badge
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 4.dp, y = (-4).dp),
+                shape = RoundedCornerShape(4.dp),
+                color = Color(0xFF252525)
+            ) {
+                Text(
+                    text = "M2",
+                    fontSize = 9.sp,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                    color = Color(0xFFA0A0A0)
+                )
+            }
         }
     }
 }
