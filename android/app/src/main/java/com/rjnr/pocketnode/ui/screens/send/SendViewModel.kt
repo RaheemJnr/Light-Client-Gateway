@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
+import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.TransactionStatusResponse
 import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
@@ -31,6 +32,7 @@ data class SendUiState(
     val error: String? = null,
     val txHash: String? = null,
     val availableBalance: Long = 0L,
+    val networkType: NetworkType = NetworkType.MAINNET,
     val transactionState: TransactionState = TransactionState.IDLE,
     val confirmations: Int = 0,
     val statusMessage: String = "",
@@ -64,21 +66,24 @@ class SendViewModel @Inject constructor(
             }
         }
 
-        // Cancel in-flight transaction if network changes mid-send
+        // Track network type and cancel in-flight transaction if network changes mid-send
         viewModelScope.launch {
-            repository.network.collect {
+            repository.network.collect { network ->
                 val state = _uiState.value.transactionState
                 if (state != TransactionState.IDLE && state != TransactionState.CONFIRMED && state != TransactionState.FAILED) {
                     sendJob?.cancel()
                     pollingJob?.cancel()
                     _uiState.update {
                         it.copy(
+                            networkType = network,
                             isLoading = false,
                             error = "Network changed. Transaction cancelled.",
                             transactionState = TransactionState.FAILED,
                             statusMessage = "Transaction cancelled due to network switch"
                         )
                     }
+                } else {
+                    _uiState.update { it.copy(networkType = network) }
                 }
             }
         }
@@ -108,6 +113,18 @@ class SendViewModel @Inject constructor(
         }
 
         _uiState.update { it.copy(amountCkb = sanitized, error = null, burnWarning = warning) }
+    }
+
+    fun setMaxAmount() {
+        val balanceShannons = _uiState.value.availableBalance
+        val feeShannons = 100_000L // 0.001 CKB default fee
+        val maxShannons = (balanceShannons - feeShannons).coerceAtLeast(0L)
+        val maxCkb = maxShannons / 100_000_000.0
+        // Format to 8 decimal places, then strip trailing zeros (and trailing dot)
+        val formatted = "%.8f".format(maxCkb)
+            .trimEnd('0')
+            .trimEnd('.')
+        updateAmount(formatted.ifEmpty { "0" })
     }
 
     fun sendTransaction() {
