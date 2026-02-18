@@ -143,6 +143,9 @@ dependencies {
     implementation(libs.mlkit.barcode.scanning)
     implementation(libs.accompanist.permissions)
 
+    // QR Code generation (Receive screen)
+    implementation(libs.zxing.core)
+
     // Firebase
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
