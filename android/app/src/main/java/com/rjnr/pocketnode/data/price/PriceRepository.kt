@@ -4,6 +4,8 @@ import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -19,14 +21,16 @@ class PriceRepository @Inject constructor(
     private val httpClient: HttpClient,
     private val json: Json
 ) {
-    suspend fun getCkbUsdPrice(): Result<Double> = runCatching {
-        val response = httpClient.get("https://api.coingecko.com/api/v3/simple/price") {
-            parameter("ids", "nervos-network")
-            parameter("vs_currencies", "usd")
+    suspend fun getCkbUsdPrice(): Result<Double> = withContext(Dispatchers.IO) {
+        runCatching {
+            val response = httpClient.get("https://api.coingecko.com/api/v3/simple/price") {
+                parameter("ids", "nervos-network")
+                parameter("vs_currencies", "usd")
+            }
+            val body = response.bodyAsText()
+            val data = json.decodeFromString<Map<String, Map<String, Double>>>(body)
+            data["nervos-network"]?.get("usd")
+                ?: throw Exception("CKB price not found in CoinGecko response")
         }
-        val body = response.bodyAsText()
-        val data = json.decodeFromString<Map<String, Map<String, Double>>>(body)
-        data["nervos-network"]?.get("usd")
-            ?: throw Exception("CKB price not found in CoinGecko response")
     }
 }

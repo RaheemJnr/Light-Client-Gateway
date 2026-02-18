@@ -50,8 +50,14 @@ class HomeViewModel @Inject constructor(
 
         viewModelScope.launch {
             repository.balance.collect { balance ->
-                _uiState.update {
-                    it.copy(balanceCkb = balance?.capacityAsCkb() ?: 0.0)
+                val ckb = balance?.capacityAsCkb() ?: 0.0
+                _uiState.update { current ->
+                    val price = current.ckbUsdPrice
+                    val fiat = if (price != null) "≈ $%.2f USD".format(ckb * price) else null
+                    current.copy(
+                        balanceCkb = ckb,
+                        fiatBalance = fiat ?: current.fiatBalance
+                    )
                 }
             }
         }
