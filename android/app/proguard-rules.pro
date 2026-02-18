@@ -42,6 +42,10 @@
 # Keep secp256k1-kmp (JNI-based crypto)
 -keep class fr.acinq.secp256k1.** { *; }
 
+# Ktor HTTP client
+-keep class io.ktor.** { *; }
+-dontwarn io.ktor.**
+
 # Suppress warnings for classes not available on Android
 -dontwarn javax.naming.**
 -dontwarn org.bouncycastle.jsse.**

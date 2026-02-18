@@ -24,6 +24,7 @@ zxing = "3.5.3"
 googleServices = "4.4.2"
 firebaseBom = "33.7.0"
 firebaseAppDistribution = "5.1.0"
+ktor = "3.0.3"
 
 [libraries]
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serializationJson" }
@@ -69,6 +70,11 @@ camerax-view = { group = "androidx.camera", name = "camera-view", version.ref = 
 mlkit-barcode-scanning = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "mlkitBarcodeScanning" }
 accompanist-permissions = { group = "com.google.accompanist", name = "accompanist-permissions", version.ref = "accompanistPermissions" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
+
+# Ktor HTTP client
+ktor-client-android = { group = "io.ktor", name = "ktor-client-android", version.ref = "ktor" }
+ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
 
 # Firebase
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
