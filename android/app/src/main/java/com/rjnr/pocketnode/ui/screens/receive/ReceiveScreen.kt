@@ -35,7 +35,10 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.ui.screens.home.HomeViewModel
+import android.content.Intent
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val Primary = Color(0xFF1ED882)
 private val CardBackground = Color(0xFF1A1A1A)
@@ -205,14 +208,12 @@ fun ReceiveScreen(
             OutlinedButton(
                 onClick = {
                     if (uiState.address.isNotBlank()) {
-                        val intent = android.content.Intent(
-                            android.content.Intent.ACTION_SEND
-                        ).apply {
+                        val intent = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
-                            putExtra(android.content.Intent.EXTRA_TEXT, uiState.address)
+                            putExtra(Intent.EXTRA_TEXT, uiState.address)
                         }
                         context.startActivity(
-                            android.content.Intent.createChooser(intent, "Share CKB Address")
+                            Intent.createChooser(intent, "Share CKB Address")
                         )
                     }
                 },
@@ -246,32 +247,38 @@ fun ReceiveScreen(
 
 @Composable
 private fun QrCodeImage(content: String, modifier: Modifier = Modifier) {
-    val bitmap = remember(content) {
-        if (content.isBlank()) return@remember null
-        runCatching {
-            val writer = QRCodeWriter()
-            val matrix = writer.encode(content, BarcodeFormat.QR_CODE, 512, 512)
-            val w = matrix.width
-            val h = matrix.height
-            val pixels = IntArray(w * h) { i ->
-                if (matrix[i % w, i / w]) android.graphics.Color.BLACK
-                else android.graphics.Color.WHITE
-            }
-            Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also {
-                it.setPixels(pixels, 0, w, 0, 0, w, h)
-            }
-        }.getOrNull()
+    var bitmap by remember(content) { mutableStateOf<Bitmap?>(null) }
+
+    LaunchedEffect(content) {
+        if (content.isBlank()) {
+            bitmap = null
+            return@LaunchedEffect
+        }
+        bitmap = withContext(Dispatchers.Default) {
+            runCatching {
+                val matrix = QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, 512, 512)
+                val w = matrix.width
+                val h = matrix.height
+                val pixels = IntArray(w * h) { i ->
+                    if (matrix[i % w, i / w]) android.graphics.Color.BLACK
+                    else android.graphics.Color.WHITE
+                }
+                Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also {
+                    it.setPixels(pixels, 0, w, 0, 0, w, h)
+                }
+            }.getOrNull()
+        }
     }
 
-    if (bitmap != null) {
-        Image(
-            bitmap = bitmap.asImageBitmap(),
-            contentDescription = "QR Code",
-            modifier = modifier
-        )
-    } else {
+    if (bitmap == null) {
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = Primary)
         }
+    } else {
+        Image(
+            bitmap = bitmap!!.asImageBitmap(),
+            contentDescription = "QR Code",
+            modifier = modifier
+        )
     }
 }
