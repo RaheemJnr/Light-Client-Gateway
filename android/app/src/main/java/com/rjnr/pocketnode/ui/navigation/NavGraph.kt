@@ -15,7 +15,6 @@ import com.rjnr.pocketnode.ui.MainScreen
 import com.rjnr.pocketnode.ui.screens.auth.AuthScreen
 import com.rjnr.pocketnode.ui.screens.auth.PinEntryScreen
 import com.rjnr.pocketnode.ui.screens.auth.PinMode
-import com.rjnr.pocketnode.ui.screens.home.HomeScreen
 import com.rjnr.pocketnode.ui.screens.onboarding.MnemonicBackupScreen
 import com.rjnr.pocketnode.ui.screens.onboarding.MnemonicImportScreen
 import com.rjnr.pocketnode.ui.screens.receive.ReceiveScreen
@@ -209,14 +208,6 @@ fun CkbNavGraph(
                     navController.navigate(Screen.PinEntry.createRoute("verify"))
                 },
                 viewModel = viewModel
-            )
-        }
-
-        composable(Screen.Home.route) {
-            HomeScreen(
-                onNavigateToSend = { navController.navigate(Screen.Send.route) },
-                onNavigateToReceive = { navController.navigate(Screen.Receive.route) },
-                onNavigateToBackup = { navController.navigate(Screen.MnemonicBackup.route) },
             )
         }
 
