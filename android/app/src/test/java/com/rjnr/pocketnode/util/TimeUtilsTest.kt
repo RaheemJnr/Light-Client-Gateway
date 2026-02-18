@@ -34,4 +34,11 @@ class TimeUtilsTest {
         val result = formatBlockTimestamp("1700000000000")
         assertNotEquals("—", result)
     }
+
+    @Test
+    fun `formatBlockTimestamp handles uppercase 0X prefix`() {
+        val result = formatBlockTimestamp("0X18c8d0a7a00")
+        assertNotEquals("—", result)
+        assertTrue(result.isNotBlank())
+    }
 }

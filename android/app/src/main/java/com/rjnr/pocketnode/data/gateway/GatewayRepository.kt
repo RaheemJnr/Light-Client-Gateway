@@ -771,6 +771,8 @@ class GatewayRepository @Inject constructor(
                     val headerJson = LightClientNative.nativeGetHeader(blockHash)
                     headerJson?.let { json.decodeFromString<JniHeaderView>(it).timestamp }
                 } else null
+            }.onFailure { e ->
+                Log.w(TAG, "getTransactions: failed to fetch header for $txHash: ${e.message}")
             }.getOrNull()
 
             TransactionRecord(
