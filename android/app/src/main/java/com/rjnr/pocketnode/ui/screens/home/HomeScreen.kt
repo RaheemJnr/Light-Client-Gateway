@@ -1446,12 +1446,15 @@ private fun TransactionDetailSheet(
                 value = "${transaction.confirmations}"
             )
 
-            if (transaction.blockHash.isNotEmpty()) {
+            val displayBlockHash = transaction.blockHash
+                .takeIf { it.isNotBlank() && it != "0x0" }
+                ?.let { "${it.take(10)}...${it.takeLast(8)}" }
+            if (displayBlockHash != null) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
                 DetailRow(
                     label = "Block Hash",
-                    value = transaction.blockHash,
+                    value = displayBlockHash,
                     isMonospace = true
                 )
             }

@@ -761,30 +761,32 @@ class GatewayRepository @Inject constructor(
             // For display, we show the absolute value as the amount
             val amount = if (netChangeShannons < 0) -netChangeShannons else netChangeShannons
 
-            // Attempt to fetch block header to get real timestamp.
-            // nativeGetTransaction gives us the blockHash, then nativeGetHeader gives the timestamp.
-            val blockTimestampHex: String? = runCatching {
+            // Attempt to fetch block header to get real timestamp and block hash.
+            // nativeGetTransaction gives us the blockHash, then nativeGetHeader gives the header.
+            data class HeaderInfo(val timestampHex: String?, val hash: String?)
+            val headerInfo: HeaderInfo = runCatching {
                 val txWithStatus = LightClientNative.nativeGetTransaction(txHash)
                     ?.let { json.decodeFromString<JniTransactionWithStatus>(it) }
-                val blockHash = txWithStatus?.txStatus?.blockHash
-                if (blockHash != null) {
-                    val headerJson = LightClientNative.nativeGetHeader(blockHash)
-                    headerJson?.let { json.decodeFromString<JniHeaderView>(it).timestamp }
-                } else null
+                val blockHashFromStatus = txWithStatus?.txStatus?.blockHash
+                if (blockHashFromStatus != null) {
+                    val headerJson = LightClientNative.nativeGetHeader(blockHashFromStatus)
+                    val header = headerJson?.let { json.decodeFromString<JniHeaderView>(it) }
+                    HeaderInfo(timestampHex = header?.timestamp, hash = header?.hash)
+                } else HeaderInfo(null, null)
             }.onFailure { e ->
                 Log.w(TAG, "getTransactions: failed to fetch header for $txHash: ${e.message}")
-            }.getOrNull()
+            }.getOrElse { HeaderInfo(null, null) }
 
             TransactionRecord(
                 txHash = txHash,
                 blockNumber = firstInteraction.blockNumber,
-                blockHash = "0x0",
+                blockHash = headerInfo.hash ?: "0x0",
                 timestamp = 0L,
                 balanceChange = "0x${amount.toString(16)}",
                 direction = direction,
                 fee = "0x0", // Fee calculation could be added if needed: Sum(Inputs) - Sum(Outputs)
                 confirmations = 10, // Placeholder
-                blockTimestampHex = blockTimestampHex
+                blockTimestampHex = headerInfo.timestampHex
             )
         }
 
