@@ -81,6 +81,7 @@ fun MainScreen(
                 HomeScreen(
                     onNavigateToSend = onNavigateToSend,
                     onNavigateToReceive = onNavigateToReceive,
+                    onNavigateToBackup = onNavigateToBackup,
                     onNavigateToSettings = {
                         innerNav.navigate(BottomTab.Settings.route) {
                             popUpTo(innerNav.graph.findStartDestination().id) {

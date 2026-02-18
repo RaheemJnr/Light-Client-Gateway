@@ -777,6 +777,20 @@ class GatewayRepository @Inject constructor(
                 Log.w(TAG, "getTransactions: failed to fetch header for $txHash: ${e.message}")
             }.getOrElse { HeaderInfo(null, null) }
 
+            // Derive confirmations from tip block height vs transaction block number
+            val tipHeight = runCatching {
+                LightClientNative.nativeGetTipHeader()
+                    ?.let { json.decodeFromString<JniHeaderView>(it) }
+                    ?.number?.removePrefix("0x")?.toLongOrNull(16)
+            }.getOrNull() ?: 0L
+            val txBlockNum = firstInteraction.blockNumber.removePrefix("0x")
+                .toLongOrNull(16) ?: 0L
+            val confirmations = if (tipHeight > 0L && txBlockNum > 0L) {
+                (tipHeight - txBlockNum).coerceAtLeast(0L).toInt()
+            } else {
+                0  // unknown = treat as pending
+            }
+
             TransactionRecord(
                 txHash = txHash,
                 blockNumber = firstInteraction.blockNumber,
@@ -785,7 +799,7 @@ class GatewayRepository @Inject constructor(
                 balanceChange = "0x${amount.toString(16)}",
                 direction = direction,
                 fee = "0x0", // Fee calculation could be added if needed: Sum(Inputs) - Sum(Outputs)
-                confirmations = 10, // Placeholder
+                confirmations = confirmations,
                 blockTimestampHex = headerInfo.timestampHex
             )
         }
