@@ -4,6 +4,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -22,15 +23,20 @@ class PriceRepository @Inject constructor(
     private val json: Json
 ) {
     suspend fun getCkbUsdPrice(): Result<Double> = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
             val response = httpClient.get("https://api.coingecko.com/api/v3/simple/price") {
                 parameter("ids", "nervos-network")
                 parameter("vs_currencies", "usd")
             }
             val body = response.bodyAsText()
             val data = json.decodeFromString<Map<String, Map<String, Double>>>(body)
-            data["nervos-network"]?.get("usd")
-                ?: throw Exception("CKB price not found in CoinGecko response")
+            val price = data["nervos-network"]?.get("usd")
+                ?: return@withContext Result.failure(Exception("CKB price not found in response"))
+            Result.success(price)
+        } catch (e: CancellationException) {
+            throw e  // Always re-throw cancellation
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 }

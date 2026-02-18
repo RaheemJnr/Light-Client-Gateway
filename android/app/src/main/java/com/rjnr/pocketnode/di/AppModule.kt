@@ -49,6 +49,10 @@ object AppModule {
     @Provides
     @Singleton
     fun provideHttpClient(json: Json): HttpClient = HttpClient(Android) {
+        engine {
+            connectTimeout = 10_000  // 10 seconds
+            socketTimeout = 10_000   // 10 seconds
+        }
         install(ContentNegotiation) {
             json(json)
         }
