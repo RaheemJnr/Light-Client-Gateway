@@ -72,7 +72,7 @@ fun DaoScreen() {
                 Spacer(modifier = Modifier.height(20.dp))
 
                 Text(
-                    text = "Coming in the next update",
+                    text = "Coming in M2",
                     fontSize = 12.sp,
                     color = Color(0xFFF59E0B)
                 )
