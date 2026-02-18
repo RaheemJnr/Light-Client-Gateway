@@ -4,9 +4,11 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
+import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.TransactionStatusResponse
 import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
+import com.rjnr.pocketnode.util.sanitizeAmount
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -30,6 +32,7 @@ data class SendUiState(
     val error: String? = null,
     val txHash: String? = null,
     val availableBalance: Long = 0L,
+    val networkType: NetworkType = NetworkType.MAINNET,
     val transactionState: TransactionState = TransactionState.IDLE,
     val confirmations: Int = 0,
     val statusMessage: String = "",
@@ -54,6 +57,7 @@ class SendViewModel @Inject constructor(
         private const val POLLING_INTERVAL_MS = 3000L // Poll every 3 seconds
         private const val MAX_POLLING_ATTEMPTS = 120  // Stop after ~6 minutes
         private const val REQUIRED_CONFIRMATIONS = 3  // Consider fully confirmed after 3 confirmations
+        private const val DEFAULT_FEE_SHANNONS = 100_000L // 0.001 CKB
     }
 
     init {
@@ -63,21 +67,24 @@ class SendViewModel @Inject constructor(
             }
         }
 
-        // Cancel in-flight transaction if network changes mid-send
+        // Track network type and cancel in-flight transaction if network changes mid-send
         viewModelScope.launch {
-            repository.network.collect {
+            repository.network.collect { network ->
                 val state = _uiState.value.transactionState
                 if (state != TransactionState.IDLE && state != TransactionState.CONFIRMED && state != TransactionState.FAILED) {
                     sendJob?.cancel()
                     pollingJob?.cancel()
                     _uiState.update {
                         it.copy(
+                            networkType = network,
                             isLoading = false,
                             error = "Network changed. Transaction cancelled.",
                             transactionState = TransactionState.FAILED,
                             statusMessage = "Transaction cancelled due to network switch"
                         )
                     }
+                } else {
+                    _uiState.update { it.copy(networkType = network) }
                 }
             }
         }
@@ -88,26 +95,37 @@ class SendViewModel @Inject constructor(
     }
 
     fun updateAmount(amount: String) {
-        if (amount.isEmpty() || amount.matches(Regex("^\\d*\\.?\\d*$"))) {
-            val amountShannons = try {
-                if (amount.isEmpty()) 0L else (amount.toDouble() * 100_000_000).toLong()
-            } catch (e: Exception) {
-                0L
-            }
-
-            val estimatedFee = 1000L // Default placeholder fee
-            val potentialChange = _uiState.value.availableBalance - amountShannons - estimatedFee
-            val minCapacity = 61_00000000L
-
-            val warning = if (potentialChange in 1 until minCapacity) {
-                val lostCkb = potentialChange / 100_000_000.0
-                "Warning: Your remaining %.4f CKB is below the 61 CKB minimum and will be lost as a fee.".format(lostCkb)
-            } else {
-                null
-            }
-
-            _uiState.update { it.copy(amountCkb = amount, error = null, burnWarning = warning) }
+        val sanitized = sanitizeAmount(amount) ?: return  // silently reject invalid chars
+        val amountShannons = try {
+            if (sanitized.isEmpty()) 0L else (sanitized.toDouble() * 100_000_000).toLong()
+        } catch (e: Exception) {
+            0L
         }
+
+        val estimatedFee = DEFAULT_FEE_SHANNONS
+        val potentialChange = _uiState.value.availableBalance - amountShannons - estimatedFee
+        val minCapacity = 61_00000000L
+
+        val warning = if (potentialChange in 1 until minCapacity) {
+            val lostCkb = potentialChange / 100_000_000.0
+            "Warning: Your remaining %.4f CKB is below the 61 CKB minimum and will be lost as a fee.".format(lostCkb)
+        } else {
+            null
+        }
+
+        _uiState.update { it.copy(amountCkb = sanitized, error = null, burnWarning = warning) }
+    }
+
+    fun setMaxAmount() {
+        val balanceShannons = _uiState.value.availableBalance
+        val feeShannons = DEFAULT_FEE_SHANNONS
+        val maxShannons = (balanceShannons - feeShannons).coerceAtLeast(0L)
+        val maxCkb = maxShannons / 100_000_000.0
+        // Format to 8 decimal places, then strip trailing zeros (and trailing dot)
+        val formatted = "%.8f".format(maxCkb)
+            .trimEnd('0')
+            .trimEnd('.')
+        updateAmount(formatted.ifEmpty { "0" })
     }
 
     fun sendTransaction() {

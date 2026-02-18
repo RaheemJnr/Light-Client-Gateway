@@ -143,6 +143,14 @@ dependencies {
     implementation(libs.mlkit.barcode.scanning)
     implementation(libs.accompanist.permissions)
 
+    // QR Code generation (Receive screen)
+    implementation(libs.zxing.core)
+
+    // Ktor HTTP client (CoinGecko price fetch)
+    implementation(libs.ktor.client.android)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
+
     // Firebase
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)

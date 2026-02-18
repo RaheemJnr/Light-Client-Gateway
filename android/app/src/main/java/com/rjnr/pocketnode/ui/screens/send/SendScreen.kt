@@ -1,5 +1,7 @@
 package com.rjnr.pocketnode.ui.screens.send
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -21,12 +23,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.rjnr.pocketnode.data.gateway.models.NetworkType
+import com.rjnr.pocketnode.data.wallet.AddressUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,6 +59,7 @@ fun SendScreen(
             transactionState = uiState.transactionState,
             statusMessage = uiState.statusMessage,
             confirmations = uiState.confirmations,
+            networkType = uiState.networkType,
             onDismiss = {
                 viewModel.clearTxHash()
                 if (uiState.transactionState == TransactionState.CONFIRMED) {
@@ -119,7 +125,7 @@ fun SendScreen(
                 value = uiState.recipientAddress,
                 onValueChange = { viewModel.updateRecipient(it) },
                 label = { Text("Recipient Address") },
-                placeholder = { Text("ckt1q...") },
+                placeholder = { Text("Enter or paste CKB address") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = false,
                 maxLines = 3,
@@ -137,18 +143,37 @@ fun SendScreen(
                 }
             )
 
-            // Amount
-            OutlinedTextField(
-                value = uiState.amountCkb,
-                onValueChange = { viewModel.updateAmount(it) },
-                label = { Text("Amount (CKB)") },
-                placeholder = { Text("0.0") },
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                enabled = !uiState.isLoading,
-                supportingText = { Text("Minimum: 61 CKB") }
+            // Inline address validation indicator
+            AddressValidationIndicator(
+                address = uiState.recipientAddress,
+                currentNetwork = uiState.networkType
             )
+
+            // Amount with Max button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = uiState.amountCkb,
+                    onValueChange = { viewModel.updateAmount(it) },
+                    label = { Text("Amount (CKB)") },
+                    placeholder = { Text("0.0") },
+                    modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    enabled = !uiState.isLoading,
+                    supportingText = { Text("Minimum: 61 CKB") }
+                )
+                OutlinedButton(
+                    onClick = { viewModel.setMaxAmount() },
+                    enabled = !uiState.isLoading && uiState.availableBalance > 0L,
+                    modifier = Modifier.padding(bottom = 22.dp) // align with text field (offset for supportingText)
+                ) {
+                    Text("Max")
+                }
+            }
 
             // Burn Warning
             if (uiState.burnWarning != null) {
@@ -204,6 +229,40 @@ fun SendScreen(
             }
         }
     }
+}
+
+// Color constants matching the design palette
+private val ColorValidGreen = Color(0xFF1ED882)
+private val ColorInvalidRed = Color(0xFFFF4444)
+private val ColorWarnAmber = Color(0xFFF59E0B)
+
+@Composable
+fun AddressValidationIndicator(
+    address: String,
+    currentNetwork: NetworkType
+) {
+    if (address.isBlank()) return
+
+    val (isValid, addressNetwork) = remember(address) {
+        val valid = AddressUtils.isValid(address)
+        Pair(valid, if (valid) AddressUtils.getNetwork(address) else null)
+    }
+
+    val (symbol, message, color) = when {
+        !isValid -> Triple("✗", "Invalid address format", ColorInvalidRed)
+        addressNetwork != null && addressNetwork != currentNetwork -> {
+            val networkLabel = if (addressNetwork == NetworkType.TESTNET) "testnet" else "mainnet"
+            Triple("⚠", "This is a $networkLabel address on ${currentNetwork.name.lowercase()}", ColorWarnAmber)
+        }
+        else -> Triple("✓", "Valid CKB ${currentNetwork.name.lowercase()} address", ColorValidGreen)
+    }
+
+    Text(
+        text = "$symbol $message",
+        style = MaterialTheme.typography.bodySmall,
+        color = color,
+        modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+    )
 }
 
 @Composable
@@ -324,6 +383,7 @@ fun TransactionStatusDialog(
     transactionState: TransactionState,
     statusMessage: String,
     confirmations: Int,
+    networkType: NetworkType = NetworkType.MAINNET,
     onDismiss: () -> Unit
 ) {
     val isConfirmed = transactionState == TransactionState.CONFIRMED
@@ -413,6 +473,7 @@ fun TransactionStatusDialog(
                 }
 
                 // Transaction hash card
+                val context = LocalContext.current
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -423,11 +484,38 @@ fun TransactionStatusDialog(
                     Column(
                         modifier = Modifier.padding(12.dp)
                     ) {
-                        Text(
-                            text = "Transaction Hash",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Transaction Hash",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            TextButton(
+                                onClick = {
+                                    val explorerBase = if (networkType == NetworkType.TESTNET) {
+                                        "https://testnet.explorer.nervos.org/transaction/"
+                                    } else {
+                                        "https://explorer.nervos.org/transaction/"
+                                    }
+                                    try {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$explorerBase$txHash")))
+                                    } catch (e: android.content.ActivityNotFoundException) {
+                                        // No browser available — silently ignore
+                                    }
+                                },
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                            ) {
+                                Text(
+                                    text = "View on Explorer",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = txHash,
