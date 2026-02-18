@@ -35,6 +35,7 @@ import com.google.accompanist.permissions.shouldShowRationale
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import com.rjnr.pocketnode.util.extractCkbAddress
 import java.util.concurrent.Executors
 
 private const val TAG = "QrScannerScreen"
@@ -165,14 +166,11 @@ private fun CameraPreviewWithScanner(
                                                 if (barcode.valueType == Barcode.TYPE_TEXT ||
                                                     barcode.valueType == Barcode.TYPE_UNKNOWN) {
                                                     barcode.rawValue?.let { value ->
-                                                        // Check if it looks like a CKB address
-                                                        if (value.startsWith("ckb") ||
-                                                            value.startsWith("ckt")) {
-                                                            if (!hasScanned) {
-                                                                hasScanned = true
-                                                                Log.d(TAG, "Scanned CKB address: $value")
-                                                                onScanResult(value)
-                                                            }
+                                                        val address = extractCkbAddress(value)
+                                                        if (address != null && !hasScanned) {
+                                                            hasScanned = true
+                                                            Log.d(TAG, "Scanned CKB address: $address")
+                                                            onScanResult(address)
                                                         }
                                                     }
                                                 }
