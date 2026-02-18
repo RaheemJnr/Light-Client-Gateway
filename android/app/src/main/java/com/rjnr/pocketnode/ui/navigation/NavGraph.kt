@@ -11,6 +11,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.rjnr.pocketnode.ui.MainScreen
 import com.rjnr.pocketnode.ui.screens.auth.AuthScreen
 import com.rjnr.pocketnode.ui.screens.auth.PinEntryScreen
 import com.rjnr.pocketnode.ui.screens.auth.PinMode
@@ -25,6 +26,7 @@ import com.rjnr.pocketnode.ui.screens.settings.SecuritySettingsViewModel
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
+    object Main : Screen("main")
     object Send : Screen("send")
     object Receive : Screen("receive")
     object Scanner : Screen("scanner")
@@ -39,6 +41,17 @@ sealed class Screen(val route: String) {
     object SecuritySettings : Screen("security_settings")
 }
 
+sealed class BottomTab(val route: String, val label: String) {
+    object Home     : BottomTab("tab_home",     "Wallet")
+    object Activity : BottomTab("tab_activity", "Activity")
+    object DAO      : BottomTab("tab_dao",      "DAO")
+    object Settings : BottomTab("tab_settings", "Settings")
+
+    companion object {
+        val entries = listOf(Home, Activity, DAO, Settings)
+    }
+}
+
 @Composable
 fun CkbNavGraph(
     navController: NavHostController,
@@ -51,7 +64,7 @@ fun CkbNavGraph(
         composable(Screen.Onboarding.route) {
             com.rjnr.pocketnode.ui.screens.onboarding.OnboardingScreen(
                 onNavigateToHome = {
-                    navController.navigate(Screen.Home.route) {
+                    navController.navigate(Screen.Main.route) {
                         popUpTo(Screen.Onboarding.route) { inclusive = true }
                     }
                 },
@@ -71,7 +84,7 @@ fun CkbNavGraph(
         composable(Screen.MnemonicBackup.route) {
             MnemonicBackupScreen(
                 onNavigateToHome = {
-                    navController.navigate(Screen.Home.route) {
+                    navController.navigate(Screen.Main.route) {
                         popUpTo(Screen.MnemonicBackup.route) { inclusive = true }
                         launchSingleTop = true
                     }
@@ -83,7 +96,7 @@ fun CkbNavGraph(
         composable(Screen.MnemonicImport.route) {
             MnemonicImportScreen(
                 onNavigateToHome = {
-                    navController.navigate(Screen.Home.route) {
+                    navController.navigate(Screen.Main.route) {
                         popUpTo(Screen.MnemonicImport.route) { inclusive = true }
                         launchSingleTop = true
                     }
@@ -95,7 +108,7 @@ fun CkbNavGraph(
         composable(Screen.Auth.route) {
             AuthScreen(
                 onAuthSuccess = {
-                    navController.navigate(Screen.Home.route) {
+                    navController.navigate(Screen.Main.route) {
                         popUpTo(Screen.Auth.route) { inclusive = true }
                     }
                 },
@@ -148,7 +161,7 @@ fun CkbNavGraph(
                                     ?.set("pin_verified", true)
                                 navController.popBackStack()
                             } else {
-                                navController.navigate(Screen.Home.route) {
+                                navController.navigate(Screen.Main.route) {
                                     popUpTo(Screen.Auth.route) { inclusive = true }
                                 }
                             }
@@ -208,6 +221,17 @@ fun CkbNavGraph(
                 onNavigateToSecuritySettings = {
                     navController.navigate(Screen.SecuritySettings.route)
                 }
+            )
+        }
+
+        composable(Screen.Main.route) {
+            MainScreen(
+                onNavigateToSend = { navController.navigate(Screen.Send.route) },
+                onNavigateToReceive = { navController.navigate(Screen.Receive.route) },
+                onNavigateToNodeStatus = { navController.navigate(Screen.NodeStatus.route) },
+                onNavigateToBackup = { navController.navigate(Screen.MnemonicBackup.route) },
+                onNavigateToSecuritySettings = { navController.navigate(Screen.SecuritySettings.route) },
+                onNavigateToImport = { navController.navigate(Screen.MnemonicImport.route) },
             )
         }
 
