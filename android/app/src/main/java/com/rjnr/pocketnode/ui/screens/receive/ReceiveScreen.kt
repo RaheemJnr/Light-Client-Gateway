@@ -1,5 +1,6 @@
 package com.rjnr.pocketnode.ui.screens.receive
 
+import android.content.Intent
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -35,7 +36,6 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.ui.screens.home.HomeViewModel
-import android.content.Intent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -270,13 +270,14 @@ private fun QrCodeImage(content: String, modifier: Modifier = Modifier) {
         }
     }
 
-    if (bitmap == null) {
+    val bmp = bitmap
+    if (bmp == null) {
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = Primary)
         }
     } else {
         Image(
-            bitmap = bitmap!!.asImageBitmap(),
+            bitmap = bmp.asImageBitmap(),
             contentDescription = "QR Code",
             modifier = modifier
         )
