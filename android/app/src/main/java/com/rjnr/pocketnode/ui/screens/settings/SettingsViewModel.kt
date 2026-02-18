@@ -69,11 +69,13 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setSyncMode(mode: SyncMode, customBlockHeight: Long? = null) {
-        walletPrefs.setSyncMode(mode)
-        if (mode == SyncMode.CUSTOM && customBlockHeight != null) {
-            walletPrefs.setCustomBlockHeight(customBlockHeight)
-        }
         _uiState.update { it.copy(syncMode = mode, showSyncDialog = false) }
+        viewModelScope.launch {
+            repository.resyncAccount(mode, customBlockHeight)
+                .onFailure { e ->
+                    _uiState.update { it.copy(error = "Sync mode change failed: ${e.message}") }
+                }
+        }
     }
 
     fun requestNetworkSwitch(target: NetworkType) {

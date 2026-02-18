@@ -22,22 +22,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.FiberNew
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Receipt
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -77,12 +72,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -92,6 +85,7 @@ import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
 import com.rjnr.pocketnode.data.gateway.models.displayName
+import com.rjnr.pocketnode.ui.components.SyncOptionsDialog
 import com.rjnr.pocketnode.util.formatBlockTimestamp
 import kotlinx.coroutines.launch
 
@@ -644,249 +638,6 @@ private fun SyncedChip() {
             color = Color(0xFF1ED882),
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         )
-    }
-}
-
-@Composable
-private fun SyncOptionsDialog(
-    currentMode: SyncMode,
-    onDismiss: () -> Unit,
-    onSelectMode: (SyncMode, Long?) -> Unit
-) {
-    var selectedMode by remember { mutableStateOf(currentMode) }
-    var customBlockHeight by remember { mutableStateOf("") }
-    var showCustomInput by remember { mutableStateOf(currentMode == SyncMode.CUSTOM) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text("Sync Options", fontWeight = FontWeight.Bold)
-        },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "Choose how much transaction history to sync:",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // New Wallet option
-                SyncOptionItem(
-                    title = "New Wallet",
-                    description = "No history - fastest startup",
-                    icon = Icons.Default.FiberNew,
-                    isSelected = selectedMode == SyncMode.NEW_WALLET,
-                    onClick = {
-                        selectedMode = SyncMode.NEW_WALLET
-                        showCustomInput = false
-                    }
-                )
-
-                // Recent option
-                SyncOptionItem(
-                    title = "Recent (~30 days)",
-                    description = "Last ~200k blocks - recommended",
-                    icon = Icons.Default.Schedule,
-                    isSelected = selectedMode == SyncMode.RECENT,
-                    onClick = {
-                        selectedMode = SyncMode.RECENT
-                        showCustomInput = false
-                    }
-                )
-
-                // Full History option
-                SyncOptionItem(
-                    title = "Full History",
-                    description = "From genesis - complete but slow",
-                    icon = Icons.Default.History,
-                    isSelected = selectedMode == SyncMode.FULL_HISTORY,
-                    onClick = {
-                        selectedMode = SyncMode.FULL_HISTORY
-                        showCustomInput = false
-                    }
-                )
-
-                // Custom option
-                SyncOptionItem(
-                    title = "Custom Block Height",
-                    description = "Start from a specific block",
-                    icon = Icons.Default.Tune,
-                    isSelected = selectedMode == SyncMode.CUSTOM,
-                    onClick = {
-                        selectedMode = SyncMode.CUSTOM
-                        showCustomInput = true
-                    }
-                )
-
-                // Custom block height input
-                if (showCustomInput) {
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Warning about missing history
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.tertiary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Transactions before this block won't appear in history, but your balance will still be correct.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = customBlockHeight,
-                        onValueChange = { customBlockHeight = it.filter { c -> c.isDigit() } },
-                        label = { Text("Block Height") },
-                        placeholder = { Text("e.g., 12000000") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Warning for full history
-                if (selectedMode == SyncMode.FULL_HISTORY) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Full sync can take several hours depending on network conditions.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val customBlock = if (selectedMode == SyncMode.CUSTOM) {
-                        customBlockHeight.toLongOrNull()
-                    } else null
-                    onSelectMode(selectedMode, customBlock)
-                },
-                enabled = selectedMode != SyncMode.CUSTOM || customBlockHeight.isNotBlank()
-            ) {
-                Text("Apply")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
-}
-
-@Composable
-private fun SyncOptionItem(
-    title: String,
-    description: String,
-    icon: ImageVector,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        color = if (isSelected) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            MaterialTheme.colorScheme.surface
-        },
-        shape = RoundedCornerShape(12.dp),
-        border = if (isSelected) {
-            null
-        } else {
-            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-        }
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (isSelected) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                modifier = Modifier.size(24.dp)
-            )
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    }
-                )
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
-            }
-
-            if (isSelected) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = "Selected",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-        }
     }
 }
 
