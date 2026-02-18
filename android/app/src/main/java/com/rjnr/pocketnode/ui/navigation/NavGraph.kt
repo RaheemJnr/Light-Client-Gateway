@@ -54,7 +54,7 @@ sealed class BottomTab(val route: String, val label: String) {
 @Composable
 fun CkbNavGraph(
     navController: NavHostController,
-    startDestination: String = Screen.Home.route
+    startDestination: String = Screen.Onboarding.route
 ) {
     NavHost(
         navController = navController,

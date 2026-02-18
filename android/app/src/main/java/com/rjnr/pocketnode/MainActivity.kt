@@ -36,7 +36,7 @@ class MainActivity : FragmentActivity() {
         val startDestination = when {
             !repository.hasWallet() -> Screen.Onboarding.route
             pinManager.hasPin() -> Screen.Auth.route
-            else -> Screen.Home.route
+            else -> Screen.Main.route
         }
 
         setContent {
@@ -57,7 +57,7 @@ class MainActivity : FragmentActivity() {
                                 currentRoute != Screen.PinEntry.route
                             ) {
                                 navController.navigate(Screen.Auth.route) {
-                                    popUpTo(Screen.Home.route) { inclusive = true }
+                                    popUpTo(Screen.Main.route) { inclusive = true }
                                     launchSingleTop = true
                                 }
                             }
