@@ -210,8 +210,9 @@ class HomeViewModel @Inject constructor(
             try {
                 val peersJson = repository.getPeers()
                 if (peersJson != null) {
-                    // Count top-level array elements by counting "addresses" key occurrences
-                    val count = peersJson.split("\"addresses\"").size - 1
+                    // Count top-level array elements by counting "peer_id" occurrences.
+                    // Each peer has exactly one peer_id and it won't appear nested.
+                    val count = peersJson.split("\"peer_id\"").size - 1
                     _uiState.update { it.copy(peerCount = count.coerceAtLeast(0)) }
                 }
             } catch (e: Exception) {
