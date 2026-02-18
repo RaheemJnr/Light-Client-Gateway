@@ -4,7 +4,6 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
-import com.rjnr.pocketnode.data.gateway.models.BalanceResponse
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
@@ -458,7 +457,6 @@ data class HomeUiState(
     val address: String = "",
     val balanceCkb: Double = 0.0,
     val fiatBalance: String? = null,
-    val balance: BalanceResponse? = null,
     val peerCount: Int = 0,
     val transactions: List<TransactionRecord> = emptyList(),
     val error: String? = null,
