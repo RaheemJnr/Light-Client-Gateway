@@ -245,6 +245,13 @@ class GatewayRepository @Inject constructor(
                 if (!awaitNodeReady()) {
                     throw Exception("Node failed to initialize on both ${target.name} and ${previousNetwork.name}")
                 }
+                // Re-register wallet scripts on the reverted network so sync continues
+                val info = _walletInfo.value
+                if (info != null) {
+                    val syncMode = walletPreferences.getSyncMode(previousNetwork)
+                    val customHeight = walletPreferences.getCustomBlockHeight(previousNetwork)
+                    registerAccount(syncMode = syncMode, customBlockHeight = customHeight)
+                }
                 throw Exception("Node failed to initialize on ${target.name}, reverted to ${previousNetwork.name}")
             }
 
