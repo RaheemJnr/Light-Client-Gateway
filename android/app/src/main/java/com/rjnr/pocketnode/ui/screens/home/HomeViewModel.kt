@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.BalanceResponse
+import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
 import com.rjnr.pocketnode.data.wallet.KeyManager
@@ -53,6 +54,18 @@ class HomeViewModel @Inject constructor(
                 }
             }
         }
+
+        viewModelScope.launch {
+            repository.network.collect { network ->
+                _uiState.update { it.copy(currentNetwork = network) }
+            }
+        }
+
+        viewModelScope.launch {
+            repository.isSwitchingNetwork.collect { switching ->
+                _uiState.update { it.copy(isSwitchingNetwork = switching) }
+            }
+        }
     }
 
     private suspend fun initializeWallet() {
@@ -82,8 +95,12 @@ class HomeViewModel @Inject constructor(
 
         _uiState.update { it.copy(currentSyncMode = savedSyncMode) }
 
-        // Use saved settings, or default to RECENT for first-time users
-        val syncMode = if (hasCompletedInitialSync) savedSyncMode else SyncMode.RECENT
+        // Use saved settings, or network-appropriate default for first-time users.
+        // Testnet defaults to NEW_WALLET (start from tip — testnet is small, no need for history).
+        // Mainnet defaults to RECENT (~30 days of history).
+        val firstTimeSyncMode = if (repository.currentNetwork == NetworkType.TESTNET)
+            SyncMode.NEW_WALLET else SyncMode.RECENT
+        val syncMode = if (hasCompletedInitialSync) savedSyncMode else firstTimeSyncMode
         val customBlockHeight = if (syncMode == SyncMode.CUSTOM) savedCustomBlockHeight else null
 
         Log.d(TAG, "Registering account with sync mode: $syncMode")
@@ -356,6 +373,54 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    fun requestNetworkSwitch(target: NetworkType) {
+        _uiState.update { it.copy(showNetworkSwitchDialog = true, pendingNetworkSwitch = target) }
+    }
+
+    fun cancelNetworkSwitch() {
+        _uiState.update { it.copy(showNetworkSwitchDialog = false, pendingNetworkSwitch = null) }
+    }
+
+    fun confirmNetworkSwitch() {
+        val target = _uiState.value.pendingNetworkSwitch ?: return
+        _uiState.update { it.copy(showNetworkSwitchDialog = false, pendingNetworkSwitch = null) }
+
+        viewModelScope.launch {
+            // Cancel active polling before switching
+            syncPollingJob?.cancel()
+            syncPollingJob = null
+
+            // Clear UI state for fresh network
+            _uiState.update {
+                it.copy(
+                    balanceCkb = 0.0,
+                    transactions = emptyList(),
+                    syncProgress = 0.0,
+                    isSyncing = true,
+                    error = null
+                )
+            }
+
+            repository.switchNetwork(target)
+                .onSuccess {
+                    Log.d(TAG, "Network switched to ${target.name}")
+                    _uiState.update {
+                        it.copy(address = repository.getCurrentAddress() ?: "")
+                    }
+                    checkSyncStatusAndRefresh()
+                }
+                .onFailure { error ->
+                    Log.e(TAG, "Network switch failed", error)
+                    _uiState.update {
+                        it.copy(
+                            isSyncing = false,
+                            error = "Network switch failed: ${error.message}"
+                        )
+                    }
+                }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         syncPollingJob?.cancel()
@@ -380,5 +445,9 @@ data class HomeUiState(
     val showImportDialog: Boolean = false,
     val showImportSyncReminder: Boolean = false,
     val showBackupReminder: Boolean = false,
-    val walletType: String = KeyManager.WALLET_TYPE_RAW_KEY
+    val walletType: String = KeyManager.WALLET_TYPE_RAW_KEY,
+    val currentNetwork: NetworkType = NetworkType.MAINNET,
+    val isSwitchingNetwork: Boolean = false,
+    val showNetworkSwitchDialog: Boolean = false,
+    val pendingNetworkSwitch: NetworkType? = null
 )

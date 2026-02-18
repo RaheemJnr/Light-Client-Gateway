@@ -20,17 +20,26 @@ enum class SyncMode {
 }
 
 /**
- * CKB Mainnet checkpoint - approximately early Jan 2026.
- * Using block 18,300,000 to avoid syncing 18M blocks from genesis.
+ * Network-aware checkpoint block heights.
+ * Mainnet: ~early Jan 2026, avoids syncing 18M+ blocks from genesis.
+ * Testnet: 0 (Pudge testnet is small enough to sync from genesis quickly).
  */
-const val HARDCODED_CHECKPOINT = 18_300_000L
+fun getCheckpoint(network: NetworkType): Long = when (network) {
+    NetworkType.MAINNET -> 18_300_000L
+    NetworkType.TESTNET -> 0L
+}
 
 /**
  * Helper to convert SyncMode to the from_block parameter value
  */
-fun SyncMode.toFromBlock(customBlockHeight: Long? = null, tipHeight: Long = 0): String {
-    val bestTip = if (tipHeight > 0) tipHeight else HARDCODED_CHECKPOINT
-    
+fun SyncMode.toFromBlock(
+    customBlockHeight: Long? = null,
+    tipHeight: Long = 0,
+    network: NetworkType = NetworkType.MAINNET
+): String {
+    val checkpoint = getCheckpoint(network)
+    val bestTip = if (tipHeight > 0) tipHeight else checkpoint
+
     return when (this) {
         SyncMode.NEW_WALLET -> bestTip.toString()
         SyncMode.RECENT -> {

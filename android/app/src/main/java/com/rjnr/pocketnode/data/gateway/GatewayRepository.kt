@@ -9,13 +9,14 @@ import com.rjnr.pocketnode.data.wallet.WalletInfo
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
 import com.nervosnetwork.ckblightclient.LightClientNative
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -44,25 +45,85 @@ class GatewayRepository @Inject constructor(
     private val _nodeStatus = MutableStateFlow("Stopped")
     val nodeStatus: StateFlow<String> = _nodeStatus.asStateFlow()
 
-    val network: NetworkType = NetworkType.MAINNET
+    private val _network = MutableStateFlow(walletPreferences.getSelectedNetwork())
+    val network: StateFlow<NetworkType> = _network.asStateFlow()
+    val currentNetwork: NetworkType get() = _network.value
+
+    private val _isSwitchingNetwork = MutableStateFlow(false)
+    val isSwitchingNetwork: StateFlow<Boolean> = _isSwitchingNetwork.asStateFlow()
+
     private val scope = CoroutineScope(Dispatchers.IO)
-    private val nodeReady = CompletableDeferred<Boolean>()
+    private val _nodeReady = MutableStateFlow<Boolean?>(null)
 
     init {
-        // Initialize the embedded node
+        // Migrate old flat data/ directory to data/mainnet/ on first run
+        migrateDataDirectoryIfNeeded()
+
+        // Initialize the embedded node for the persisted network
         scope.launch {
-            initializeNode()
+            initializeNode(currentNetwork)
         }
     }
 
-    private suspend fun initializeNode() {
+    /**
+     * Suspends until the node is ready. Returns true if init succeeded, false if it failed.
+     */
+    private suspend fun awaitNodeReady(): Boolean {
+        return _nodeReady.filterNotNull().first()
+    }
+
+    /**
+     * One-time migration: moves old flat data/ layout (store.db, network/) into data/mainnet/.
+     * Existing users upgrading from pre-testnet have data directly in data/ — this moves it
+     * so each network gets its own isolated subdirectory.
+     */
+    private fun migrateDataDirectoryIfNeeded() {
+        val dataDir = File(context.filesDir, "data")
+        val mainnetDir = File(dataDir, "mainnet")
+        val storeDb = File(dataDir, "store.db")
+        val networkDir = File(dataDir, "network")
+
+        // If mainnet subdir already exists or there's nothing to migrate, skip
+        if (mainnetDir.exists() || (!storeDb.exists() && !networkDir.exists())) return
+
+        Log.d(TAG, "Migrating data directory to per-network layout...")
+        if (!mainnetDir.mkdirs() && !mainnetDir.exists()) {
+            Log.e(TAG, "Failed to create mainnet directory, skipping migration")
+            return
+        }
+
+        var migrationOk = true
+        if (storeDb.exists()) {
+            if (storeDb.renameTo(File(mainnetDir, "store.db"))) {
+                Log.d(TAG, "Moved store.db -> mainnet/store.db")
+            } else {
+                Log.e(TAG, "Failed to move store.db to mainnet/store.db")
+                migrationOk = false
+            }
+        }
+        if (networkDir.exists()) {
+            if (networkDir.renameTo(File(mainnetDir, "network"))) {
+                Log.d(TAG, "Moved network/ -> mainnet/network/")
+            } else {
+                Log.e(TAG, "Failed to move network/ to mainnet/network/")
+                migrationOk = false
+            }
+        }
+        if (!migrationOk) {
+            Log.e(TAG, "Migration incomplete — manual intervention may be needed")
+        }
+    }
+
+    private suspend fun initializeNode(targetNetwork: NetworkType) {
         try {
-            Log.d(TAG, "🚀 Initializing embedded node...")
-            val configName = "mainnet.toml"
+            _nodeReady.value = null // Reset for re-initialization
+            Log.d(TAG, "Initializing embedded node for ${targetNetwork.name}...")
+
+            val configName = "${targetNetwork.name.lowercase()}.toml"
             val configFile = File(context.filesDir, configName)
 
             // Copy config from assets (deterministic, no retry needed)
-            Log.d(TAG, "📁 Copying config from assets to: ${configFile.absolutePath}")
+            Log.d(TAG, "Copying config from assets: $configName")
             try {
                 context.assets.open(configName).use { input ->
                     configFile.outputStream().use { output ->
@@ -70,19 +131,19 @@ class GatewayRepository @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Failed to copy $configName from assets", e)
-                nodeReady.complete(false)
+                Log.e(TAG, "Failed to copy $configName from assets", e)
+                _nodeReady.value = false
                 return
             }
 
-            // Update paths in config
+            // Update paths in config — each network gets its own data subdirectory
             val configContent = configFile.readText()
-            val dataDir = File(context.filesDir, "data")
+            val dataDir = File(context.filesDir, "data/${targetNetwork.name.lowercase()}")
             if (!dataDir.exists()) {
-                Log.d(TAG, "📂 Creating data directory: ${dataDir.absolutePath}")
+                Log.d(TAG, "Creating data directory: ${dataDir.absolutePath}")
                 if (!dataDir.mkdirs()) {
-                    Log.e(TAG, "❌ Failed to create data directory")
-                    nodeReady.complete(false)
+                    Log.e(TAG, "Failed to create data directory")
+                    _nodeReady.value = false
                     return
                 }
             }
@@ -91,56 +152,87 @@ class GatewayRepository @Inject constructor(
                 .replace("path = \"data/store\"", "path = \"${File(dataDir, "store.db").absolutePath}\"")
                 .replace("path = \"data/network\"", "path = \"${File(dataDir, "network").absolutePath}\"")
             configFile.writeText(newConfig)
-            Log.d(TAG, "📝 Config updated with absolute paths")
-            Log.d(TAG, "📄 Final config content:\n$newConfig")
+            Log.d(TAG, "Config updated with absolute paths for ${targetNetwork.name}")
 
             // Init and start JNI with retry (transient failures can occur)
             val maxRetries = 3
             val backoffMs = longArrayOf(2_000, 4_000, 8_000)
 
             for (attempt in 1..maxRetries) {
-                Log.d(TAG, "⚙️ JNI init attempt $attempt/$maxRetries...")
+                Log.d(TAG, "JNI init attempt $attempt/$maxRetries...")
 
                 val initResult = LightClientNative.nativeInit(
                     configFile.absolutePath,
                     object : LightClientNative.StatusCallback {
                         override fun onStatusChange(status: String, data: String) {
-                            Log.d(TAG, "📡 Native Status Change: $status")
+                            Log.d(TAG, "Native Status Change: $status")
                             _nodeStatus.value = status
                         }
                     }
                 )
 
                 if (!initResult) {
-                    Log.e(TAG, "❌ nativeInit returned false (attempt $attempt)")
+                    Log.e(TAG, "nativeInit returned false (attempt $attempt)")
                     if (attempt < maxRetries) {
                         delay(backoffMs[attempt - 1])
                         continue
                     }
-                    nodeReady.complete(false)
+                    _nodeReady.value = false
                     return
                 }
 
                 val startResult = LightClientNative.nativeStart()
                 if (startResult) {
-                    Log.d(TAG, "🚀 Node started successfully (attempt $attempt)")
-                    nodeReady.complete(true)
+                    Log.d(TAG, "Node started successfully on ${targetNetwork.name} (attempt $attempt)")
+                    _nodeReady.value = true
                     return
                 }
 
-                Log.e(TAG, "❌ nativeStart returned false (attempt $attempt)")
+                Log.e(TAG, "nativeStart returned false (attempt $attempt)")
                 if (attempt < maxRetries) {
                     delay(backoffMs[attempt - 1])
                 } else {
-                    nodeReady.complete(false)
+                    _nodeReady.value = false
                 }
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "💥 Setup error during node initialization", e)
-            if (!nodeReady.isCompleted) {
-                nodeReady.complete(false)
-            }
+            Log.e(TAG, "Setup error during node initialization", e)
+            _nodeReady.value = false
+        }
+    }
+
+    /**
+     * Switches to a different network by persisting the selection and restarting the process.
+     *
+     * The JNI light client does not support in-process re-initialization: nativeStop() blocks
+     * indefinitely while peers are connected, and nativeInit() rejects calls when already
+     * initialized. Restarting the process gives a clean JNI state at zero engineering cost.
+     *
+     * Process death safety: setSelectedNetwork() uses commit() (synchronous) so the preference
+     * is guaranteed on disk before killProcess(). On restart, initializeNode() reads the new
+     * network from WalletPreferences. Data directories are isolated per network.
+     */
+    suspend fun switchNetwork(target: NetworkType): Result<Unit> = runCatching {
+        if (target == currentNetwork) return@runCatching
+        if (_isSwitchingNetwork.value) throw Exception("Network switch already in progress")
+
+        _isSwitchingNetwork.value = true
+        try {
+            Log.d(TAG, "Switching network: ${currentNetwork.name} -> ${target.name}")
+
+            // The JNI light client does not support re-initialization in the same process lifetime:
+            // nativeStop() blocks indefinitely (peer disconnection loop) and nativeInit() rejects
+            // calls while already initialized ("Already initialized!"). The only reliable path is
+            // to persist the selection and restart the process — Android will relaunch the app and
+            // initializeNode() will pick up the new network from WalletPreferences.
+            walletPreferences.setSelectedNetwork(target) // uses commit() — synchronous flush
+            Log.d(TAG, "Persisted ${target.name}, restarting process for clean JNI init")
+            android.os.Process.killProcess(android.os.Process.myPid())
+            // Process is terminated above; code below is unreachable but satisfies the compiler
+        } catch (e: Exception) {
+            _isSwitchingNetwork.value = false
+            throw e
         }
     }
 
@@ -237,15 +329,11 @@ class GatewayRepository @Inject constructor(
         forceResync: Boolean = false
     ): Result<Unit> = runCatching {
         // Wait for node to be ready
-        if (!nodeReady.await()) {
+        if (!awaitNodeReady()) {
              throw Exception("Node initialization failed")
         }
 
         val info = _walletInfo.value ?: throw Exception("Wallet not initialized")
-        val address = when (network) {
-            NetworkType.TESTNET -> info.testnetAddress
-            NetworkType.MAINNET -> info.mainnetAddress
-        }
 
         val tipStr = LightClientNative.nativeGetTipHeader()
         val tipHeight = if (tipStr != null) {
@@ -260,37 +348,37 @@ class GatewayRepository @Inject constructor(
         val blockNum: String = when {
             // If force resync requested, recalculate from sync mode
             forceResync -> {
-                Log.d(TAG, "🔄 Force resync requested, recalculating from sync mode")
-                syncMode.toFromBlock(customBlockHeight, tipHeight)
+                Log.d(TAG, "Force resync requested, recalculating from sync mode")
+                syncMode.toFromBlock(customBlockHeight, tipHeight, currentNetwork)
             }
             // Resume from saved progress if available (use the higher value)
             savedBlock > 0 || existingScriptBlock > 0 -> {
                 val resumeBlock = maxOf(savedBlock, existingScriptBlock)
-                Log.d(TAG, "📍 Resuming sync from saved block: $resumeBlock (saved=$savedBlock, existing=$existingScriptBlock)")
+                Log.d(TAG, "Resuming sync from saved block: $resumeBlock (saved=$savedBlock, existing=$existingScriptBlock)")
                 resumeBlock.toString()
             }
             // First time: calculate based on sync mode
             else -> {
-                Log.d(TAG, "🆕 First time sync, calculating from mode: $syncMode")
-                syncMode.toFromBlock(customBlockHeight, tipHeight)
+                Log.d(TAG, "First time sync, calculating from mode: $syncMode")
+                syncMode.toFromBlock(customBlockHeight, tipHeight, currentNetwork)
             }
         }
 
-        // Safety check: if blockNum is in the future, reset to a RECENT block height
-        // to ensure we don't just scan from the exact tip and miss history.
-        // Also use HARDCODED_CHECKPOINT as a fallback if tip is 0.
+        // Safety check: if blockNum is in the future, reset to a RECENT block height.
+        // Use network-aware checkpoint as a fallback if tip is 0.
+        val checkpoint = getCheckpoint(currentNetwork)
         var finalBlockNum = blockNum
         val blockNumLong = blockNum.toLongOrNull() ?: 0L
-        
+
         if (blockNumLong > tipHeight && tipHeight > 0) {
             val recentBlock = (tipHeight - 200_000).coerceAtLeast(0L)
-            Log.w(TAG, "⚠️ Detected future block number ($blockNumLong > $tipHeight). " +
+            Log.w(TAG, "Detected future block number ($blockNumLong > $tipHeight). " +
                     "Resetting to RECENT height: $recentBlock")
             finalBlockNum = recentBlock.toString()
-        } else if (blockNumLong == 0L && syncMode != SyncMode.FULL_HISTORY) {
+        } else if (blockNumLong == 0L && syncMode != SyncMode.FULL_HISTORY && checkpoint > 0) {
             // If it resolved to 0 but we aren't doing full history, use checkpoint
-            Log.d(TAG, "📍 Block resolved to 0 but mode is $syncMode. Using checkpoint $HARDCODED_CHECKPOINT")
-            finalBlockNum = HARDCODED_CHECKPOINT.toString()
+            Log.d(TAG, "Block resolved to 0 but mode is $syncMode. Using checkpoint $checkpoint")
+            finalBlockNum = checkpoint.toString()
         }
 
         Log.d(TAG, "🔄 Sync mode $syncMode: tip=$tipHeight, targetBlock=$finalBlockNum")
@@ -741,12 +829,12 @@ class GatewayRepository @Inject constructor(
     }
 
     suspend fun getGatewayStatus(): Result<StatusResponse> = runCatching {
-        StatusResponse("testnet", "0x0", "0x0", 0, false, true)
+        StatusResponse(currentNetwork.name.lowercase(), "0x0", "0x0", 0, false, true)
     }
 
     fun getCurrentAddress(): String? {
         val info = _walletInfo.value ?: return null
-        return when (network) {
+        return when (currentNetwork) {
             NetworkType.TESTNET -> info.testnetAddress
             NetworkType.MAINNET -> info.mainnetAddress
         }

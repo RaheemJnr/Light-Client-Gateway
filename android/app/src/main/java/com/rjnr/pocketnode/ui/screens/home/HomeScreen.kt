@@ -91,8 +91,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
+import com.rjnr.pocketnode.data.gateway.models.displayName
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -120,6 +122,31 @@ fun HomeScreen(
             onSelectMode = { mode, customBlock ->
                 viewModel.hideSyncOptions()
                 viewModel.changeSyncMode(mode, customBlock)
+            }
+        )
+    }
+
+    // Network switch confirmation dialog
+    val pendingSwitch = uiState.pendingNetworkSwitch
+    if (uiState.showNetworkSwitchDialog && pendingSwitch != null) {
+        val targetName = pendingSwitch.displayName
+        AlertDialog(
+            onDismissRequest = { viewModel.cancelNetworkSwitch() },
+            title = { Text("Switch to $targetName?") },
+            text = {
+                Text("The app will close and reopen on $targetName. " +
+                    "Your wallet and data on the current network are safe — " +
+                    "you can switch back at any time.")
+            },
+            confirmButton = {
+                Button(onClick = { viewModel.confirmNetworkSwitch() }) {
+                    Text("Switch & Restart")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.cancelNetworkSwitch() }) {
+                    Text("Cancel")
+                }
             }
         )
     }
@@ -174,7 +201,13 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Pocket Node") },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Pocket Node")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        NetworkBadge(network = uiState.currentNetwork)
+                    }
+                },
                 actions = {
                     // Sync options menu
                     Box {
@@ -219,6 +252,20 @@ fun HomeScreen(
                                     Icon(Icons.Default.FileUpload, contentDescription = null)
                                 }
                             )
+                            val switchTarget = if (uiState.currentNetwork == NetworkType.MAINNET)
+                                NetworkType.TESTNET else NetworkType.MAINNET
+                            val switchLabel = "Switch to ${switchTarget.displayName}"
+                            DropdownMenuItem(
+                                text = { Text(switchLabel) },
+                                onClick = {
+                                    showSyncMenu = false
+                                    viewModel.requestNetworkSwitch(switchTarget)
+                                },
+                                enabled = !uiState.isSwitchingNetwork,
+                                leadingIcon = {
+                                    Icon(Icons.Default.SwapHoriz, contentDescription = null)
+                                }
+                            )
                             DropdownMenuItem(
                                 text = { Text("Security Settings") },
                                 onClick = {
@@ -256,9 +303,26 @@ fun HomeScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        if (uiState.isLoading) {
+        if (uiState.isSwitchingNetwork) {
             Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text(
+                        "Switching network...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        } else if (uiState.isLoading) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
                 Column(
@@ -1444,5 +1508,25 @@ private fun DetailRow(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun NetworkBadge(network: NetworkType) {
+    val isTestnet = network == NetworkType.TESTNET
+    val backgroundColor = if (isTestnet) Color(0xFFF57C00) else MaterialTheme.colorScheme.primary
+    val textColor = if (isTestnet) Color.White else MaterialTheme.colorScheme.onPrimary
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = backgroundColor,
+        modifier = Modifier.padding(vertical = 4.dp)
+    ) {
+        Text(
+            text = network.displayName,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = textColor
+        )
     }
 }

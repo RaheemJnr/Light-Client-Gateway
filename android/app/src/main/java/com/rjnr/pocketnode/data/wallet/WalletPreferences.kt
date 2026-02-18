@@ -2,6 +2,8 @@ package com.rjnr.pocketnode.data.wallet
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
+import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -9,6 +11,7 @@ import javax.inject.Singleton
 
 /**
  * Manages wallet preferences for persisting user settings like sync mode.
+ * All per-network preferences are namespaced by network name to prevent cross-contamination.
  */
 @Singleton
 class WalletPreferences @Inject constructor(
@@ -19,81 +22,142 @@ class WalletPreferences @Inject constructor(
         Context.MODE_PRIVATE
     )
 
-    /**
-     * Get the saved sync mode
-     */
-    fun getSyncMode(): SyncMode {
-        val modeName = prefs.getString(KEY_SYNC_MODE, SyncMode.RECENT.name)
+    init {
+        migrateIfNeeded()
+    }
+
+    // --- Network selection (global, not namespaced) ---
+
+    fun getSelectedNetwork(): NetworkType {
+        val name = prefs.getString(KEY_SELECTED_NETWORK, NetworkType.MAINNET.name)
+        return try {
+            NetworkType.valueOf(name ?: NetworkType.MAINNET.name)
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "Unknown network name '$name', defaulting to MAINNET", e)
+            NetworkType.MAINNET
+        }
+    }
+
+    fun setSelectedNetwork(network: NetworkType) {
+        // commit() instead of apply() — must flush synchronously before Process.killProcess()
+        prefs.edit().putString(KEY_SELECTED_NETWORK, network.name).commit()
+    }
+
+    // --- Per-network key helper ---
+
+    private fun networkKey(key: String, network: NetworkType? = null): String {
+        val net = network ?: getSelectedNetwork()
+        return "${net.name.lowercase()}_$key"
+    }
+
+    // --- Sync mode ---
+
+    fun getSyncMode(network: NetworkType? = null): SyncMode {
+        val modeName = prefs.getString(networkKey(KEY_SYNC_MODE, network), SyncMode.RECENT.name)
         return try {
             SyncMode.valueOf(modeName ?: SyncMode.RECENT.name)
         } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "Unknown sync mode '$modeName', defaulting to RECENT", e)
             SyncMode.RECENT
         }
     }
 
-    /**
-     * Save the sync mode
-     */
-    fun setSyncMode(mode: SyncMode) {
-        prefs.edit().putString(KEY_SYNC_MODE, mode.name).apply()
+    fun setSyncMode(mode: SyncMode, network: NetworkType? = null) {
+        prefs.edit().putString(networkKey(KEY_SYNC_MODE, network), mode.name).apply()
     }
 
-    /**
-     * Get the custom block height (for CUSTOM sync mode)
-     */
-    fun getCustomBlockHeight(): Long? {
-        val height = prefs.getLong(KEY_CUSTOM_BLOCK_HEIGHT, -1L)
+    // --- Custom block height ---
+
+    fun getCustomBlockHeight(network: NetworkType? = null): Long? {
+        val height = prefs.getLong(networkKey(KEY_CUSTOM_BLOCK_HEIGHT, network), -1L)
         return if (height >= 0) height else null
     }
 
-    /**
-     * Save the custom block height
-     */
-    fun setCustomBlockHeight(height: Long?) {
+    fun setCustomBlockHeight(height: Long?, network: NetworkType? = null) {
         if (height != null) {
-            prefs.edit().putLong(KEY_CUSTOM_BLOCK_HEIGHT, height).apply()
+            prefs.edit().putLong(networkKey(KEY_CUSTOM_BLOCK_HEIGHT, network), height).apply()
         } else {
-            prefs.edit().remove(KEY_CUSTOM_BLOCK_HEIGHT).apply()
+            prefs.edit().remove(networkKey(KEY_CUSTOM_BLOCK_HEIGHT, network)).apply()
         }
     }
 
-    /**
-     * Check if the user has completed initial sync setup
-     */
-    fun hasCompletedInitialSync(): Boolean {
-        return prefs.getBoolean(KEY_INITIAL_SYNC_COMPLETED, false)
+    // --- Initial sync ---
+
+    fun hasCompletedInitialSync(network: NetworkType? = null): Boolean {
+        return prefs.getBoolean(networkKey(KEY_INITIAL_SYNC_COMPLETED, network), false)
     }
 
-    /**
-     * Mark initial sync as completed
-     */
-    fun setInitialSyncCompleted(completed: Boolean) {
-        prefs.edit().putBoolean(KEY_INITIAL_SYNC_COMPLETED, completed).apply()
+    fun setInitialSyncCompleted(completed: Boolean, network: NetworkType? = null) {
+        prefs.edit().putBoolean(networkKey(KEY_INITIAL_SYNC_COMPLETED, network), completed).apply()
     }
 
-    /**
-     * Get the last synced block number for tracking
-     */
-    fun getLastSyncedBlock(): Long {
-        return prefs.getLong(KEY_LAST_SYNCED_BLOCK, 0L)
+    // --- Last synced block ---
+
+    fun getLastSyncedBlock(network: NetworkType? = null): Long {
+        return prefs.getLong(networkKey(KEY_LAST_SYNCED_BLOCK, network), 0L)
     }
 
-    /**
-     * Save the last synced block number
-     */
-    fun setLastSyncedBlock(blockNumber: Long) {
-        prefs.edit().putLong(KEY_LAST_SYNCED_BLOCK, blockNumber).apply()
+    fun setLastSyncedBlock(blockNumber: Long, network: NetworkType? = null) {
+        prefs.edit().putLong(networkKey(KEY_LAST_SYNCED_BLOCK, network), blockNumber).apply()
     }
 
-    /**
-     * Clear all preferences (for testing or wallet reset)
-     */
+    // --- Utilities ---
+
+    // Clearing prefs removes KEY_SELECTED_NETWORK, so migrateIfNeeded() re-runs on next startup.
+    // That's benign: old un-namespaced keys are already gone, it just re-sets default to MAINNET.
     fun clear() {
         prefs.edit().clear().apply()
     }
 
+    /**
+     * One-time migration: moves old un-namespaced keys to mainnet-namespaced keys.
+     * Existing users upgrading from pre-testnet versions have un-namespaced sync prefs
+     * that belong to mainnet. This copies them to "mainnet_" prefixed keys.
+     */
+    private fun migrateIfNeeded() {
+        if (prefs.contains(KEY_SELECTED_NETWORK)) return // already migrated
+
+        val editor = prefs.edit()
+        val mainnetPrefix = "${NetworkType.MAINNET.name.lowercase()}_"
+
+        // Migrate sync_mode
+        prefs.getString(KEY_SYNC_MODE, null)?.let { oldValue ->
+            editor.putString("${mainnetPrefix}$KEY_SYNC_MODE", oldValue)
+            editor.remove(KEY_SYNC_MODE)
+        }
+
+        // Migrate custom_block_height
+        if (prefs.contains(KEY_CUSTOM_BLOCK_HEIGHT)) {
+            val oldValue = prefs.getLong(KEY_CUSTOM_BLOCK_HEIGHT, -1L)
+            if (oldValue >= 0) {
+                editor.putLong("${mainnetPrefix}$KEY_CUSTOM_BLOCK_HEIGHT", oldValue)
+            }
+            editor.remove(KEY_CUSTOM_BLOCK_HEIGHT)
+        }
+
+        // Migrate initial_sync_completed
+        if (prefs.contains(KEY_INITIAL_SYNC_COMPLETED)) {
+            val oldValue = prefs.getBoolean(KEY_INITIAL_SYNC_COMPLETED, false)
+            editor.putBoolean("${mainnetPrefix}$KEY_INITIAL_SYNC_COMPLETED", oldValue)
+            editor.remove(KEY_INITIAL_SYNC_COMPLETED)
+        }
+
+        // Migrate last_synced_block
+        if (prefs.contains(KEY_LAST_SYNCED_BLOCK)) {
+            val oldValue = prefs.getLong(KEY_LAST_SYNCED_BLOCK, 0L)
+            editor.putLong("${mainnetPrefix}$KEY_LAST_SYNCED_BLOCK", oldValue)
+            editor.remove(KEY_LAST_SYNCED_BLOCK)
+        }
+
+        // Set default network (always, even if no old keys existed)
+        editor.putString(KEY_SELECTED_NETWORK, NetworkType.MAINNET.name)
+        editor.commit() // Synchronous to ensure migration guard persists before process death
+    }
+
     companion object {
+        private const val TAG = "WalletPreferences"
         private const val PREFS_NAME = "ckb_wallet_prefs"
+        private const val KEY_SELECTED_NETWORK = "selected_network"
         private const val KEY_SYNC_MODE = "sync_mode"
         private const val KEY_CUSTOM_BLOCK_HEIGHT = "custom_block_height"
         private const val KEY_INITIAL_SYNC_COMPLETED = "initial_sync_completed"

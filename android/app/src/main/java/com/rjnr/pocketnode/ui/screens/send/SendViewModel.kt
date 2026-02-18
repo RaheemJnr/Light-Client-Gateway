@@ -47,6 +47,7 @@ class SendViewModel @Inject constructor(
     val uiState: StateFlow<SendUiState> = _uiState.asStateFlow()
 
     private var pollingJob: Job? = null
+    private var sendJob: Job? = null
 
     companion object {
         private const val TAG = "SendViewModel"
@@ -59,6 +60,25 @@ class SendViewModel @Inject constructor(
         viewModelScope.launch {
             repository.balance.collect { balance ->
                 _uiState.update { it.copy(availableBalance = balance?.capacityAsLong() ?: 0L) }
+            }
+        }
+
+        // Cancel in-flight transaction if network changes mid-send
+        viewModelScope.launch {
+            repository.network.collect {
+                val state = _uiState.value.transactionState
+                if (state != TransactionState.IDLE && state != TransactionState.CONFIRMED && state != TransactionState.FAILED) {
+                    sendJob?.cancel()
+                    pollingJob?.cancel()
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = "Network changed. Transaction cancelled.",
+                            transactionState = TransactionState.FAILED,
+                            statusMessage = "Transaction cancelled due to network switch"
+                        )
+                    }
+                }
             }
         }
     }
@@ -121,7 +141,7 @@ class SendViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
+        sendJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isLoading = true,
@@ -136,8 +156,8 @@ class SendViewModel @Inject constructor(
                 Log.d(TAG, "  Recipient: ${state.recipientAddress}")
                 Log.d(TAG, "  Amount: ${state.amountCkb} CKB ($amountShannons shannons)")
 
-                val walletInfo = keyManager.getWalletInfo()
-                val address = walletInfo.mainnetAddress
+                val address = repository.getCurrentAddress()
+                    ?: throw Exception("Wallet not initialized")
                 Log.d(TAG, "  From address: $address")
 
                 Log.d(TAG, "🔍 Fetching available cells...")
@@ -157,7 +177,7 @@ class SendViewModel @Inject constructor(
                     amountShannons = amountShannons,
                     availableCells = cells,
                     privateKey = keyManager.getPrivateKey(),
-                    network = repository.network
+                    network = repository.currentNetwork
                 )
                 Log.d(TAG, "✅ Transaction built: ${signedTx.cellInputs.size} inputs, ${signedTx.cellOutputs.size} outputs")
 
@@ -437,6 +457,7 @@ class SendViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        sendJob?.cancel()
         pollingJob?.cancel()
     }
 }

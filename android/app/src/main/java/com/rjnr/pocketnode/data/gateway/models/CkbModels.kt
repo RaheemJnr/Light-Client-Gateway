@@ -200,3 +200,6 @@ enum class NetworkType(val hrp: String) {
     TESTNET("ckt"),
     MAINNET("ckb")
 }
+
+val NetworkType.displayName: String
+    get() = name.lowercase().replaceFirstChar { it.uppercase() }
