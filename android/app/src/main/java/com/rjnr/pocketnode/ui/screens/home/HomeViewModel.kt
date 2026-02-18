@@ -7,6 +7,7 @@ import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
+import com.rjnr.pocketnode.data.price.PriceRepository
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.WalletInfo
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -20,7 +21,8 @@ private const val TAG = "HomeViewModel"
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    private val repository: GatewayRepository
+    private val repository: GatewayRepository,
+    private val priceRepository: PriceRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -74,6 +76,7 @@ class HomeViewModel @Inject constructor(
             .onSuccess { info ->
                 Log.d(TAG, "Wallet initialized: ${info.testnetAddress}")
                 _uiState.update { it.copy(walletInfo = info, isLoading = false) }
+                fetchPrice()
                 registerAndRefresh()
             }
             .onFailure { error ->
@@ -81,6 +84,25 @@ class HomeViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(error = error.message, isLoading = false)
                 }
+            }
+    }
+
+    /**
+     * Fetches the CKB/USD spot price and computes the fiat equivalent of the current balance.
+     * Failures are silent — the UI falls back to "≈ — USD".
+     */
+    private suspend fun fetchPrice() {
+        priceRepository.getCkbUsdPrice()
+            .onSuccess { price ->
+                val balanceCkb = _uiState.value.balanceCkb
+                val fiat = balanceCkb * price
+                val formatted = "≈ $%.2f USD".format(fiat)
+                _uiState.update { it.copy(fiatBalance = formatted, ckbUsdPrice = price) }
+                Log.d(TAG, "CKB price: $$price, fiat balance: $formatted")
+            }
+            .onFailure { error ->
+                Log.w(TAG, "Price fetch failed (non-critical): ${error.message}")
+                // Leave fiatBalance as-is; UI shows "≈ — USD" when null
             }
     }
 
@@ -200,6 +222,12 @@ class HomeViewModel @Inject constructor(
             repository.refreshBalance()
                 .onSuccess { balance ->
                     Log.d(TAG, "Balance: ${balance.capacityCkb} CKB")
+                    // Recompute fiat with the cached price if available
+                    val price = _uiState.value.ckbUsdPrice
+                    if (price != null) {
+                        val fiat = balance.capacityAsCkb() * price
+                        _uiState.update { it.copy(fiatBalance = "≈ $%.2f USD".format(fiat)) }
+                    }
                 }
                 .onFailure { error ->
                     Log.e(TAG, "Failed to refresh balance", error)
@@ -410,6 +438,8 @@ class HomeViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     balanceCkb = 0.0,
+                    fiatBalance = null,
+                    ckbUsdPrice = null,
                     transactions = emptyList(),
                     syncProgress = 0.0,
                     syncedToBlock = null,
@@ -426,6 +456,7 @@ class HomeViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(address = repository.getCurrentAddress() ?: "")
                     }
+                    fetchPrice()
                     checkSyncStatusAndRefresh()
                 }
                 .onFailure { error ->
@@ -457,6 +488,7 @@ data class HomeUiState(
     val address: String = "",
     val balanceCkb: Double = 0.0,
     val fiatBalance: String? = null,
+    val ckbUsdPrice: Double? = null,
     val peerCount: Int = 0,
     val transactions: List<TransactionRecord> = emptyList(),
     val error: String? = null,
