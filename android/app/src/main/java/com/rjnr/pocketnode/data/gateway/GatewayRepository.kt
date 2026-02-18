@@ -218,17 +218,22 @@ class GatewayRepository @Inject constructor(
         if (_isSwitchingNetwork.value) throw Exception("Network switch already in progress")
 
         _isSwitchingNetwork.value = true
-        Log.d(TAG, "Switching network: ${currentNetwork.name} -> ${target.name}")
+        try {
+            Log.d(TAG, "Switching network: ${currentNetwork.name} -> ${target.name}")
 
-        // The JNI light client does not support re-initialization in the same process lifetime:
-        // nativeStop() blocks indefinitely (peer disconnection loop) and nativeInit() rejects
-        // calls while already initialized ("Already initialized!"). The only reliable path is
-        // to persist the selection and restart the process — Android will relaunch the app and
-        // initializeNode() will pick up the new network from WalletPreferences.
-        walletPreferences.setSelectedNetwork(target) // uses commit() — synchronous flush
-        Log.d(TAG, "Persisted ${target.name}, restarting process for clean JNI init")
-        android.os.Process.killProcess(android.os.Process.myPid())
-        // Process is terminated above; code below is unreachable but satisfies the compiler
+            // The JNI light client does not support re-initialization in the same process lifetime:
+            // nativeStop() blocks indefinitely (peer disconnection loop) and nativeInit() rejects
+            // calls while already initialized ("Already initialized!"). The only reliable path is
+            // to persist the selection and restart the process — Android will relaunch the app and
+            // initializeNode() will pick up the new network from WalletPreferences.
+            walletPreferences.setSelectedNetwork(target) // uses commit() — synchronous flush
+            Log.d(TAG, "Persisted ${target.name}, restarting process for clean JNI init")
+            android.os.Process.killProcess(android.os.Process.myPid())
+            // Process is terminated above; code below is unreachable but satisfies the compiler
+        } catch (e: Exception) {
+            _isSwitchingNetwork.value = false
+            throw e
+        }
     }
 
     /**

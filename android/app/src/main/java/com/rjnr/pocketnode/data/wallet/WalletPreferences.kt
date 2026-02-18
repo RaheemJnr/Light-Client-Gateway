@@ -2,6 +2,7 @@ package com.rjnr.pocketnode.data.wallet
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -32,6 +33,7 @@ class WalletPreferences @Inject constructor(
         return try {
             NetworkType.valueOf(name ?: NetworkType.MAINNET.name)
         } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "Unknown network name '$name', defaulting to MAINNET", e)
             NetworkType.MAINNET
         }
     }
@@ -55,6 +57,7 @@ class WalletPreferences @Inject constructor(
         return try {
             SyncMode.valueOf(modeName ?: SyncMode.RECENT.name)
         } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "Unknown sync mode '$modeName', defaulting to RECENT", e)
             SyncMode.RECENT
         }
     }
@@ -152,6 +155,7 @@ class WalletPreferences @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "WalletPreferences"
         private const val PREFS_NAME = "ckb_wallet_prefs"
         private const val KEY_SELECTED_NETWORK = "selected_network"
         private const val KEY_SYNC_MODE = "sync_mode"
