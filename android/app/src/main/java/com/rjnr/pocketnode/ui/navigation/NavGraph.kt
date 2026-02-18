@@ -216,11 +216,7 @@ fun CkbNavGraph(
             HomeScreen(
                 onNavigateToSend = { navController.navigate(Screen.Send.route) },
                 onNavigateToReceive = { navController.navigate(Screen.Receive.route) },
-                onNavigateToStatus = { navController.navigate(Screen.NodeStatus.route) },
                 onNavigateToBackup = { navController.navigate(Screen.MnemonicBackup.route) },
-                onNavigateToSecuritySettings = {
-                    navController.navigate(Screen.SecuritySettings.route)
-                }
             )
         }
 

@@ -100,9 +100,7 @@ import kotlinx.coroutines.launch
 fun HomeScreen(
     onNavigateToSend: () -> Unit = {},
     onNavigateToReceive: () -> Unit = {},
-    onNavigateToStatus: () -> Unit = {},
     onNavigateToBackup: () -> Unit = {},
-    onNavigateToSecuritySettings: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -640,17 +638,12 @@ private fun SyncedChip() {
         color = Color(0xFF1ED882).copy(alpha = 0.15f),
         modifier = Modifier.padding(vertical = 4.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = "✓ Synced",
-                style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFF1ED882)
-            )
-        }
+        Text(
+            text = "✓ Synced",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color(0xFF1ED882),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        )
     }
 }
 
@@ -841,10 +834,7 @@ private fun SyncOptionItem(
         border = if (isSelected) {
             null
         } else {
-            androidx.compose.foundation.BorderStroke(
-                1.dp,
-                MaterialTheme.colorScheme.outlineVariant
-            )
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         }
     ) {
         Row(
@@ -980,7 +970,10 @@ private fun BalanceHeroCard(
                     Box(
                         modifier = Modifier
                             .size(8.dp)
-                            .background(Color(0xFF1ED882), CircleShape)
+                            .background(
+                                if (peerCount > 0) Color(0xFF1ED882) else Color(0xFFF59E0B),
+                                CircleShape
+                            )
                     )
                     Text(
                         text = "$peerCount peers connected",
