@@ -81,6 +81,15 @@ fun MainScreen(
                 HomeScreen(
                     onNavigateToSend = onNavigateToSend,
                     onNavigateToReceive = onNavigateToReceive,
+                    onNavigateToSettings = {
+                        innerNav.navigate(BottomTab.Settings.route) {
+                            popUpTo(innerNav.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                 )
             }
             composable(BottomTab.Activity.route) {

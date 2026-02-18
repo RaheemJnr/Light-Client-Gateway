@@ -103,6 +103,7 @@ fun HomeScreen(
     onNavigateToStatus: () -> Unit = {},
     onNavigateToBackup: () -> Unit = {},
     onNavigateToSecuritySettings: () -> Unit = {},
+    onNavigateToSettings: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -215,8 +216,8 @@ fun HomeScreen(
                         SyncedChip()
                     }
                     Spacer(Modifier.width(4.dp))
-                    // Gear icon — Settings tab is reached via bottom nav
-                    IconButton(onClick = {}) {
+                    // Gear icon — navigates to Settings tab via bottom nav
+                    IconButton(onClick = onNavigateToSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 }
