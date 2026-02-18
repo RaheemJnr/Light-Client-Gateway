@@ -90,7 +90,9 @@ data class TransactionRecord(
     @SerialName("balance_change") val balanceChange: String,
     val direction: String,
     val fee: String,
-    val confirmations: Int
+    val confirmations: Int,
+    // Raw hex timestamp from CKB block header (e.g. "0x18c8d0a7a00"), null if not yet fetched
+    @SerialName("block_timestamp_hex") val blockTimestampHex: String? = null
 ) {
     /**
      * Get balance change as CKB amount (from shannons)
