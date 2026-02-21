@@ -49,7 +49,10 @@ internal val SyncDialogColorSecondary = Color(0xFFA0A0A0)
 internal fun SyncOptionsDialog(
     currentMode: SyncMode,
     onDismiss: () -> Unit,
-    onSelectMode: (SyncMode, Long?) -> Unit
+    onSelectMode: (SyncMode, Long?) -> Unit,
+    title: String = "Sync Options",
+    description: String = "Choose how much transaction history to sync:",
+    availableModes: List<SyncMode> = SyncMode.entries.toList()
 ) {
     var selectedMode by remember { mutableStateOf(currentMode) }
     var customBlockHeight by remember { mutableStateOf("") }
@@ -57,45 +60,53 @@ internal fun SyncOptionsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Sync Options", fontWeight = FontWeight.Bold) },
+        title = { Text(title, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "Choose how much transaction history to sync:",
+                    text = description,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 Spacer(Modifier.height(4.dp))
 
-                SyncOptionItem(
-                    title = "New Wallet",
-                    description = "No history \u2014 fastest startup",
-                    icon = Icons.Default.FiberNew,
-                    isSelected = selectedMode == SyncMode.NEW_WALLET,
-                    onClick = { selectedMode = SyncMode.NEW_WALLET; showCustomInput = false }
-                )
-                SyncOptionItem(
-                    title = "Recent (~30 days)",
-                    description = "Last ~200k blocks \u2014 recommended",
-                    icon = Icons.Default.Schedule,
-                    isSelected = selectedMode == SyncMode.RECENT,
-                    onClick = { selectedMode = SyncMode.RECENT; showCustomInput = false }
-                )
-                SyncOptionItem(
-                    title = "Full History",
-                    description = "From genesis \u2014 complete but slow",
-                    icon = Icons.Default.History,
-                    isSelected = selectedMode == SyncMode.FULL_HISTORY,
-                    onClick = { selectedMode = SyncMode.FULL_HISTORY; showCustomInput = false }
-                )
-                SyncOptionItem(
-                    title = "Custom Block Height",
-                    description = "Start from a specific block",
-                    icon = Icons.Default.Tune,
-                    isSelected = selectedMode == SyncMode.CUSTOM,
-                    onClick = { selectedMode = SyncMode.CUSTOM; showCustomInput = true }
-                )
+                if (SyncMode.NEW_WALLET in availableModes) {
+                    SyncOptionItem(
+                        title = "New Wallet",
+                        description = "No history \u2014 fastest startup",
+                        icon = Icons.Default.FiberNew,
+                        isSelected = selectedMode == SyncMode.NEW_WALLET,
+                        onClick = { selectedMode = SyncMode.NEW_WALLET; showCustomInput = false }
+                    )
+                }
+                if (SyncMode.RECENT in availableModes) {
+                    SyncOptionItem(
+                        title = "Recent (~30 days)",
+                        description = "Last ~200k blocks \u2014 recommended",
+                        icon = Icons.Default.Schedule,
+                        isSelected = selectedMode == SyncMode.RECENT,
+                        onClick = { selectedMode = SyncMode.RECENT; showCustomInput = false }
+                    )
+                }
+                if (SyncMode.FULL_HISTORY in availableModes) {
+                    SyncOptionItem(
+                        title = "Full History",
+                        description = "From genesis \u2014 complete but slow",
+                        icon = Icons.Default.History,
+                        isSelected = selectedMode == SyncMode.FULL_HISTORY,
+                        onClick = { selectedMode = SyncMode.FULL_HISTORY; showCustomInput = false }
+                    )
+                }
+                if (SyncMode.CUSTOM in availableModes) {
+                    SyncOptionItem(
+                        title = "Custom Block Height",
+                        description = "Start from a specific block",
+                        icon = Icons.Default.Tune,
+                        isSelected = selectedMode == SyncMode.CUSTOM,
+                        onClick = { selectedMode = SyncMode.CUSTOM; showCustomInput = true }
+                    )
+                }
 
                 if (showCustomInput) {
                     Spacer(Modifier.height(4.dp))
@@ -139,7 +150,7 @@ internal fun SyncOptionsDialog(
                     )
                 }
 
-                if (selectedMode == SyncMode.FULL_HISTORY) {
+                if (selectedMode == SyncMode.FULL_HISTORY && SyncMode.FULL_HISTORY in availableModes) {
                     Spacer(Modifier.height(4.dp))
                     Card(
                         colors = CardDefaults.cardColors(
