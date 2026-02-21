@@ -387,11 +387,8 @@ class HomeViewModel @Inject constructor(
         _uiState.update { it.copy(showImportDialog = false) }
     }
 
-    /**
-     * Dismiss the sync reminder
-     */
-    fun dismissSyncReminder() {
-        _uiState.update { it.copy(showImportSyncReminder = false) }
+    fun hidePostImportSyncDialog() {
+        _uiState.update { it.copy(showPostImportSyncDialog = false) }
     }
 
     /**
@@ -405,9 +402,9 @@ class HomeViewModel @Inject constructor(
                 .onSuccess { info ->
                     Log.d(TAG, "Wallet imported successfully: ${info.testnetAddress}")
                     _uiState.update { it.copy(
-                        walletInfo = info, 
+                        walletInfo = info,
                         isLoading = false,
-                        showImportSyncReminder = true // Show reminder for imported wallet
+                        showPostImportSyncDialog = repository.currentNetwork == NetworkType.MAINNET
                     ) }
                     registerAndRefresh()
                 }
@@ -503,7 +500,7 @@ data class HomeUiState(
     val showBackupDialog: Boolean = false,
     val privateKeyHex: String? = null,
     val showImportDialog: Boolean = false,
-    val showImportSyncReminder: Boolean = false,
+    val showPostImportSyncDialog: Boolean = false,
     val showBackupReminder: Boolean = false,
     val walletType: String = KeyManager.WALLET_TYPE_RAW_KEY,
     val currentNetwork: NetworkType = NetworkType.MAINNET,

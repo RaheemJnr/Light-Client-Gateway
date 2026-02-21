@@ -117,6 +117,23 @@ fun HomeScreen(
         )
     }
 
+    // Post-import sync mode dialog (mainnet only)
+    if (uiState.showPostImportSyncDialog) {
+        SyncOptionsDialog(
+            currentMode = SyncMode.RECENT,
+            title = "Choose Sync Start Point",
+            description = "Select how far back to sync your imported wallet's history. If your wallet is older than 30 days, choose Custom.",
+            availableModes = listOf(SyncMode.RECENT, SyncMode.CUSTOM),
+            onDismiss = { viewModel.hidePostImportSyncDialog() },
+            onSelectMode = { mode, customBlock ->
+                viewModel.hidePostImportSyncDialog()
+                if (mode != SyncMode.RECENT) {
+                    viewModel.changeSyncMode(mode, customBlock)
+                }
+            }
+        )
+    }
+
     // Network switch confirmation dialog
     val pendingSwitch = uiState.pendingNetworkSwitch
     if (uiState.showNetworkSwitchDialog && pendingSwitch != null) {
@@ -271,19 +288,6 @@ fun HomeScreen(
                             BackupReminderBanner(
                                 onDismiss = { viewModel.dismissBackupReminder() },
                                 onBackup = onNavigateToBackup
-                            )
-                        }
-                    }
-
-                    // Sync Mode Reminder for Imported Wallets
-                    if (uiState.showImportSyncReminder) {
-                        item {
-                            SyncModeReminderBanner(
-                                onDismiss = { viewModel.dismissSyncReminder() },
-                                onSettingsClick = {
-                                    viewModel.dismissSyncReminder()
-                                    viewModel.showSyncOptions()
-                                }
                             )
                         }
                     }
@@ -460,62 +464,6 @@ private fun ImportWalletDialog(
             }
         }
     )
-}
-
-@Composable
-private fun SyncModeReminderBanner(
-    onDismiss: () -> Unit,
-    onSettingsClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
-        ),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.History,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = "Sync Settings",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Dismiss",
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Since you imported a wallet, you might want to set a custom sync start height to see your historical transactions faster.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Button(
-                onClick = onSettingsClick,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.secondary,
-                    contentColor = MaterialTheme.colorScheme.onSecondary
-                ),
-                modifier = Modifier.align(Alignment.End)
-            ) {
-                Text("Configure Sync")
-            }
-        }
-    }
 }
 
 @Composable

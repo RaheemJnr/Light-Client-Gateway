@@ -18,7 +18,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
+import com.rjnr.pocketnode.data.gateway.models.NetworkType
+import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.wallet.MnemonicManager
+import com.rjnr.pocketnode.ui.components.SyncOptionsDialog
 import com.rjnr.pocketnode.ui.util.Bip39WordList
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +40,7 @@ data class MnemonicImportUiState(
     val isImporting: Boolean = false,
     val importSuccess: Boolean = false,
     val showPrivateKeyDialog: Boolean = false,
+    val showSyncModeDialog: Boolean = false,
     val error: String? = null
 )
 
@@ -110,7 +114,14 @@ class MnemonicImportViewModel @Inject constructor(
             _uiState.update { it.copy(isImporting = true, error = null) }
             repository.importFromMnemonic(words)
                 .onSuccess {
-                    _uiState.update { it.copy(isImporting = false, importSuccess = true) }
+                    val showDialog = repository.currentNetwork == NetworkType.MAINNET
+                    _uiState.update {
+                        it.copy(
+                            isImporting = false,
+                            importSuccess = !showDialog,
+                            showSyncModeDialog = showDialog
+                        )
+                    }
                 }
                 .onFailure { error ->
                     _uiState.update { it.copy(isImporting = false, error = error.message) }
@@ -131,12 +142,36 @@ class MnemonicImportViewModel @Inject constructor(
             _uiState.update { it.copy(isImporting = true, showPrivateKeyDialog = false, error = null) }
             repository.importExistingWallet(hex)
                 .onSuccess {
-                    _uiState.update { it.copy(isImporting = false, importSuccess = true) }
+                    val showDialog = repository.currentNetwork == NetworkType.MAINNET
+                    _uiState.update {
+                        it.copy(
+                            isImporting = false,
+                            importSuccess = !showDialog,
+                            showSyncModeDialog = showDialog
+                        )
+                    }
                 }
                 .onFailure { error ->
                     _uiState.update { it.copy(isImporting = false, error = error.message) }
                 }
         }
+    }
+
+    fun onSyncModeSelected(mode: SyncMode, customHeight: Long?) {
+        viewModelScope.launch {
+            if (mode != SyncMode.RECENT) {
+                repository.resyncAccount(mode, customHeight)
+                    .onFailure { error ->
+                        _uiState.update { it.copy(error = "Failed to apply sync mode: ${error.message}") }
+                        return@launch
+                    }
+            }
+            _uiState.update { it.copy(showSyncModeDialog = false, importSuccess = true) }
+        }
+    }
+
+    fun skipSyncSelection() {
+        _uiState.update { it.copy(showSyncModeDialog = false, importSuccess = true) }
     }
 
     fun clearError() {
@@ -173,6 +208,18 @@ fun MnemonicImportScreen(
         PrivateKeyImportDialog(
             onDismiss = { viewModel.hidePrivateKeyImport() },
             onImport = { viewModel.importPrivateKey(it) }
+        )
+    }
+
+    // Post-import sync mode dialog (mainnet only)
+    if (uiState.showSyncModeDialog) {
+        SyncOptionsDialog(
+            currentMode = SyncMode.RECENT,
+            title = "Choose Sync Start Point",
+            description = "Select how far back to sync your wallet history. If your wallet is older than 30 days, choose Custom and enter the block of your first transaction.",
+            availableModes = listOf(SyncMode.RECENT, SyncMode.CUSTOM),
+            onDismiss = { viewModel.skipSyncSelection() },
+            onSelectMode = { mode, height -> viewModel.onSyncModeSelected(mode, height) }
         )
     }
 
