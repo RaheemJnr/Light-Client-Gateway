@@ -1,0 +1,1 @@
+Self-custody CKB wallet with an embedded light client. Your keys, your node.
