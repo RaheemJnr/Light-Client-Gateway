@@ -22,6 +22,7 @@ data class SecuritySettingsUiState(
     val isBiometricEnabled: Boolean = false,
     val hasPin: Boolean = false,
     val biometricStatusText: String = "",
+    val isAuthBeforeSendEnabled: Boolean = false,
     val error: String? = null
 )
 
@@ -73,9 +74,19 @@ class SecuritySettingsViewModel @Inject constructor(
                     AuthManager.BiometricStatus.NOT_ENROLLED -> "No fingerprints enrolled in device settings"
                     AuthManager.BiometricStatus.UNAVAILABLE -> "Biometric authentication unavailable"
                 },
+                isAuthBeforeSendEnabled = authManager.isAuthBeforeSendEnabled(),
                 error = null
             )
         }
+    }
+
+    fun toggleAuthBeforeSend(enabled: Boolean) {
+        if (enabled && !pinManager.hasPin()) {
+            _uiState.update { it.copy(error = "Set a PIN first to enable send authentication") }
+            return
+        }
+        authManager.setAuthBeforeSendEnabled(enabled)
+        _uiState.update { it.copy(isAuthBeforeSendEnabled = enabled, error = null) }
     }
 
     private fun toggleBiometric(enabled: Boolean) {
@@ -90,8 +101,9 @@ class SecuritySettingsViewModel @Inject constructor(
     private fun removePin() {
         pinManager.removePin()
         authManager.setBiometricEnabled(false)
+        authManager.setAuthBeforeSendEnabled(false)
         _uiState.update {
-            it.copy(hasPin = false, isBiometricEnabled = false, error = null)
+            it.copy(hasPin = false, isBiometricEnabled = false, isAuthBeforeSendEnabled = false, error = null)
         }
     }
 

@@ -12,12 +12,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.FiberNew
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -40,10 +34,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.composables.icons.lucide.*
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
-
-internal val SyncDialogColorGreen = Color(0xFF1ED882)
-internal val SyncDialogColorSecondary = Color(0xFFA0A0A0)
 
 @Composable
 internal fun SyncOptionsDialog(
@@ -75,7 +67,7 @@ internal fun SyncOptionsDialog(
                     SyncOptionItem(
                         title = "New Wallet",
                         description = "No history \u2014 fastest startup",
-                        icon = Icons.Default.FiberNew,
+                        icon = Lucide.Sparkles,
                         isSelected = selectedMode == SyncMode.NEW_WALLET,
                         onClick = { selectedMode = SyncMode.NEW_WALLET; showCustomInput = false }
                     )
@@ -84,7 +76,7 @@ internal fun SyncOptionsDialog(
                     SyncOptionItem(
                         title = "Recent (~30 days)",
                         description = "Last ~200k blocks \u2014 recommended",
-                        icon = Icons.Default.Schedule,
+                        icon = Lucide.Clock,
                         isSelected = selectedMode == SyncMode.RECENT,
                         onClick = { selectedMode = SyncMode.RECENT; showCustomInput = false }
                     )
@@ -93,7 +85,7 @@ internal fun SyncOptionsDialog(
                     SyncOptionItem(
                         title = "Full History",
                         description = "From genesis \u2014 complete but slow",
-                        icon = Icons.Default.History,
+                        icon = Lucide.History,
                         isSelected = selectedMode == SyncMode.FULL_HISTORY,
                         onClick = { selectedMode = SyncMode.FULL_HISTORY; showCustomInput = false }
                     )
@@ -102,7 +94,7 @@ internal fun SyncOptionsDialog(
                     SyncOptionItem(
                         title = "Custom Block Height",
                         description = "Start from a specific block",
-                        icon = Icons.Default.Tune,
+                        icon = Lucide.SlidersHorizontal,
                         isSelected = selectedMode == SyncMode.CUSTOM,
                         onClick = { selectedMode = SyncMode.CUSTOM; showCustomInput = true }
                     )
@@ -120,7 +112,7 @@ internal fun SyncOptionsDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                Icons.Default.Warning,
+                                Lucide.TriangleAlert,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.tertiary,
                                 modifier = Modifier.size(20.dp)
@@ -162,7 +154,7 @@ internal fun SyncOptionsDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                Icons.Default.Warning,
+                                Lucide.TriangleAlert,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(20.dp)
@@ -209,7 +201,7 @@ internal fun SyncOptionItem(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
-        color = if (isSelected) SyncDialogColorGreen.copy(alpha = 0.08f) else Color.Transparent
+        color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
@@ -219,7 +211,7 @@ internal fun SyncOptionItem(
                 imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
-                tint = if (isSelected) SyncDialogColorGreen else SyncDialogColorSecondary
+                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -227,12 +219,12 @@ internal fun SyncOptionItem(
                     text = title,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (isSelected) SyncDialogColorGreen else MaterialTheme.colorScheme.onSurface
+                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = SyncDialogColorSecondary
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }

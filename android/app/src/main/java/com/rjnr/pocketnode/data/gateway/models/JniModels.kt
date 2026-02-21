@@ -66,6 +66,12 @@ data class JniHeaderView(
 )
 
 @Serializable
+data class JniFetchHeaderResponse(
+    val status: String,
+    val data: JniHeaderView? = null
+)
+
+@Serializable
 data class JniScriptStatus(
     val script: Script,
     @SerialName("script_type") val scriptType: String = "lock",
@@ -93,4 +99,11 @@ data class JniLocalNode(
     val version: String,
     @SerialName("node_id") val nodeId: String,
     val active: Boolean
+)
+
+@Serializable
+data class JniRemoteNode(
+    val version: String,
+    @SerialName("node_id") val nodeId: String,
+    @SerialName("connected_duration") val connectedDuration: String
 )

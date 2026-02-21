@@ -4,9 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ContentPaste
+import com.composables.icons.lucide.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -159,14 +157,15 @@ class MnemonicImportViewModel @Inject constructor(
 
     fun onSyncModeSelected(mode: SyncMode, customHeight: Long?) {
         viewModelScope.launch {
-            if (mode != SyncMode.RECENT) {
-                repository.resyncAccount(mode, customHeight)
-                    .onFailure { error ->
-                        _uiState.update { it.copy(error = "Failed to apply sync mode: ${error.message}") }
-                        return@launch
-                    }
+            try {
+                if (mode != SyncMode.RECENT) {
+                    repository.resyncAccount(mode, customHeight)
+                }
+                _uiState.update { it.copy(showSyncModeDialog = false, importSuccess = true) }
+            } catch (e: Exception) {
+                // Still proceed with import — resync can be retried from Settings
+                _uiState.update { it.copy(showSyncModeDialog = false, importSuccess = true, error = "Sync mode change failed: ${e.message}") }
             }
-            _uiState.update { it.copy(showSyncModeDialog = false, importSuccess = true) }
         }
     }
 
@@ -216,7 +215,7 @@ fun MnemonicImportScreen(
         SyncOptionsDialog(
             currentMode = SyncMode.RECENT,
             title = "Choose Sync Start Point",
-            description = "Select how far back to sync your wallet history. If your wallet is older than 30 days, choose Custom and enter the block of your first transaction.",
+            description = "Select how far back to sync your wallet history. If your wallet is older than 30 days, choose Custom to enter a specific block height.",
             availableModes = listOf(SyncMode.RECENT, SyncMode.CUSTOM),
             onDismiss = { viewModel.skipSyncSelection() },
             onSelectMode = { mode, height -> viewModel.onSyncModeSelected(mode, height) }
@@ -224,14 +223,18 @@ fun MnemonicImportScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
                 title = { Text("Recover Wallet") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Lucide.ChevronLeft, "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -258,7 +261,7 @@ fun MnemonicImportScreen(
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Lucide.ClipboardPaste, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Paste from Clipboard")
             }

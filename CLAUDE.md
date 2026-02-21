@@ -310,6 +310,7 @@ Full spec: `docs/M1_SPEC.md`
 - Never store secrets or private keys in logs or comments
 - Raise security concerns immediately, don't skip them
 - Follow the bi-weekly release schedule
+- NEVER include "Co-Authored-By" lines in commit messages
 -  SENIOR SOFTWARE ENGINEER
 ---------------------------------
 

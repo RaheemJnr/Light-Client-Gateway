@@ -3,6 +3,8 @@ package com.rjnr.pocketnode.ui.screens.send
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rjnr.pocketnode.data.auth.AuthManager
+import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.TransactionStatusResponse
@@ -14,6 +16,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.math.BigDecimal
+import java.math.RoundingMode
 import javax.inject.Inject
 
 enum class TransactionState {
@@ -25,6 +29,8 @@ enum class TransactionState {
     FAILED          // Transaction failed
 }
 
+enum class AuthMethod { BIOMETRIC, PIN }
+
 data class SendUiState(
     val recipientAddress: String = "",
     val amountCkb: String = "",
@@ -32,18 +38,23 @@ data class SendUiState(
     val error: String? = null,
     val txHash: String? = null,
     val availableBalance: Long = 0L,
+    val estimatedFee: Long = 0L,
     val networkType: NetworkType = NetworkType.MAINNET,
     val transactionState: TransactionState = TransactionState.IDLE,
     val confirmations: Int = 0,
     val statusMessage: String = "",
-    val burnWarning: String? = null
+    val burnWarning: String? = null,
+    val requiresAuth: Boolean = false,
+    val authMethod: AuthMethod? = null
 )
 
 @HiltViewModel
 class SendViewModel @Inject constructor(
     private val repository: GatewayRepository,
     private val keyManager: KeyManager,
-    private val transactionBuilder: TransactionBuilder
+    private val transactionBuilder: TransactionBuilder,
+    private val authManager: AuthManager,
+    private val pinManager: PinManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SendUiState())
@@ -57,7 +68,6 @@ class SendViewModel @Inject constructor(
         private const val POLLING_INTERVAL_MS = 3000L // Poll every 3 seconds
         private const val MAX_POLLING_ATTEMPTS = 120  // Stop after ~6 minutes
         private const val REQUIRED_CONFIRMATIONS = 3  // Consider fully confirmed after 3 confirmations
-        private const val DEFAULT_FEE_SHANNONS = 100_000L // 0.001 CKB
     }
 
     init {
@@ -97,13 +107,19 @@ class SendViewModel @Inject constructor(
     fun updateAmount(amount: String) {
         val sanitized = sanitizeAmount(amount) ?: return  // silently reject invalid chars
         val amountShannons = try {
-            if (sanitized.isEmpty()) 0L else (sanitized.toDouble() * 100_000_000).toLong()
+            if (sanitized.isEmpty()) 0L
+            else BigDecimal(sanitized).setScale(8, RoundingMode.DOWN)
+                .multiply(BigDecimal(100_000_000)).toLong()
         } catch (e: Exception) {
             0L
         }
 
-        val estimatedFee = DEFAULT_FEE_SHANNONS
-        val potentialChange = _uiState.value.availableBalance - amountShannons - estimatedFee
+        val balance = _uiState.value.availableBalance
+        // Estimate: 1 input, 2 outputs (recipient + change) for typical transfer
+        // If sending ~all balance, assume 1 output (no change)
+        val outputCount = if (amountShannons > 0 && balance - amountShannons < 61_00000000L) 1 else 2
+        val estimatedFee = transactionBuilder.estimateTransferFee(inputCount = 1, outputCount = outputCount)
+        val potentialChange = balance - amountShannons - estimatedFee
         val minCapacity = 61_00000000L
 
         val warning = if (potentialChange in 1 until minCapacity) {
@@ -113,12 +129,13 @@ class SendViewModel @Inject constructor(
             null
         }
 
-        _uiState.update { it.copy(amountCkb = sanitized, error = null, burnWarning = warning) }
+        _uiState.update { it.copy(amountCkb = sanitized, error = null, burnWarning = warning, estimatedFee = estimatedFee) }
     }
 
     fun setMaxAmount() {
         val balanceShannons = _uiState.value.availableBalance
-        val feeShannons = DEFAULT_FEE_SHANNONS
+        // Max send: 1 input, 1 output (no change — sending everything)
+        val feeShannons = transactionBuilder.estimateTransferFee(inputCount = 1, outputCount = 1)
         val maxShannons = (balanceShannons - feeShannons).coerceAtLeast(0L)
         val maxCkb = maxShannons / 100_000_000.0
         // Format to 8 decimal places, then strip trailing zeros (and trailing dot)
@@ -142,8 +159,9 @@ class SendViewModel @Inject constructor(
         }
 
         val amountShannons = try {
-            (state.amountCkb.toDouble() * 100_000_000).toLong()
-        } catch (e: NumberFormatException) {
+            BigDecimal(state.amountCkb).setScale(8, RoundingMode.DOWN)
+                .multiply(BigDecimal(100_000_000)).toLong()
+        } catch (e: Exception) {
             _uiState.update { it.copy(error = "Invalid amount") }
             return
         }
@@ -156,6 +174,32 @@ class SendViewModel @Inject constructor(
 
         if (amountShannons > state.availableBalance) {
             _uiState.update { it.copy(error = "Insufficient balance") }
+            return
+        }
+
+        // Check if authentication is required before sending
+        if (authManager.isAuthBeforeSendEnabled() && pinManager.hasPin()) {
+            val method = if (authManager.isBiometricEnabled() && authManager.isBiometricEnrolled()) {
+                AuthMethod.BIOMETRIC
+            } else {
+                AuthMethod.PIN
+            }
+            _uiState.update { it.copy(requiresAuth = true, authMethod = method) }
+            return
+        }
+
+        executeSend()
+    }
+
+    fun executeSend() {
+        val state = _uiState.value
+        _uiState.update { it.copy(requiresAuth = false, authMethod = null) }
+
+        val amountShannons = try {
+            BigDecimal(state.amountCkb).setScale(8, RoundingMode.DOWN)
+                .multiply(BigDecimal(100_000_000)).toLong()
+        } catch (e: Exception) {
+            _uiState.update { it.copy(error = "Invalid amount") }
             return
         }
 
@@ -462,6 +506,10 @@ class SendViewModel @Inject constructor(
                 statusMessage = ""
             )
         }
+    }
+
+    fun cancelAuth() {
+        _uiState.update { it.copy(requiresAuth = false, authMethod = null) }
     }
 
     fun clearError() {

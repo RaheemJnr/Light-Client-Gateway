@@ -39,9 +39,9 @@ class ActivityViewModel @Inject constructor(
         viewModelScope.launch {
             repository.network.collect { network ->
                 _uiState.update { it.copy(currentNetwork = network) }
+                loadTransactions()
             }
         }
-        loadTransactions()
     }
 
     fun loadTransactions() {

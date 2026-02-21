@@ -10,9 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
+import com.composables.icons.lucide.*
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -29,6 +27,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -52,6 +51,12 @@ fun SecuritySettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showRemoveDialog by remember { mutableStateOf(false) }
+    var optimisticBiometric by remember { mutableStateOf<Boolean?>(null) }
+
+    // Clear optimistic override when real state arrives
+    LaunchedEffect(uiState.isBiometricEnabled) {
+        optimisticBiometric = null
+    }
 
     LaunchedEffect(uiState.error) {
         uiState.error?.let {
@@ -85,14 +90,18 @@ fun SecuritySettingsScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
                 title = { Text("Security Settings") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Lucide.ArrowLeft, "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -122,7 +131,7 @@ fun SecuritySettingsScreen(
                     if (uiState.hasPin) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                Icons.Default.CheckCircle,
+                                Lucide.CircleCheck,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(end = 8.dp)
@@ -188,8 +197,9 @@ fun SecuritySettingsScreen(
                         }
 
                         Switch(
-                            checked = uiState.isBiometricEnabled,
+                            checked = optimisticBiometric ?: uiState.isBiometricEnabled,
                             onCheckedChange = { enabled ->
+                                optimisticBiometric = enabled
                                 val action = if (enabled) PendingSecurityAction.ENABLE_BIOMETRIC
                                     else PendingSecurityAction.DISABLE_BIOMETRIC
                                 viewModel.setPendingAction(action)
@@ -203,6 +213,53 @@ fun SecuritySettingsScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "Set a PIN first to enable biometric unlock",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Transaction Security Section
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Authenticate before sending",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Require biometrics or PIN before sending CKB",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Switch(
+                            checked = uiState.isAuthBeforeSendEnabled,
+                            onCheckedChange = { enabled ->
+                                viewModel.toggleAuthBeforeSend(enabled)
+                            },
+                            enabled = uiState.hasPin
+                        )
+                    }
+
+                    if (!uiState.hasPin) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Set a PIN first to enable send authentication",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

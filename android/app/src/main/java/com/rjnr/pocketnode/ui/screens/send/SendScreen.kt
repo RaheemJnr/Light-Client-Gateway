@@ -3,42 +3,95 @@ package com.rjnr.pocketnode.ui.screens.send
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.QrCodeScanner
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarColors
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.composables.icons.lucide.Check
+import com.composables.icons.lucide.ChevronLeft
+import com.composables.icons.lucide.CircleAlert
+import com.composables.icons.lucide.CircleCheck
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.ScanLine
+import com.composables.icons.lucide.TriangleAlert
+import com.composables.icons.lucide.X
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.wallet.AddressUtils
+import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
+import com.rjnr.pocketnode.ui.theme.ErrorRed
+import com.rjnr.pocketnode.ui.theme.PendingAmber
+import com.rjnr.pocketnode.ui.theme.SuccessGreen
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SendScreen(
     onNavigateBack: () -> Unit,
     onNavigateToScanner: () -> Unit = {},
+    onNavigateToPinVerify: () -> Unit = {},
     scannedAddress: String? = null,
+    sendAuthVerified: Boolean = false,
     viewModel: SendViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -49,6 +102,56 @@ fun SendScreen(
             if (address.isNotBlank()) {
                 viewModel.updateRecipient(address)
             }
+        }
+    }
+
+    val context = LocalContext.current
+
+    // Handle PIN auth result
+    LaunchedEffect(sendAuthVerified) {
+        if (sendAuthVerified) {
+            viewModel.executeSend()
+        }
+    }
+
+    // Handle auth requirement (biometric prompt or PIN navigation)
+    LaunchedEffect(uiState.requiresAuth, uiState.authMethod) {
+        if (!uiState.requiresAuth) return@LaunchedEffect
+        when (uiState.authMethod) {
+            AuthMethod.BIOMETRIC -> {
+                val activity = context as? FragmentActivity ?: run {
+                    viewModel.cancelAuth()
+                    return@LaunchedEffect
+                }
+                val executor = ContextCompat.getMainExecutor(context)
+                val prompt = BiometricPrompt(
+                    activity, executor,
+                    object : BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                            viewModel.executeSend()
+                        }
+                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                            if (errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
+                                viewModel.cancelAuth()
+                                onNavigateToPinVerify()
+                            } else {
+                                viewModel.cancelAuth()
+                            }
+                        }
+                    }
+                )
+                val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                    .setTitle("Authenticate to Send")
+                    .setSubtitle("Verify your identity to send CKB")
+                    .setNegativeButtonText("Use PIN")
+                    .build()
+                prompt.authenticate(promptInfo)
+            }
+            AuthMethod.PIN -> {
+                viewModel.cancelAuth()
+                onNavigateToPinVerify()
+            }
+            null -> {}
         }
     }
 
@@ -80,68 +183,132 @@ fun SendScreen(
         )
     }
 
+    SendScreenUI(
+        onNavigateBack,
+        uiState,
+        onNavigateToScanner,
+        viewModel::updateRecipient,
+        viewModel::updateAmount,
+        viewModel::setMaxAmount,
+        viewModel::sendTransaction
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SendScreenUI(
+    onNavigateBack: () -> Unit,
+    uiState: SendUiState,
+    onNavigateToScanner: () -> Unit,
+    updateRecipient: (recipientAddress: String) -> Unit,
+    updateAmount: (amount: String) -> Unit,
+    setMaxAmount: () -> Unit,
+    sendTransaction: () -> Unit
+) {
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
-            TopAppBar(
-                title = { Text("Send CKB") },
+            CenterAlignedTopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
+                title = {
+                    Text(
+                        "Send CKB",
+                    )
+                },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    IconButton(onClick = { onNavigateBack() }) {
+                        Icon(
+                            Lucide.ChevronLeft,
+                            contentDescription = "Back",
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
                 }
             )
         }
-    ) { padding ->
+    )
+    { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Available balance
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+            // verticalArrangement = Arrangement.spacedBy(16.dp)
+        )
+        {
+            // Available Balance
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            )
+            {
+                Text(
+                    "Available",
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    style = MaterialTheme.typography.titleMedium
                 )
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp)
-                ) {
-                    Text(
-                        text = "Available Balance",
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    Text(
-                        text = String.format("%,.2f CKB", uiState.availableBalance / 100_000_000.0),
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                }
+                Text(
+                    String.format(
+                        Locale.US,
+                        "%,.2f CKB",
+                        uiState.availableBalance / 100_000_000.0
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.labelLarge
+                )
             }
 
-            // Recipient address with scan button
-            OutlinedTextField(
-                value = uiState.recipientAddress,
-                onValueChange = { viewModel.updateRecipient(it) },
-                label = { Text("Recipient Address") },
-                placeholder = { Text("Enter or paste CKB address") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = false,
-                maxLines = 3,
-                enabled = !uiState.isLoading,
-                trailingIcon = {
-                    IconButton(
-                        onClick = onNavigateToScanner,
-                        enabled = !uiState.isLoading
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.QrCodeScanner,
-                            contentDescription = "Scan QR Code"
-                        )
-                    }
-                }
+            Spacer(modifier = Modifier.height(16.dp))
+            // Recipient Address
+            Text(
+                "Recipient Address",
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
             )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(62.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                BasicTextField(
+                    value = uiState.recipientAddress,
+                    onValueChange = { updateRecipient(it) },
+                    modifier = Modifier.weight(1f),
+                    maxLines = 3,
+                    singleLine = false,
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurfaceVariant),
+                    enabled = !uiState.isLoading,
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                    decorationBox = { innerTextField ->
+                        if (uiState.recipientAddress.isEmpty()) {
+                            Text(
+                                "Enter CKB Address",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                                fontSize = 16.sp
+                            )
+                        }
+                        innerTextField()
+                    }
+                )
+                Icon(
+                    imageVector = Lucide.ScanLine,
+                    contentDescription = "Scan",
+                    modifier = Modifier.clickable{onNavigateToScanner()}
+                )
+            }
 
             // Inline address validation indicator
             AddressValidationIndicator(
@@ -149,31 +316,75 @@ fun SendScreen(
                 currentNetwork = uiState.networkType
             )
 
-            // Amount with Max button
+            Spacer(modifier = Modifier.height(32.dp))
+            // Amount
+            Text(
+                "Amount",
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.height(8.dp))
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant,
+                        RoundedCornerShape(8.dp)
+                    )
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedTextField(
+                BasicTextField(
                     value = uiState.amountCkb,
-                    onValueChange = { viewModel.updateAmount(it) },
-                    label = { Text("Amount (CKB)") },
-                    placeholder = { Text("0.0") },
+                    onValueChange = { updateAmount(it) },
                     modifier = Modifier.weight(1f),
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     enabled = !uiState.isLoading,
-                    supportingText = { Text("Minimum: 61 CKB") }
+                    decorationBox = { innerTextField ->
+                        if (uiState.amountCkb.isEmpty()) {
+                            Text(
+                                "Enter Amount",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                            )
+                        }
+                        innerTextField()
+                    }
                 )
-                OutlinedButton(
-                    onClick = { viewModel.setMaxAmount() },
+                //Max
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                    shape = CircleShape,
+                    onClick = { setMaxAmount() },
                     enabled = !uiState.isLoading && uiState.availableBalance > 0L,
-                    modifier = Modifier.padding(bottom = 22.dp) // align with text field (offset for supportingText)
                 ) {
-                    Text("Max")
+                    Text(
+                        "MAX",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "CKB",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    fontSize = 14.sp
+                )
             }
+            Text(
+                "Min: 61 CKB · Max 8 decimal places",
+                modifier = Modifier.padding(top = 8.dp, start = 4.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                fontSize = 12.sp
+            )
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Burn Warning
             if (uiState.burnWarning != null) {
@@ -189,14 +400,14 @@ fun SendScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Warning,
+                            imageVector = Lucide.TriangleAlert,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = uiState.burnWarning!!,
+                            text = uiState.burnWarning,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
@@ -204,17 +415,47 @@ fun SendScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(40.dp))
+
+            // Fee
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "Estimated Fee",
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    fontSize = 14.sp
+                )
+                val feeText = if (uiState.estimatedFee > 0) {
+                    val feeCkb = uiState.estimatedFee / 100_000_000.0
+                    "~${String.format(Locale.US, "%.6f", feeCkb)} CKB"
+                } else {
+                    "~0 CKB"
+                }
+                Text(
+                    feeText,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            HorizontalDivider(
+                modifier = Modifier.padding(top = 16.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+            )
+
             Spacer(modifier = Modifier.weight(1f))
 
             // Send button
             Button(
-                onClick = { viewModel.sendTransaction() },
+                onClick = { sendTransaction() },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
                 enabled = !uiState.isLoading &&
-                          uiState.recipientAddress.isNotBlank() &&
-                          uiState.amountCkb.isNotBlank()
+                        uiState.recipientAddress.isNotBlank() &&
+                        uiState.amountCkb.isNotBlank()
             ) {
                 if (uiState.isLoading) {
                     CircularProgressIndicator(
@@ -231,10 +472,9 @@ fun SendScreen(
     }
 }
 
-// Color constants matching the design palette
-private val ColorValidGreen = Color(0xFF1ED882)
-private val ColorInvalidRed = Color(0xFFFF4444)
-private val ColorWarnAmber = Color(0xFFF59E0B)
+// Color constants from centralized theme
+private val ColorInvalidRed = ErrorRed
+private val ColorWarnAmber = PendingAmber
 
 @Composable
 fun AddressValidationIndicator(
@@ -249,20 +489,41 @@ fun AddressValidationIndicator(
     }
 
     val (symbol, message, color) = when {
-        !isValid -> Triple("✗", "Invalid address format", ColorInvalidRed)
+        !isValid -> Triple(Lucide.X, "Invalid address format", ColorInvalidRed)
         addressNetwork != null && addressNetwork != currentNetwork -> {
             val networkLabel = if (addressNetwork == NetworkType.TESTNET) "testnet" else "mainnet"
-            Triple("⚠", "This is a $networkLabel address on ${currentNetwork.name.lowercase()}", ColorWarnAmber)
+            Triple(
+                Lucide.TriangleAlert,
+                "This is a $networkLabel address on ${currentNetwork.name.lowercase()}",
+                ColorWarnAmber
+            )
         }
-        else -> Triple("✓", "Valid CKB ${currentNetwork.name.lowercase()} address", ColorValidGreen)
-    }
 
-    Text(
-        text = "$symbol $message",
-        style = MaterialTheme.typography.bodySmall,
-        color = color,
-        modifier = Modifier.padding(start = 4.dp, top = 2.dp)
-    )
+        else -> Triple(
+            Lucide.Check,
+            "Valid CKB ${currentNetwork.name.lowercase()} address",
+            MaterialTheme.colorScheme.primary
+        )
+    }
+    // Validation
+    Row(
+        modifier = Modifier.padding(top = 8.dp, start = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = symbol,
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            message,
+            color = color,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium
+        )
+    }
 }
 
 @Composable
@@ -282,7 +543,7 @@ fun ErrorDialog(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Error,
+                    imageVector = Lucide.CircleAlert,
                     contentDescription = null,
                     modifier = Modifier.size(32.dp),
                     tint = MaterialTheme.colorScheme.error
@@ -319,7 +580,7 @@ fun ErrorDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Warning,
+                                imageVector = Lucide.TriangleAlert,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp),
                                 tint = MaterialTheme.colorScheme.tertiary
@@ -334,7 +595,11 @@ fun ErrorDialog(
                     }
                 }
 
-                if (errorMessage.contains("Minimum", ignoreCase = true) || errorMessage.contains("61", ignoreCase = true)) {
+                if (errorMessage.contains(
+                        "Minimum",
+                        ignoreCase = true
+                    ) || errorMessage.contains("61", ignoreCase = true)
+                ) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Card(
                         colors = CardDefaults.cardColors(
@@ -346,7 +611,7 @@ fun ErrorDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Warning,
+                                imageVector = Lucide.TriangleAlert,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp),
                                 tint = MaterialTheme.colorScheme.tertiary
@@ -403,17 +668,18 @@ fun TransactionStatusDialog(
                         modifier = Modifier
                             .size(64.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF4CAF50).copy(alpha = 0.15f)),
+                            .background(SuccessGreen.copy(alpha = 0.15f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.CheckCircle,
+                            imageVector = Lucide.CircleCheck,
                             contentDescription = "Success",
                             modifier = Modifier.size(40.dp),
-                            tint = Color(0xFF4CAF50)
+                            tint = SuccessGreen
                         )
                     }
                 }
+
                 isFailed -> {
                     Box(
                         modifier = Modifier
@@ -423,13 +689,14 @@ fun TransactionStatusDialog(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Close,
+                            imageVector = Lucide.X,
                             contentDescription = "Failed",
                             modifier = Modifier.size(40.dp),
                             tint = MaterialTheme.colorScheme.error
                         )
                     }
                 }
+
                 else -> {
                     // Animated progress for pending states
                     CircularProgressIndicator(
@@ -502,7 +769,12 @@ fun TransactionStatusDialog(
                                         "https://explorer.nervos.org/transaction/"
                                     }
                                     try {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$explorerBase$txHash")))
+                                        context.startActivity(
+                                            Intent(
+                                                Intent.ACTION_VIEW,
+                                                Uri.parse("$explorerBase$txHash")
+                                            )
+                                        )
                                     } catch (e: android.content.ActivityNotFoundException) {
                                         // No browser available — silently ignore
                                     }
@@ -529,14 +801,14 @@ fun TransactionStatusDialog(
                 // Confirmations badge (if confirmed)
                 if (isConfirmed && confirmations > 0) {
                     Surface(
-                        color = Color(0xFF4CAF50).copy(alpha = 0.15f),
+                        color = SuccessGreen.copy(alpha = 0.15f),
                         shape = RoundedCornerShape(20.dp)
                     ) {
                         Text(
                             text = "✓ $confirmations confirmation${if (confirmations > 1) "s" else ""}",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Medium,
-                            color = Color(0xFF4CAF50),
+                            color = SuccessGreen,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
                     }
@@ -548,7 +820,7 @@ fun TransactionStatusDialog(
                 Button(
                     onClick = onDismiss,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF4CAF50)
+                        containerColor = SuccessGreen
                     )
                 ) {
                     Text("Done")
@@ -581,8 +853,8 @@ fun StatusSteps(
     val steps = listOf(
         "Submitted" to (currentState != TransactionState.SENDING),
         "Pending" to (currentState == TransactionState.PENDING ||
-                      currentState == TransactionState.PROPOSED ||
-                      currentState == TransactionState.CONFIRMED),
+                currentState == TransactionState.PROPOSED ||
+                currentState == TransactionState.CONFIRMED),
         "Confirmed" to (currentState == TransactionState.CONFIRMED)
     )
 
@@ -671,6 +943,27 @@ fun StatusStep(
                 isCurrent -> MaterialTheme.colorScheme.primary
                 else -> MaterialTheme.colorScheme.outline
             }
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun SendScreenUIPreview() {
+    CkbWalletTheme {
+        SendScreenUI(
+            onNavigateBack = {},
+            uiState = SendUiState(
+                availableBalance = 1245678900000L,
+                recipientAddress = "ckb1qzda0cr08m85hc8j0ue0xlctre9270u8as09sh798atp99un0vscqqlm8nll72005vlj3sk05d3m",
+                amountCkb = "100",
+                networkType = NetworkType.MAINNET
+            ),
+            onNavigateToScanner = {},
+            updateRecipient = {},
+            updateAmount = {},
+            setMaxAmount = {},
+            sendTransaction = {}
         )
     }
 }

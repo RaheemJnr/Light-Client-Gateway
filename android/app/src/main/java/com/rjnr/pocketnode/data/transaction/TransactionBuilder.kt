@@ -23,7 +23,9 @@ class TransactionBuilder @Inject constructor(
         const val SECP256K1_CODE_HASH =
             "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8"
         const val MIN_CELL_CAPACITY = 61_00000000L
-        const val DEFAULT_FEE = 100_000L
+        const val DEFAULT_FEE = 100_000L // generous upper bound for cell selection
+        const val FEE_RATE = 1000L       // shannons per KB (standard minimum relay fee)
+        const val MIN_FEE = 1_000L       // floor: 0.00001 CKB
         private const val MAX_TX_SIZE = 596 * 1024 // 596KB CKB protocol limit
 
         // SECP256K1 cell deps for different networks
@@ -33,6 +35,38 @@ class TransactionBuilder @Inject constructor(
         // Mainnet (Mirana)
         private const val MAINNET_SECP256K1_TX_HASH =
             "0x71a7ba8fc96349fea0ed3a5c47992e3b4084b031a42264a018e0072e8172e46c"
+    }
+
+    /**
+     * Estimate the fee for a simple secp256k1 transfer based on input/output count.
+     * Uses the standard CKB fee rate (1000 shannons/KB).
+     */
+    fun estimateTransferFee(inputCount: Int, outputCount: Int): Long {
+        // Fixed overhead: version(4) + RawTransaction table header(28) +
+        // cell_deps fixvec with 1 dep_group(45) + header_deps empty fixvec(4)
+        val fixedOverhead = 81
+        // Each input: since(8) + outpoint(36) = 44 bytes + fixvec count header
+        val inputsSize = 4 + inputCount * 44
+        // Each output: molecule table(16 header) + capacity(8) + lock script table(~53) + empty type opt = ~77 bytes
+        val outputsSize = 4 + outputCount * 4 + outputCount * 77 // dynvec
+        // outputs_data: each "0x" = 4 bytes (length-prefixed empty) + dynvec overhead
+        val outputsDataSize = 4 + outputCount * 4 + outputCount * 4 // dynvec
+        // Witnesses: first has WitnessArgs with 65-byte sig (~85 bytes), rest are empty
+        val witnessSize = 85 + (inputCount - 1).coerceAtLeast(0) * 4
+        // Safety buffer for molecule encoding overhead
+        val buffer = 100
+
+        val estimatedBytes = fixedOverhead + inputsSize + outputsSize + outputsDataSize + witnessSize + buffer
+        return calculateFeeForSize(estimatedBytes)
+    }
+
+    /**
+     * Calculate fee from serialized transaction size using the standard fee rate.
+     * fee = ceil(size_bytes * fee_rate / 1000), with a minimum floor.
+     */
+    private fun calculateFeeForSize(sizeBytes: Int): Long {
+        val fee = (sizeBytes.toLong() * FEE_RATE + 999) / 1000
+        return fee.coerceAtLeast(MIN_FEE)
     }
 
     fun buildTransfer(
@@ -69,8 +103,8 @@ class TransactionBuilder @Inject constructor(
         Log.d(TAG, "  Network: ${network.name}")
         Log.d(TAG, "  Using SECP256K1 cell dep: $secp256k1TxHash")
 
-        val totalRequired = amountShannons + DEFAULT_FEE
-        val (selectedCells, totalInput) = selectCells(availableCells, totalRequired)
+        // Select cells with generous fee to ensure we gather enough inputs
+        val (selectedCells, totalInput) = selectCells(availableCells, amountShannons + DEFAULT_FEE)
 
         Log.d(TAG, "  Selected ${selectedCells.size} cells with total: $totalInput shannons")
 
@@ -78,9 +112,26 @@ class TransactionBuilder @Inject constructor(
             throw IllegalStateException("No cells available")
         }
 
-        if (totalInput < totalRequired) {
-            throw IllegalStateException("Insufficient balance: have $totalInput, need $totalRequired")
+        if (totalInput < amountShannons + MIN_FEE) {
+            throw IllegalStateException("Insufficient balance: have $totalInput, need at least ${amountShannons + MIN_FEE}")
         }
+
+        // Compute dynamic fee based on actual tx structure
+        val changeWithDefaultFee = totalInput - amountShannons - DEFAULT_FEE
+        val initialOutputCount = if (changeWithDefaultFee >= MIN_CELL_CAPACITY) 2 else 1
+        var dynamicFee = estimateTransferFee(selectedCells.size, initialOutputCount)
+
+        // Recompute change with the (smaller) dynamic fee
+        var change = totalInput - amountShannons - dynamicFee
+        val finalOutputCount = if (change >= MIN_CELL_CAPACITY) 2 else 1
+
+        // Re-estimate if output count changed (edge case: lower fee creates a viable change output)
+        if (finalOutputCount != initialOutputCount) {
+            dynamicFee = estimateTransferFee(selectedCells.size, finalOutputCount)
+            change = totalInput - amountShannons - dynamicFee
+        }
+
+        Log.d(TAG, "  Dynamic fee: $dynamicFee shannons (${dynamicFee / 100_000_000.0} CKB)")
 
         val inputs = selectedCells.map { cell ->
             CellInput(
@@ -105,8 +156,7 @@ class TransactionBuilder @Inject constructor(
         )
         outputsData.add("0x")
 
-        // Change output back to sender
-        val change = totalInput - amountShannons - DEFAULT_FEE
+        // Change output back to sender (using dynamic fee)
         if (change >= MIN_CELL_CAPACITY) {
             outputs.add(
                 CellOutput(
@@ -118,7 +168,7 @@ class TransactionBuilder @Inject constructor(
             outputsData.add("0x")
             Log.d(TAG, "  Change output: $change shannons")
         } else {
-            Log.d(TAG, "  No change output (change $change < min $MIN_CELL_CAPACITY)")
+            Log.d(TAG, "  No change output (change $change < min $MIN_CELL_CAPACITY, absorbed as fee)")
         }
 
         // Use network-appropriate cell dependency

@@ -11,12 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Share
+import com.composables.icons.lucide.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,14 +31,10 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.ui.screens.home.HomeViewModel
+import com.rjnr.pocketnode.ui.theme.PendingAmber
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-private val Primary = Color(0xFF1ED882)
-private val CardBackground = Color(0xFF1A1A1A)
-private val CardBorder = Color(0xFF252525)
-private val SecondaryText = Color(0xFFA0A0A0)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,10 +47,12 @@ fun ReceiveScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val currentNetwotk = uiState.currentNetwork
+
 
     var expanded by remember { mutableStateOf(false) }
 
-    val networkLabel = if (uiState.currentNetwork == NetworkType.MAINNET) {
+    val networkLabel = if (currentNetwotk == NetworkType.MAINNET) {
         "CKB Mainnet Address"
     } else {
         "CKB Testnet Address"
@@ -74,16 +67,17 @@ fun ReceiveScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
                 title = { Text("Receive CKB") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Lucide.ArrowLeft, contentDescription = "Back")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    containerColor = MaterialTheme.colorScheme.surface
                 )
             )
         },
@@ -106,20 +100,23 @@ fun ReceiveScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(CardBackground)
-                    .border(1.dp, CardBorder, RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(50))
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Box(
                     modifier = Modifier
                         .size(8.dp)
                         .clip(CircleShape)
-                        .background(Primary)
+                        .background(if (currentNetwotk == NetworkType.MAINNET)
+                            MaterialTheme.colorScheme.primary else PendingAmber
+                        )
                 )
                 Text(
                     text = networkLabel,
                     style = MaterialTheme.typography.labelMedium,
-                    color = Primary
+                    color = if (currentNetwotk == NetworkType.MAINNET)
+                        MaterialTheme.colorScheme.primary else PendingAmber
                 )
             }
 
@@ -127,9 +124,9 @@ fun ReceiveScreen(
             Card(
                 modifier = Modifier
                     .size(240.dp + 48.dp) // 240dp QR + 24dp padding each side
-                    .border(1.dp, CardBorder, RoundedCornerShape(16.dp)),
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp)),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = CardBackground)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -147,8 +144,8 @@ fun ReceiveScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(CardBackground)
-                    .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
                     .clickable(enabled = uiState.address.isNotBlank()) {
                         expanded = !expanded
                     }
@@ -167,10 +164,10 @@ fun ReceiveScreen(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Icon(
-                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp
-                    else Icons.Default.KeyboardArrowDown,
+                    imageVector = if (expanded) Lucide.ChevronUp
+                    else Lucide.ChevronDown,
                     contentDescription = if (expanded) "Collapse" else "Expand",
-                    tint = SecondaryText,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -189,10 +186,10 @@ fun ReceiveScreen(
                     .fillMaxWidth()
                     .height(56.dp),
                 shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
                 Icon(
-                    Icons.Default.ContentCopy,
+                    Lucide.Copy,
                     contentDescription = null,
                     tint = Color.Black
                 )
@@ -221,10 +218,10 @@ fun ReceiveScreen(
                     .fillMaxWidth()
                     .height(56.dp),
                 shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Primary),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Primary)
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
             ) {
-                Icon(Icons.Default.Share, contentDescription = null)
+                Icon(Lucide.Share2, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     "Share",
@@ -236,7 +233,7 @@ fun ReceiveScreen(
             Text(
                 text = "Share this address to receive CKB tokens",
                 style = MaterialTheme.typography.bodySmall,
-                color = SecondaryText,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
 
@@ -273,7 +270,7 @@ private fun QrCodeImage(content: String, modifier: Modifier = Modifier) {
     val bmp = bitmap
     if (bmp == null) {
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Primary)
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
         }
     } else {
         Image(

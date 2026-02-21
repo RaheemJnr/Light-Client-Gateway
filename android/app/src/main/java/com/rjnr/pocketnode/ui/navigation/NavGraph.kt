@@ -54,7 +54,7 @@ sealed class BottomTab(val route: String, val label: String) {
 @Composable
 fun CkbNavGraph(
     navController: NavHostController,
-    startDestination: String = Screen.Home.route
+    startDestination: String = Screen.Onboarding.route
 ) {
     NavHost(
         navController = navController,
@@ -152,16 +152,25 @@ fun CkbNavGraph(
                             )
                         }
                         PinMode.VERIFY -> {
-                            val fromSettings = navController.previousBackStackEntry
-                                ?.destination?.route == Screen.SecuritySettings.route
-                            if (fromSettings) {
-                                navController.previousBackStackEntry
-                                    ?.savedStateHandle
-                                    ?.set("pin_verified", true)
-                                navController.popBackStack()
-                            } else {
-                                navController.navigate(Screen.Main.route) {
-                                    popUpTo(Screen.Auth.route) { inclusive = true }
+                            val previousRoute = navController.previousBackStackEntry
+                                ?.destination?.route
+                            when (previousRoute) {
+                                Screen.SecuritySettings.route -> {
+                                    navController.previousBackStackEntry
+                                        ?.savedStateHandle
+                                        ?.set("pin_verified", true)
+                                    navController.popBackStack()
+                                }
+                                Screen.Send.route -> {
+                                    navController.previousBackStackEntry
+                                        ?.savedStateHandle
+                                        ?.set("send_pin_verified", true)
+                                    navController.popBackStack()
+                                }
+                                else -> {
+                                    navController.navigate(Screen.Main.route) {
+                                        popUpTo(Screen.Auth.route) { inclusive = true }
+                                    }
                                 }
                             }
                         }
@@ -222,13 +231,24 @@ fun CkbNavGraph(
             )
         }
 
-        composable(Screen.Send.route) {
+        composable(Screen.Send.route) { backStackEntry ->
+            val sendPinVerified = backStackEntry.savedStateHandle
+                .get<Boolean>("send_pin_verified") == true
+            if (sendPinVerified) {
+                LaunchedEffect(Unit) {
+                    backStackEntry.savedStateHandle.remove<Boolean>("send_pin_verified")
+                }
+            }
+
             SendScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToScanner = { navController.navigate(Screen.Scanner.route) },
-                scannedAddress = navController.currentBackStackEntry
-                    ?.savedStateHandle
-                    ?.get<String>("scanned_address")
+                onNavigateToPinVerify = {
+                    navController.navigate(Screen.PinEntry.createRoute("verify"))
+                },
+                scannedAddress = backStackEntry.savedStateHandle
+                    .get<String>("scanned_address"),
+                sendAuthVerified = sendPinVerified,
             )
         }
 

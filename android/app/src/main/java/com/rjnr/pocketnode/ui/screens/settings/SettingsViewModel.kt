@@ -2,7 +2,6 @@ package com.rjnr.pocketnode.ui.screens.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
@@ -20,13 +19,11 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val repository: GatewayRepository,
     private val walletPrefs: WalletPreferences,
-    private val authManager: AuthManager,
     private val pinManager: PinManager
 ) : ViewModel() {
 
     data class UiState(
         val isPinEnabled: Boolean = false,
-        val isBiometricEnabled: Boolean = false,
         val syncMode: SyncMode = SyncMode.RECENT,
         val currentNetwork: NetworkType = NetworkType.MAINNET,
         val showSyncDialog: Boolean = false,
@@ -53,7 +50,6 @@ class SettingsViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 isPinEnabled = pinManager.hasPin(),
-                isBiometricEnabled = authManager.isBiometricEnabled(),
                 syncMode = walletPrefs.getSyncMode(),
                 currentNetwork = repository.currentNetwork
             )
@@ -69,11 +65,12 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setSyncMode(mode: SyncMode, customBlockHeight: Long? = null) {
+        val previousMode = _uiState.value.syncMode
         _uiState.update { it.copy(syncMode = mode, showSyncDialog = false) }
         viewModelScope.launch {
             repository.resyncAccount(mode, customBlockHeight)
                 .onFailure { e ->
-                    _uiState.update { it.copy(error = "Sync mode change failed: ${e.message}") }
+                    _uiState.update { it.copy(syncMode = previousMode, error = "Sync mode change failed: ${e.message}") }
                 }
         }
     }

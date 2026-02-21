@@ -737,6 +737,13 @@ class GatewayRepository @Inject constructor(
         // Group by transaction hash to show a clean "one entry per transaction" UI
         val groupedTransactions = pag.objects.groupBy { it.transaction.hash }
 
+        // Fetch tip height once for confirmation calculations (avoid per-tx JNI calls)
+        val tipHeight = runCatching {
+            LightClientNative.nativeGetTipHeader()
+                ?.let { json.decodeFromString<JniHeaderView>(it) }
+                ?.number?.removePrefix("0x")?.toLongOrNull(16)
+        }.getOrNull() ?: 0L
+
         val items = groupedTransactions.map { (txHash, cellInteractions) ->
             val firstInteraction = cellInteractions.first()
             val tx = firstInteraction.transaction
@@ -769,20 +776,27 @@ class GatewayRepository @Inject constructor(
                     ?.let { json.decodeFromString<JniTransactionWithStatus>(it) }
                 val blockHashFromStatus = txWithStatus?.txStatus?.blockHash
                 if (blockHashFromStatus != null) {
+                    // Try local lookup first, then trigger a fetch if not cached
                     val headerJson = LightClientNative.nativeGetHeader(blockHashFromStatus)
                     val header = headerJson?.let { json.decodeFromString<JniHeaderView>(it) }
-                    HeaderInfo(timestampHex = header?.timestamp, hash = header?.hash)
+                    if (header != null) {
+                        HeaderInfo(timestampHex = header.timestamp, hash = header.hash)
+                    } else {
+                        // Header not cached locally — ask light client to fetch it
+                        val fetchJson = LightClientNative.nativeFetchHeader(blockHashFromStatus)
+                        val fetchResult = fetchJson?.let { json.decodeFromString<JniFetchHeaderResponse>(it) }
+                        if (fetchResult?.status == "fetched" && fetchResult.data != null) {
+                            HeaderInfo(timestampHex = fetchResult.data.timestamp, hash = fetchResult.data.hash)
+                        } else {
+                            HeaderInfo(null, null)
+                        }
+                    }
                 } else HeaderInfo(null, null)
             }.onFailure { e ->
                 Log.w(TAG, "getTransactions: failed to fetch header for $txHash: ${e.message}")
             }.getOrElse { HeaderInfo(null, null) }
 
             // Derive confirmations from tip block height vs transaction block number
-            val tipHeight = runCatching {
-                LightClientNative.nativeGetTipHeader()
-                    ?.let { json.decodeFromString<JniHeaderView>(it) }
-                    ?.number?.removePrefix("0x")?.toLongOrNull(16)
-            }.getOrNull() ?: 0L
             val txBlockNum = firstInteraction.blockNumber.removePrefix("0x")
                 .toLongOrNull(16) ?: 0L
             val confirmations = if (tipHeight > 0L && txBlockNum > 0L) {
