@@ -2,7 +2,7 @@
 
 ## Text Content (ready)
 
-- [x] App title: `title.txt`
+- [x] App title: `listings/en-US/title.txt`
 - [x] Short description (76 chars): `listings/en-US/short-description.txt`
 - [x] Full description: `listings/en-US/full-description.txt`
 
