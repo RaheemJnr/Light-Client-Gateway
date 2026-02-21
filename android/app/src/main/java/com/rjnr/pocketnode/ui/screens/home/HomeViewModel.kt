@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
+import java.util.Locale
 import javax.inject.Inject
 
 private const val TAG = "HomeViewModel"
@@ -31,6 +32,9 @@ class HomeViewModel @Inject constructor(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private var syncPollingJob: Job? = null
+
+    private fun formatFiat(ckb: Double, price: Double): String =
+        String.format(Locale.US, "≈ $%.2f USD", ckb * price)
 
     init {
         checkBackupStatus()
@@ -55,7 +59,7 @@ class HomeViewModel @Inject constructor(
                 val ckb = balance?.capacityAsCkb() ?: 0.0
                 _uiState.update { current ->
                     val price = current.ckbUsdPrice
-                    val fiat = if (price != null) "≈ $%.2f USD".format(ckb * price) else null
+                    val fiat = if (price != null) formatFiat(ckb, price) else null
                     current.copy(
                         balanceCkb = ckb,
                         fiatBalance = fiat ?: current.fiatBalance
@@ -103,8 +107,7 @@ class HomeViewModel @Inject constructor(
         priceRepository.getCkbUsdPrice()
             .onSuccess { price ->
                 val balanceCkb = _uiState.value.balanceCkb
-                val fiat = balanceCkb * price
-                val formatted = "≈ $%.2f USD".format(fiat)
+                val formatted = formatFiat(balanceCkb, price)
                 _uiState.update { it.copy(fiatBalance = formatted, ckbUsdPrice = price) }
                 Log.d(TAG, "CKB price: $$price, fiat balance: $formatted")
             }
@@ -233,8 +236,7 @@ class HomeViewModel @Inject constructor(
                     // Recompute fiat with the cached price if available
                     val price = _uiState.value.ckbUsdPrice
                     if (price != null) {
-                        val fiat = balance.capacityAsCkb() * price
-                        _uiState.update { it.copy(fiatBalance = "≈ $%.2f USD".format(fiat)) }
+                        _uiState.update { it.copy(fiatBalance = formatFiat(balance.capacityAsCkb(), price)) }
                     }
                 }
                 .onFailure { error ->

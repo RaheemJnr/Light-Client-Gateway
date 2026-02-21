@@ -140,12 +140,12 @@ fun StatusTab(uiState: NodeStatusUiState, onCallRpc: (String) -> Unit) {
                             Modifier.weight(1f)
                         )
                     }
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     LongInfoItem(
                         "Parent Hash",
                         tipHeader?.parentHash ?: "--"
                     )
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     LongInfoItem(
                         "Transactions Root",
                         tipHeader?.transactionsRoot ?: "--"
@@ -268,13 +268,13 @@ fun LogsTab(logs: List<String>, onClearLogs: () -> Unit) {
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .background(Color.Black, RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.inverseSurface, RoundedCornerShape(16.dp))
                 .padding(16.dp)
         ) {
             if (logs.isEmpty()) {
                 Text(
                     "No logs yet...",
-                    color = Color.White.copy(alpha = 0.5f),
+                    color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.5f),
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace,
                     modifier = Modifier.align(Alignment.Center)
@@ -306,7 +306,7 @@ fun LogsTab(logs: List<String>, onClearLogs: () -> Unit) {
                     .weight(1f)
                     .height(52.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White.copy(alpha = 0.05f)
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
                 ),
                 shape = RoundedCornerShape(12.dp)
             ) {
@@ -318,9 +318,9 @@ fun LogsTab(logs: List<String>, onClearLogs: () -> Unit) {
                 onClick = onClearLogs,
                 modifier = Modifier
                     .size(52.dp)
-                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
             ) {
-                Icon(Icons.Rounded.DeleteOutline, null, tint = Color.White)
+                Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.onSurface)
             }
         }
     }
@@ -338,7 +338,7 @@ fun StatusCard(
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(
@@ -418,7 +418,7 @@ fun LongInfoItem(label: String, value: String) {
             fontFamily = FontFamily.Monospace,
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(8.dp))
                 .padding(12.dp)
         )
     }
@@ -429,7 +429,7 @@ fun PeerItem(id: String, version: String, duration: String) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White.copy(alpha = 0.02f), RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(12.dp))
             .padding(16.dp)
     ) {
         Row(
@@ -441,7 +441,7 @@ fun PeerItem(id: String, version: String, duration: String) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "NODE ID",
-                    color = Color.Gray,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -454,12 +454,12 @@ fun PeerItem(id: String, version: String, duration: String) {
             }
             Text(
                 "ACTIVE",
-                color = Color(0xFF10B981),
+                color = MaterialTheme.colorScheme.tertiary,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
                     .background(
-                        Color(0xFF10B981).copy(alpha = 0.2f),
+                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f),
                         RoundedCornerShape(4.dp)
                     )
                     .padding(horizontal = 6.dp, vertical = 2.dp)
@@ -501,7 +501,7 @@ fun LogLine(time: String, message: String, color: Color) {
     Row {
         Text(
             time,
-            color = Color.White.copy(alpha = 0.5f),
+            color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.5f),
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace
         )

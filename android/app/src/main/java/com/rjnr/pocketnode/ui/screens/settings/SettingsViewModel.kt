@@ -65,11 +65,12 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setSyncMode(mode: SyncMode, customBlockHeight: Long? = null) {
+        val previousMode = _uiState.value.syncMode
         _uiState.update { it.copy(syncMode = mode, showSyncDialog = false) }
         viewModelScope.launch {
             repository.resyncAccount(mode, customBlockHeight)
                 .onFailure { e ->
-                    _uiState.update { it.copy(error = "Sync mode change failed: ${e.message}") }
+                    _uiState.update { it.copy(syncMode = previousMode, error = "Sync mode change failed: ${e.message}") }
                 }
         }
     }

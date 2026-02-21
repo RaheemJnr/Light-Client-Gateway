@@ -737,6 +737,13 @@ class GatewayRepository @Inject constructor(
         // Group by transaction hash to show a clean "one entry per transaction" UI
         val groupedTransactions = pag.objects.groupBy { it.transaction.hash }
 
+        // Fetch tip height once for confirmation calculations (avoid per-tx JNI calls)
+        val tipHeight = runCatching {
+            LightClientNative.nativeGetTipHeader()
+                ?.let { json.decodeFromString<JniHeaderView>(it) }
+                ?.number?.removePrefix("0x")?.toLongOrNull(16)
+        }.getOrNull() ?: 0L
+
         val items = groupedTransactions.map { (txHash, cellInteractions) ->
             val firstInteraction = cellInteractions.first()
             val tx = firstInteraction.transaction
@@ -790,11 +797,6 @@ class GatewayRepository @Inject constructor(
             }.getOrElse { HeaderInfo(null, null) }
 
             // Derive confirmations from tip block height vs transaction block number
-            val tipHeight = runCatching {
-                LightClientNative.nativeGetTipHeader()
-                    ?.let { json.decodeFromString<JniHeaderView>(it) }
-                    ?.number?.removePrefix("0x")?.toLongOrNull(16)
-            }.getOrNull() ?: 0L
             val txBlockNum = firstInteraction.blockNumber.removePrefix("0x")
                 .toLongOrNull(16) ?: 0L
             val confirmations = if (tipHeight > 0L && txBlockNum > 0L) {

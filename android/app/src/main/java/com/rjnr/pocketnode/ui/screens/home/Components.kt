@@ -195,7 +195,11 @@ fun ActionButton(
     badge: String? = null,
     onAction: () -> Unit
 ) {
-    Box(modifier = modifier.clickable { onAction() }) {
+    Box(
+        modifier = modifier.then(
+            if (variant != ActionVariant.Disabled) Modifier.clickable { onAction() } else Modifier
+        )
+    ) {
         Surface(
             color = when (variant) {
                 ActionVariant.Primary -> MaterialTheme.colorScheme.primary

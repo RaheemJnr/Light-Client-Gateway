@@ -16,6 +16,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.math.BigDecimal
+import java.math.RoundingMode
 import javax.inject.Inject
 
 enum class TransactionState {
@@ -105,7 +107,9 @@ class SendViewModel @Inject constructor(
     fun updateAmount(amount: String) {
         val sanitized = sanitizeAmount(amount) ?: return  // silently reject invalid chars
         val amountShannons = try {
-            if (sanitized.isEmpty()) 0L else (sanitized.toDouble() * 100_000_000).toLong()
+            if (sanitized.isEmpty()) 0L
+            else BigDecimal(sanitized).setScale(8, RoundingMode.DOWN)
+                .multiply(BigDecimal(100_000_000)).toLong()
         } catch (e: Exception) {
             0L
         }
@@ -155,8 +159,9 @@ class SendViewModel @Inject constructor(
         }
 
         val amountShannons = try {
-            (state.amountCkb.toDouble() * 100_000_000).toLong()
-        } catch (e: NumberFormatException) {
+            BigDecimal(state.amountCkb).setScale(8, RoundingMode.DOWN)
+                .multiply(BigDecimal(100_000_000)).toLong()
+        } catch (e: Exception) {
             _uiState.update { it.copy(error = "Invalid amount") }
             return
         }
@@ -191,8 +196,9 @@ class SendViewModel @Inject constructor(
         _uiState.update { it.copy(requiresAuth = false, authMethod = null) }
 
         val amountShannons = try {
-            (state.amountCkb.toDouble() * 100_000_000).toLong()
-        } catch (e: NumberFormatException) {
+            BigDecimal(state.amountCkb).setScale(8, RoundingMode.DOWN)
+                .multiply(BigDecimal(100_000_000)).toLong()
+        } catch (e: Exception) {
             _uiState.update { it.copy(error = "Invalid amount") }
             return
         }

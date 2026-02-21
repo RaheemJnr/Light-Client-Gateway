@@ -157,10 +157,15 @@ class MnemonicImportViewModel @Inject constructor(
 
     fun onSyncModeSelected(mode: SyncMode, customHeight: Long?) {
         viewModelScope.launch {
-            if (mode != SyncMode.RECENT) {
-                repository.resyncAccount(mode, customHeight)
+            try {
+                if (mode != SyncMode.RECENT) {
+                    repository.resyncAccount(mode, customHeight)
+                }
+                _uiState.update { it.copy(showSyncModeDialog = false, importSuccess = true) }
+            } catch (e: Exception) {
+                // Still proceed with import — resync can be retried from Settings
+                _uiState.update { it.copy(showSyncModeDialog = false, importSuccess = true, error = "Sync mode change failed: ${e.message}") }
             }
-            _uiState.update { it.copy(showSyncModeDialog = false, importSuccess = true) }
         }
     }
 
