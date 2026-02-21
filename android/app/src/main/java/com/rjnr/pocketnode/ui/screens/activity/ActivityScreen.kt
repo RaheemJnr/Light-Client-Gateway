@@ -19,14 +19,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.filled.Receipt
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -64,18 +56,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.composables.icons.lucide.*
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
+import com.rjnr.pocketnode.ui.theme.ErrorRed
+import com.rjnr.pocketnode.ui.theme.PendingAmber
+import com.rjnr.pocketnode.ui.theme.SuccessGreen
 import com.rjnr.pocketnode.util.formatBlockTimestamp
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
-// Color palette consistent with HomeScreen
-private val Green = Color(0xFF1ED882)
-private val SecondaryText = Color(0xFFA0A0A0)
-private val ErrorRed = Color(0xFFFF4444)
-private val AmberPending = Color(0xFFF59E0B)
+private val AmberPending = PendingAmber
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,6 +87,7 @@ fun ActivityScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
                 title = {
@@ -107,7 +100,7 @@ fun ActivityScreen(
                 actions = {
                     IconButton(onClick = { viewModel.loadTransactions() }) {
                         Icon(
-                            imageVector = Icons.Default.Refresh,
+                            imageVector = Lucide.RefreshCw,
                             contentDescription = "Refresh"
                         )
                     }
@@ -135,7 +128,7 @@ fun ActivityScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(color = Green)
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     }
                 }
 
@@ -227,6 +220,9 @@ private fun FilterTab(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
+
     Column(
         modifier = modifier
             .clickable(onClick = onClick)
@@ -237,14 +233,14 @@ private fun FilterTab(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (selected) Green else SecondaryText
+            color = if (selected) primaryColor else onSurfaceVariantColor
         )
         Spacer(modifier = Modifier.height(4.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(2.dp)
-                .background(if (selected) Green else Color.Transparent)
+                .background(if (selected) primaryColor else Color.Transparent)
         )
     }
 }
@@ -257,7 +253,7 @@ private fun DateGroupHeader(label: String) {
         text = label.uppercase(),
         style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.Bold,
-        color = SecondaryText,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         letterSpacing = 1.sp,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
     )
@@ -274,10 +270,13 @@ private fun ActivityTransactionItem(
     val isSelf = transaction.isSelfTransfer()
     val isPending = transaction.isPending()
 
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
+
     val (icon, iconBg, amountColor) = when {
-        isIncoming -> Triple(Icons.Default.ArrowDownward, Green.copy(alpha = 0.15f), Green)
-        isSelf -> Triple(Icons.Default.SwapHoriz, SecondaryText.copy(alpha = 0.15f), SecondaryText)
-        else -> Triple(Icons.Default.ArrowUpward, ErrorRed.copy(alpha = 0.15f), ErrorRed)
+        isIncoming -> Triple(Lucide.ArrowDownLeft, primaryColor.copy(alpha = 0.15f), primaryColor)
+        isSelf -> Triple(Lucide.ArrowLeftRight, onSurfaceVariantColor.copy(alpha = 0.15f), onSurfaceVariantColor)
+        else -> Triple(Lucide.ArrowUpRight, ErrorRed.copy(alpha = 0.15f), ErrorRed)
     }
 
     Row(
@@ -337,7 +336,7 @@ private fun ActivityTransactionItem(
                 text = transaction.shortTxHash(),
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
-                color = SecondaryText,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -357,7 +356,7 @@ private fun ActivityTransactionItem(
             Text(
                 text = formatBlockTimestamp(transaction.blockTimestampHex),
                 style = MaterialTheme.typography.labelSmall,
-                color = SecondaryText
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -383,16 +382,16 @@ private fun EmptyState(filter: ActivityViewModel.Filter) {
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
-                imageVector = Icons.Default.Receipt,
+                imageVector = Lucide.FileText,
                 contentDescription = null,
                 modifier = Modifier.size(64.dp),
-                tint = SecondaryText.copy(alpha = 0.4f)
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyLarge,
-                color = SecondaryText,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
         }
@@ -419,8 +418,8 @@ private fun ErrorState(message: String?, onRetry: () -> Unit) {
             Button(
                 onClick = onRetry,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Green,
-                    contentColor = Color.Black
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 )
             ) {
                 Text("Retry", fontWeight = FontWeight.SemiBold)
@@ -444,9 +443,9 @@ private fun TransactionDetailSheet(
     val isIncoming = transaction.isIncoming()
     val isOutgoing = transaction.isOutgoing()
     val amountColor = when {
-        isIncoming -> Green
+        isIncoming -> MaterialTheme.colorScheme.primary
         isOutgoing -> ErrorRed
-        else -> SecondaryText
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     val explorerUrl = buildExplorerUrl(transaction.txHash, network)
@@ -499,7 +498,7 @@ private fun TransactionDetailSheet(
                             else -> "Amount"
                         },
                         style = MaterialTheme.typography.labelMedium,
-                        color = SecondaryText
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
@@ -522,7 +521,7 @@ private fun TransactionDetailSheet(
                     Text(
                         text = "TX Hash",
                         style = MaterialTheme.typography.labelSmall,
-                        color = SecondaryText
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
@@ -537,10 +536,10 @@ private fun TransactionDetailSheet(
                     modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.ContentCopy,
+                        imageVector = Lucide.Copy,
                         contentDescription = "Copy TX hash",
                         modifier = Modifier.size(18.dp),
-                        tint = SecondaryText
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 IconButton(
@@ -548,10 +547,10 @@ private fun TransactionDetailSheet(
                     modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.OpenInNew,
+                        imageVector = Lucide.ExternalLink,
                         contentDescription = "View on explorer",
                         modifier = Modifier.size(18.dp),
-                        tint = Green
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
             }
@@ -598,14 +597,16 @@ private fun TransactionDetailSheet(
 
 @Composable
 private fun StatusBadge(confirmed: Boolean) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+
     Surface(
-        color = if (confirmed) Green.copy(alpha = 0.15f) else AmberPending.copy(alpha = 0.15f),
+        color = if (confirmed) primaryColor.copy(alpha = 0.15f) else AmberPending.copy(alpha = 0.15f),
         shape = RoundedCornerShape(8.dp)
     ) {
         Text(
             text = if (confirmed) "Confirmed" else "Pending",
             style = MaterialTheme.typography.labelMedium,
-            color = if (confirmed) Green else AmberPending,
+            color = if (confirmed) primaryColor else AmberPending,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
         )
     }
@@ -621,7 +622,7 @@ private fun DetailRow(label: String, value: String) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
-            color = SecondaryText,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(0.4f)
         )
         Spacer(modifier = Modifier.width(8.dp))

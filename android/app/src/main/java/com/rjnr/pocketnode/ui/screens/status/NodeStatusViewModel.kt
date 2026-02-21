@@ -4,6 +4,8 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
+import com.rjnr.pocketnode.data.gateway.models.JniHeaderView
+import com.rjnr.pocketnode.data.gateway.models.JniRemoteNode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -15,13 +17,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import javax.inject.Inject
 
 data class NodeStatusUiState(
-    val peersJson: String = "",
-    val tipHeaderJson: String = "",
+    val tipHeader: JniHeaderView? = null,
+    val peers: List<JniRemoteNode> = emptyList(),
     val scriptsJson: String = "",
     val rpcResult: String = "",
     val logs: List<String> = emptyList()
@@ -29,7 +32,8 @@ data class NodeStatusUiState(
 
 @HiltViewModel
 class NodeStatusViewModel @Inject constructor(
-    private val repository: GatewayRepository
+    private val repository: GatewayRepository,
+    private val json: Json
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NodeStatusUiState())
@@ -55,14 +59,22 @@ class NodeStatusViewModel @Inject constructor(
 
     private suspend fun updateStatus() {
         try {
-            val peers = repository.getPeers() ?: "Error: null"
-            val tip = repository.getTipHeader() ?: "Error: null"
-            val scripts = repository.getScripts() ?: "Error: null"
+            val peersRaw = repository.getPeers() ?: ""
+            val tipRaw = repository.getTipHeader() ?: ""
+            val scripts = repository.getScripts() ?: ""
+
+            val parsedTip = runCatching {
+                json.decodeFromString<JniHeaderView>(tipRaw)
+            }.getOrNull()
+
+            val parsedPeers = runCatching {
+                json.decodeFromString<List<JniRemoteNode>>(peersRaw)
+            }.getOrDefault(emptyList())
 
             _uiState.update {
                 it.copy(
-                    peersJson = peers,
-                    tipHeaderJson = tip,
+                    tipHeader = parsedTip,
+                    peers = parsedPeers,
                     scriptsJson = scripts
                 )
             }
@@ -122,6 +134,10 @@ class NodeStatusViewModel @Inject constructor(
                 _uiState.update { it.copy(logs = it.logs + "Error reading logs: ${e.message}") }
             }
         }
+    }
+
+    fun clearLogs() {
+        _uiState.update { it.copy(logs = emptyList()) }
     }
 
     override fun onCleared() {

@@ -1,16 +1,6 @@
 package com.rjnr.pocketnode.ui
 
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.AccountBalanceWallet
-import androidx.compose.material.icons.outlined.Circle
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -20,16 +10,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.composables.icons.lucide.Activity
+import com.composables.icons.lucide.Circle
+import com.composables.icons.lucide.Lock
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Settings
+import com.composables.icons.lucide.Wallet
 import com.rjnr.pocketnode.ui.navigation.BottomTab
 import com.rjnr.pocketnode.ui.screens.activity.ActivityScreen
 import com.rjnr.pocketnode.ui.screens.dao.DaoScreen
 import com.rjnr.pocketnode.ui.screens.home.HomeScreen
 import com.rjnr.pocketnode.ui.screens.settings.SettingsScreen
+import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
 
 @Composable
 fun MainScreen(
@@ -71,11 +69,12 @@ fun MainScreen(
                 }
             }
         }
-    ) { padding ->
+    ) { paddingValues ->
         NavHost(
             navController = innerNav,
             startDestination = BottomTab.Home.route,
-            modifier = Modifier.padding(padding)
+            modifier = Modifier
+                .padding(bottom = paddingValues.calculateBottomPadding())
         ) {
             composable(BottomTab.Home.route) {
                 HomeScreen(
@@ -112,9 +111,24 @@ fun MainScreen(
 }
 
 private fun tabIcon(tab: BottomTab, selected: Boolean): ImageVector = when (tab) {
-    BottomTab.Home     -> if (selected) Icons.Filled.AccountBalanceWallet else Icons.Outlined.AccountBalanceWallet
-    BottomTab.Activity -> if (selected) Icons.Filled.History               else Icons.Outlined.History
-    BottomTab.DAO      -> if (selected) Icons.Filled.Lock                  else Icons.Outlined.Lock
-    BottomTab.Settings -> if (selected) Icons.Filled.Settings              else Icons.Outlined.Settings
-    else               -> Icons.Outlined.Circle
+    BottomTab.Home -> Lucide.Wallet
+    BottomTab.Activity -> Lucide.Activity
+    BottomTab.DAO -> Lucide.Lock
+    BottomTab.Settings -> Lucide.Settings
+    else -> Lucide.Circle
+}
+
+@Preview(showBackground = true)
+@Composable
+fun MainScreenPreview() {
+    CkbWalletTheme {
+        MainScreen(
+            onNavigateToSend = {},
+            onNavigateToReceive = {},
+            onNavigateToNodeStatus = {},
+            onNavigateToBackup = {},
+            onNavigateToSecuritySettings = {},
+            onNavigateToImport = {}
+        )
+    }
 }

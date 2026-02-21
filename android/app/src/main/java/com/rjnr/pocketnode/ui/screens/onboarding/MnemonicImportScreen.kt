@@ -4,9 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ContentPaste
+import com.composables.icons.lucide.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,7 +16,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
+import com.rjnr.pocketnode.data.gateway.models.NetworkType
+import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.wallet.MnemonicManager
+import com.rjnr.pocketnode.ui.components.SyncOptionsDialog
 import com.rjnr.pocketnode.ui.util.Bip39WordList
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +38,7 @@ data class MnemonicImportUiState(
     val isImporting: Boolean = false,
     val importSuccess: Boolean = false,
     val showPrivateKeyDialog: Boolean = false,
+    val showSyncModeDialog: Boolean = false,
     val error: String? = null
 )
 
@@ -110,7 +112,14 @@ class MnemonicImportViewModel @Inject constructor(
             _uiState.update { it.copy(isImporting = true, error = null) }
             repository.importFromMnemonic(words)
                 .onSuccess {
-                    _uiState.update { it.copy(isImporting = false, importSuccess = true) }
+                    val showDialog = repository.currentNetwork == NetworkType.MAINNET
+                    _uiState.update {
+                        it.copy(
+                            isImporting = false,
+                            importSuccess = !showDialog,
+                            showSyncModeDialog = showDialog
+                        )
+                    }
                 }
                 .onFailure { error ->
                     _uiState.update { it.copy(isImporting = false, error = error.message) }
@@ -131,12 +140,32 @@ class MnemonicImportViewModel @Inject constructor(
             _uiState.update { it.copy(isImporting = true, showPrivateKeyDialog = false, error = null) }
             repository.importExistingWallet(hex)
                 .onSuccess {
-                    _uiState.update { it.copy(isImporting = false, importSuccess = true) }
+                    val showDialog = repository.currentNetwork == NetworkType.MAINNET
+                    _uiState.update {
+                        it.copy(
+                            isImporting = false,
+                            importSuccess = !showDialog,
+                            showSyncModeDialog = showDialog
+                        )
+                    }
                 }
                 .onFailure { error ->
                     _uiState.update { it.copy(isImporting = false, error = error.message) }
                 }
         }
+    }
+
+    fun onSyncModeSelected(mode: SyncMode, customHeight: Long?) {
+        viewModelScope.launch {
+            if (mode != SyncMode.RECENT) {
+                repository.resyncAccount(mode, customHeight)
+            }
+            _uiState.update { it.copy(showSyncModeDialog = false, importSuccess = true) }
+        }
+    }
+
+    fun skipSyncSelection() {
+        _uiState.update { it.copy(showSyncModeDialog = false, importSuccess = true) }
     }
 
     fun clearError() {
@@ -176,15 +205,31 @@ fun MnemonicImportScreen(
         )
     }
 
+    // Post-import sync mode dialog (mainnet only)
+    if (uiState.showSyncModeDialog) {
+        SyncOptionsDialog(
+            currentMode = SyncMode.RECENT,
+            title = "Choose Sync Start Point",
+            description = "Select how far back to sync your wallet history. If your wallet is older than 30 days, choose Custom to enter a specific block height.",
+            availableModes = listOf(SyncMode.RECENT, SyncMode.CUSTOM),
+            onDismiss = { viewModel.skipSyncSelection() },
+            onSelectMode = { mode, height -> viewModel.onSyncModeSelected(mode, height) }
+        )
+    }
+
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
                 title = { Text("Recover Wallet") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Lucide.ChevronLeft, "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -211,7 +256,7 @@ fun MnemonicImportScreen(
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Lucide.ClipboardPaste, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Paste from Clipboard")
             }

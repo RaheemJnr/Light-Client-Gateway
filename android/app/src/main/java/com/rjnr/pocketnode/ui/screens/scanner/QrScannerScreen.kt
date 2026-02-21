@@ -12,10 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.FlashOff
-import androidx.compose.material.icons.filled.FlashOn
+import com.composables.icons.lucide.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -60,7 +57,7 @@ fun QrScannerScreen(
                 title = { Text("Scan QR Code") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.Close, contentDescription = "Close")
+                        Icon(Lucide.X, contentDescription = "Close")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -225,7 +222,7 @@ private fun CameraPreviewWithScanner(
                         )
                 ) {
                     Icon(
-                        imageVector = if (flashEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                        imageVector = if (flashEnabled) Lucide.Zap else Lucide.ZapOff,
                         contentDescription = if (flashEnabled) "Turn off flash" else "Turn on flash",
                         tint = Color.White
                     )

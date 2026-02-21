@@ -769,9 +769,21 @@ class GatewayRepository @Inject constructor(
                     ?.let { json.decodeFromString<JniTransactionWithStatus>(it) }
                 val blockHashFromStatus = txWithStatus?.txStatus?.blockHash
                 if (blockHashFromStatus != null) {
+                    // Try local lookup first, then trigger a fetch if not cached
                     val headerJson = LightClientNative.nativeGetHeader(blockHashFromStatus)
                     val header = headerJson?.let { json.decodeFromString<JniHeaderView>(it) }
-                    HeaderInfo(timestampHex = header?.timestamp, hash = header?.hash)
+                    if (header != null) {
+                        HeaderInfo(timestampHex = header.timestamp, hash = header.hash)
+                    } else {
+                        // Header not cached locally — ask light client to fetch it
+                        val fetchJson = LightClientNative.nativeFetchHeader(blockHashFromStatus)
+                        val fetchResult = fetchJson?.let { json.decodeFromString<JniFetchHeaderResponse>(it) }
+                        if (fetchResult?.status == "fetched" && fetchResult.data != null) {
+                            HeaderInfo(timestampHex = fetchResult.data.timestamp, hash = fetchResult.data.hash)
+                        } else {
+                            HeaderInfo(null, null)
+                        }
+                    }
                 } else HeaderInfo(null, null)
             }.onFailure { e ->
                 Log.w(TAG, "getTransactions: failed to fetch header for $txHash: ${e.message}")

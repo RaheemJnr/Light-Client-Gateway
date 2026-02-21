@@ -196,6 +196,13 @@ data class TransactionRecord(
             txHash
         }
     }
+    fun shorterTxHash(): String {
+        return if (txHash.length > 10) {
+            "${txHash.take(4)}...${txHash.takeLast(4)}"
+        } else {
+            txHash
+        }
+    }
 }
 
 enum class NetworkType(val hrp: String) {

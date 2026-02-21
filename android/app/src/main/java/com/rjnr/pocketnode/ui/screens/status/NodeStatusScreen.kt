@@ -1,23 +1,68 @@
 package com.rjnr.pocketnode.ui.screens.status
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Group
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.composables.icons.lucide.ChevronLeft
+import com.composables.icons.lucide.Lucide
+import com.rjnr.pocketnode.data.gateway.models.JniHeaderView
+import com.rjnr.pocketnode.data.gateway.models.JniRemoteNode
+import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,14 +75,18 @@ fun NodeStatusScreen(
     val tabs = listOf("Status", "Logs")
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
                 title = { Text("Node Status") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Lucide.ChevronLeft, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
             )
         }
     ) { padding ->
@@ -54,7 +103,10 @@ fun NodeStatusScreen(
 
             when (selectedTab) {
                 0 -> StatusTab(uiState, onCallRpc = { viewModel.callRpc(it) })
-                1 -> LogsTab(uiState.logs)
+                1 -> LogsTab(
+                    logs = uiState.logs,
+                    onClearLogs = { viewModel.clearLogs() }
+                )
             }
         }
     }
@@ -63,40 +115,381 @@ fun NodeStatusScreen(
 @Composable
 fun StatusTab(uiState: NodeStatusUiState, onCallRpc: (String) -> Unit) {
     var rpcMethod by remember { mutableStateOf("get_peers") }
-    
+    val tipHeader = uiState.tipHeader
+    val peers = uiState.peers
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Tip Header card
+        item {
+            StatusCard(title = "Tip Header", icon = Icons.Rounded.AccountTree) {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        InfoItem(
+                            "Block Number",
+                            tipHeader?.number ?: "--",
+                            Modifier.weight(1f)
+                        )
+                        InfoItem(
+                            "Epoch",
+                            tipHeader?.epoch ?: "--",
+                            Modifier.weight(1f)
+                        )
+                    }
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+                    LongInfoItem(
+                        "Parent Hash",
+                        tipHeader?.parentHash ?: "--"
+                    )
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+                    LongInfoItem(
+                        "Transactions Root",
+                        tipHeader?.transactionsRoot ?: "--"
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            if (tipHeader != null) formatTimestampAgo(tipHeader.timestamp) else "--",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp
+                        )
+                        if (tipHeader != null) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                shape = RoundedCornerShape(100.dp)
+                            ) {
+                                Text(
+                                    "Synced",
+                                    modifier = Modifier.padding(
+                                        horizontal = 10.dp,
+                                        vertical = 2.dp
+                                    ),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Peers card
+        item {
+            StatusCard(
+                title = "Peers",
+                icon = Icons.Rounded.Group,
+                trailing = "${peers.size} Connected"
+            ) {
+                if (peers.isEmpty()) {
+                    Text(
+                        "No peers connected",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp
+                    )
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        peers.forEach { peer ->
+                            PeerItem(
+                                id = peer.nodeId,
+                                version = peer.version,
+                                duration = formatDuration(peer.connectedDuration)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Custom RPC section
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Custom RPC", style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = rpcMethod,
+                    onValueChange = { rpcMethod = it },
+                    label = { Text("Method") },
+                    modifier = Modifier.weight(1f)
+                )
+                Button(onClick = { onCallRpc(rpcMethod) }) {
+                    Text("Call")
+                }
+            }
+            if (uiState.rpcResult.isNotEmpty()) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Text(
+                        text = uiState.rpcResult,
+                        modifier = Modifier.padding(8.dp),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LogsTab(logs: List<String>, onClearLogs: () -> Unit) {
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(logs.size) {
+        if (logs.isNotEmpty()) {
+            listState.animateScrollToItem(logs.size - 1)
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
-            .verticalScroll(rememberScrollState())
     ) {
-        StatusSection(title = "Tip Header", content = uiState.tipHeaderJson)
-        StatusSection(title = "Peers", content = uiState.peersJson)
-        StatusSection(title = "Scripts", content = uiState.scriptsJson)
-        
-        Spacer(modifier = Modifier.height(24.dp))
-        Text("Custom RPC", style = MaterialTheme.typography.titleMedium)
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = rpcMethod,
-                onValueChange = { rpcMethod = it },
-                label = { Text("Method") },
-                modifier = Modifier.weight(1f)
-            )
-            Button(onClick = { onCallRpc(rpcMethod) }) {
-                Text("Call")
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .background(Color.Black, RoundedCornerShape(16.dp))
+                .padding(16.dp)
+        ) {
+            if (logs.isEmpty()) {
+                Text(
+                    "No logs yet...",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            } else {
+                LazyColumn(
+                    state = listState,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(logs) { line ->
+                        val parsed = parseLogLine(line)
+                        LogLine(
+                            time = parsed.first,
+                            message = parsed.second,
+                            color = parsed.third
+                        )
+                    }
+                }
             }
         }
-        if (uiState.rpcResult.isNotEmpty()) {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+
+        Row(
+            modifier = Modifier.padding(top = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = { /* TODO: export logs */ },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(52.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White.copy(alpha = 0.05f)
+                ),
+                shape = RoundedCornerShape(12.dp)
             ) {
+                Icon(Icons.Rounded.Download, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Export Logs", fontSize = 14.sp)
+            }
+            IconButton(
+                onClick = onClearLogs,
+                modifier = Modifier
+                    .size(52.dp)
+                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+            ) {
+                Icon(Icons.Rounded.DeleteOutline, null, tint = Color.White)
+            }
+        }
+    }
+}
+
+// region UI Components
+
+@Composable
+fun StatusCard(
+    title: String,
+    icon: ImageVector,
+    trailing: String? = null,
+    content: @Composable () -> Unit
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 24.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        icon,
+                        null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        title,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                if (trailing != null) {
+                    Text(
+                        trailing,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier
+                            .background(
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                RoundedCornerShape(6.dp)
+                            )
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+fun InfoItem(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        Text(
+            label.uppercase(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 11.sp,
+            letterSpacing = 0.5.sp
+        )
+        Text(
+            value,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 14.sp,
+            fontFamily = FontFamily.Monospace
+        )
+    }
+}
+
+@Composable
+fun LongInfoItem(label: String, value: String) {
+    Column {
+        Text(
+            label.uppercase(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 11.sp,
+            letterSpacing = 0.5.sp,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        Text(
+            value,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                .padding(12.dp)
+        )
+    }
+}
+
+@Composable
+fun PeerItem(id: String, version: String, duration: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White.copy(alpha = 0.02f), RoundedCornerShape(12.dp))
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = uiState.rpcResult,
-                    modifier = Modifier.padding(8.dp),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp
+                    "NODE ID",
+                    color = Color.Gray,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    id,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+            Text(
+                "ACTIVE",
+                color = Color(0xFF10B981),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .background(
+                        Color(0xFF10B981).copy(alpha = 0.2f),
+                        RoundedCornerShape(4.dp)
+                    )
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Version",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp
+                )
+                Text(
+                    version,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Duration",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp
+                )
+                Text(
+                    duration,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
                 )
             }
         }
@@ -104,48 +497,114 @@ fun StatusTab(uiState: NodeStatusUiState, onCallRpc: (String) -> Unit) {
 }
 
 @Composable
-fun StatusSection(title: String, content: String) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-            Text(
-                text = content, 
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp
-            )
-        }
+fun LogLine(time: String, message: String, color: Color) {
+    Row {
+        Text(
+            time,
+            color = Color.White.copy(alpha = 0.5f),
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(message, color = color, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
     }
 }
 
+// endregion
+
+// region Helpers
+
+private fun formatTimestampAgo(hexTimestamp: String): String {
+    val ms = hexTimestamp.removePrefix("0x").toLongOrNull(16) ?: return "Unknown"
+    val diffSeconds = (System.currentTimeMillis() - ms) / 1000
+    return when {
+        diffSeconds < 0 -> "Just now"
+        diffSeconds < 60 -> "Updated ${diffSeconds}s ago"
+        diffSeconds < 3600 -> "Updated ${diffSeconds / 60}m ago"
+        diffSeconds < 86400 -> "Updated ${diffSeconds / 3600}h ago"
+        else -> "Updated ${diffSeconds / 86400}d ago"
+    }
+}
+
+private fun formatDuration(hexMs: String): String {
+    val ms = hexMs.removePrefix("0x").toLongOrNull(16) ?: return hexMs
+    val seconds = ms / 1000
+    val minutes = seconds / 60
+    val hours = minutes / 60
+    val days = hours / 24
+    return when {
+        days > 0 -> "${days}d ${hours % 24}h"
+        hours > 0 -> "${hours}h ${minutes % 60}m"
+        minutes > 0 -> "${minutes}m ${seconds % 60}s"
+        else -> "${seconds}s"
+    }
+}
+
+private val logLevelRegex = Regex("""^(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})\s+([VDIWEF])/(.*)$""")
+
+private fun parseLogLine(line: String): Triple<String, String, Color> {
+    val match = logLevelRegex.find(line)
+    if (match != null) {
+        val timestamp = "[${match.groupValues[1]}]"
+        val level = match.groupValues[2]
+        val message = match.groupValues[3]
+        val color = when (level) {
+            "V" -> Color(0xFF4ADE80)       // green
+            "D" -> Color.LightGray
+            "I" -> Color(0xFF60A5FA)       // blue
+            "W" -> Color(0xFFFBBF24)       // amber
+            "E", "F" -> Color(0xFFEF4444)  // red
+            else -> Color.LightGray
+        }
+        return Triple(timestamp, message, color)
+    }
+    // Fallback: no parsing, show full line
+    return Triple("", line, Color.LightGray)
+}
+
+// endregion
+
+// region Previews
+
+@Preview(showBackground = true)
 @Composable
-fun LogsTab(logs: List<String>) {
-    val listState = rememberLazyListState()
-    
-    LaunchedEffect(logs.size) {
-        if (logs.isNotEmpty()) {
-            listState.animateScrollToItem(logs.size - 1)
-        }
-    }
-
-    LazyColumn(
-        state = listState,
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .padding(8.dp)
-    ) {
-        items(logs) { log ->
-            Text(
-                text = log,
-                color = Color.Green,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp
-            )
-        }
+fun StatusTabPreview() {
+    val sampleUiState = NodeStatusUiState(
+        tipHeader = JniHeaderView(
+            hash = "0xabc123",
+            number = "0x11cbe5",
+            epoch = "0x3a7015e00357e",
+            timestamp = "0x${(System.currentTimeMillis() - 5000).toString(16)}",
+            parentHash = "0xf661b7c4f4104c5e4d41cc86b6cba83c20f0139f6eb5e24d56ce04632dacacf6",
+            transactionsRoot = "0x8fb290fc430323538e7b645c7323bca759d3dea436d5e7408985dea6a11545d1",
+            proposalsHash = "0x0000000000000000000000000000000000000000000000000000000000000000",
+            extraHash = "0x0000000000000000000000000000000000000000000000000000000000000000",
+            dao = "0x00",
+            nonce = "0x00"
+        ),
+        peers = listOf(
+            JniRemoteNode("0.203.0", "QmNszGNQjYA6iP472bNnNE...", "0x36EE80"),
+            JniRemoteNode("0.200.0", "QmZQK7KvwUcdVshRvmzP...", "0x1B7740")
+        ),
+        rpcResult = "",
+    )
+    CkbWalletTheme {
+        StatusTab(uiState = sampleUiState, onCallRpc = {})
     }
 }
+
+@Preview(showBackground = true)
+@Composable
+fun LogsTabPreview() {
+    val sampleLogs = listOf(
+        "02-20 10:49:58.822 D/ckb-light-client(24474): tentacle::session started",
+        "02-20 10:49:59.732 I/ckb-light-client(24474): ckb_light_client_lib sync block",
+        "02-20 10:50:08.120 W/ckb-light-client(24474): Low peer count detected",
+        "02-20 10:50:10.500 E/ckb-light-client(24474): Connection timeout"
+    )
+    CkbWalletTheme {
+        LogsTab(logs = sampleLogs, onClearLogs = {})
+    }
+}
+
+// endregion

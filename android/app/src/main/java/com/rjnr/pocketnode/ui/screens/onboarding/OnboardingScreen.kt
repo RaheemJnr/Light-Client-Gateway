@@ -3,10 +3,7 @@ package com.rjnr.pocketnode.ui.screens.onboarding
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Security
+import com.composables.icons.lucide.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -42,6 +39,7 @@ fun OnboardingScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(
@@ -55,7 +53,7 @@ fun OnboardingScreen(
         ) {
             // Icon / Logo Placeholder
             Icon(
-                imageVector = Icons.Default.Security,
+                imageVector = Lucide.Shield,
                 contentDescription = null,
                 modifier = Modifier.size(80.dp),
                 tint = MaterialTheme.colorScheme.primary
@@ -85,7 +83,7 @@ fun OnboardingScreen(
             OnboardingOption(
                 title = "Create New Wallet",
                 description = "Generate a new wallet with a 12-word recovery phrase.",
-                icon = Icons.Default.Add,
+                icon = Lucide.Plus,
                 onClick = { viewModel.createNewWallet() },
                 isLoading = uiState.isLoading
             )
@@ -95,7 +93,7 @@ fun OnboardingScreen(
             OnboardingOption(
                 title = "Recover from Seed Phrase",
                 description = "Import wallet using your 12-word recovery phrase.",
-                icon = Icons.Default.Key,
+                icon = Lucide.KeyRound,
                 onClick = onNavigateToImport,
                 isLoading = uiState.isLoading
             )

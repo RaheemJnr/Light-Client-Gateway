@@ -57,6 +57,13 @@ class AuthManager @Inject constructor(
         prefs.edit().putBoolean(KEY_BIOMETRIC_ENABLED, enabled).apply()
     }
 
+    fun isAuthBeforeSendEnabled(): Boolean =
+        prefs.getBoolean(KEY_AUTH_BEFORE_SEND, false)
+
+    fun setAuthBeforeSendEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTH_BEFORE_SEND, enabled).apply()
+    }
+
     fun hasDeviceCredential(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             biometricMgr.canAuthenticate(Authenticators.DEVICE_CREDENTIAL) ==
@@ -84,5 +91,6 @@ class AuthManager @Inject constructor(
     companion object {
         private const val PREFS_NAME = "ckb_auth_settings"
         private const val KEY_BIOMETRIC_ENABLED = "biometric_enabled"
+        private const val KEY_AUTH_BEFORE_SEND = "auth_before_send"
     }
 }

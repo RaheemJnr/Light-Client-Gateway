@@ -9,10 +9,7 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Warning
+import com.composables.icons.lucide.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -140,6 +137,7 @@ fun MnemonicBackupScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
                 title = {
@@ -154,10 +152,13 @@ fun MnemonicBackupScreen(
                 navigationIcon = {
                     if (uiState.currentStep < 3) {
                         IconButton(onClick = onNavigateBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                            Icon(Lucide.ChevronLeft, "Back")
                         }
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -208,7 +209,7 @@ private fun MnemonicDisplayStep(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    Icons.Default.Warning,
+                    Lucide.TriangleAlert,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onErrorContainer
                 )
@@ -359,7 +360,7 @@ private fun MnemonicSuccessStep(
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            Icons.Default.CheckCircle,
+            Lucide.CircleCheck,
             contentDescription = null,
             modifier = Modifier.size(80.dp),
             tint = MaterialTheme.colorScheme.primary

@@ -15,6 +15,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import javax.inject.Inject
 
 private const val TAG = "HomeViewModel"
@@ -239,14 +241,12 @@ class HomeViewModel @Inject constructor(
                     Log.e(TAG, "Failed to refresh balance", error)
                 }
 
-            // Refresh peer count (best-effort: parse array size from JSON)
+            // Refresh peer count (best-effort: parse JSON array size)
             try {
                 val peersJson = repository.getPeers()
                 if (peersJson != null) {
-                    // Count top-level array elements by counting "peer_id" occurrences.
-                    // Each peer has exactly one peer_id and it won't appear nested.
-                    val count = peersJson.split("\"peer_id\"").size - 1
-                    _uiState.update { it.copy(peerCount = count.coerceAtLeast(0)) }
+                    val count = Json.parseToJsonElement(peersJson).jsonArray.size
+                    _uiState.update { it.copy(peerCount = count) }
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to refresh peer count", e)
@@ -388,10 +388,10 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * Dismiss the sync reminder
+     * Hide the post-import sync mode dialog
      */
-    fun dismissSyncReminder() {
-        _uiState.update { it.copy(showImportSyncReminder = false) }
+    fun hidePostImportSyncDialog() {
+        _uiState.update { it.copy(showPostImportSyncDialog = false) }
     }
 
     /**
@@ -405,9 +405,9 @@ class HomeViewModel @Inject constructor(
                 .onSuccess { info ->
                     Log.d(TAG, "Wallet imported successfully: ${info.testnetAddress}")
                     _uiState.update { it.copy(
-                        walletInfo = info, 
+                        walletInfo = info,
                         isLoading = false,
-                        showImportSyncReminder = true // Show reminder for imported wallet
+                        showPostImportSyncDialog = repository.currentNetwork == NetworkType.MAINNET
                     ) }
                     registerAndRefresh()
                 }
@@ -503,7 +503,7 @@ data class HomeUiState(
     val showBackupDialog: Boolean = false,
     val privateKeyHex: String? = null,
     val showImportDialog: Boolean = false,
-    val showImportSyncReminder: Boolean = false,
+    val showPostImportSyncDialog: Boolean = false,
     val showBackupReminder: Boolean = false,
     val walletType: String = KeyManager.WALLET_TYPE_RAW_KEY,
     val currentNetwork: NetworkType = NetworkType.MAINNET,
