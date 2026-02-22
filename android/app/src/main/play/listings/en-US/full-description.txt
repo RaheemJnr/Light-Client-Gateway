@@ -1,4 +1,4 @@
-Pocket Node is the first mobile CKB wallet that runs a real light client directly on your phone. No remote servers, no middlemen — just you, your keys, and the Nervos blockchain.
+Pocket Node is the only Android CKB wallet that runs a real light client directly on your phone. No remote servers, no middlemen — just you, your keys, and the Nervos blockchain.
 
 Unlike browser-extension wallets or custodial apps, Pocket Node embeds a Rust-based CKB light client via JNI. Every balance check, every transaction, every block header is verified locally on your device.
 
@@ -27,7 +27,7 @@ PRIVACY & SECURITY
 - Keys never leave your device
 - Seed phrase encrypted with TEE/StrongBox (AES-256-GCM)
 - No analytics, no tracking, no remote servers
-- PIN hashed with Blake2b and per-device salt
+- PIN derived with per-device salt and secure hashing
 - Lockout protection after failed auth attempts
 - Open source: audit the code yourself
 
