@@ -22,6 +22,10 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        // Only include ARM ABIs — x86_64 is emulator-only and adds ~29 MB
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     signingConfigs {
@@ -152,9 +156,7 @@ dependencies {
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
 
-    // Firebase
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.analytics)
+    // Firebase App Distribution (Gradle plugin only — no analytics SDK in the app)
 
     // Testing
     testImplementation("junit:junit:4.13.2")
