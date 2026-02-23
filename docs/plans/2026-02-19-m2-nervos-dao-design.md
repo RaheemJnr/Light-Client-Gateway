@@ -405,7 +405,7 @@ Scaffold
 
 ### Empty State
 
-Lock icon + "Earn rewards with Nervos DAO" message + "Make First Deposit" button.
+Lock icon + "Earn rewards with Nervos DAO" message + "Make First Deposit" button. Includes subtle resync hint for imported wallet edge case: "Not seeing expected deposits? Try resyncing from an earlier block in Settings."
 
 ---
 

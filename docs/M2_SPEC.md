@@ -65,11 +65,27 @@ These use `CMD_SET_SCRIPTS_ALL` which would wipe the DAO type script. Either:
 
 Option (a) is cleaner — add a helper that returns the full script list (lock + DAO type).
 
+### Sync Start Block Strategy
+
+The DAO type script uses the **same `blockNumber`** as the lock script registration. This is consistent across all sync modes:
+
+| Sync Mode | Lock script starts at | DAO type script starts at | Result |
+|-----------|----------------------|--------------------------|--------|
+| `NEW_WALLET` | tip | tip | Only new deposits visible — consistent with no-history choice |
+| `RECENT` | tip - 200k | tip - 200k | Last ~30 days of DAO deposits visible |
+| `FULL_HISTORY` | 0 | 0 | All DAO deposits visible, including from other wallets |
+| `CUSTOM(N)` | N | N | DAO deposits after block N visible — user's explicit choice |
+
+**Imported wallet edge case:** If a user imports a mnemonic/key that was used in another wallet (Neuron, etc.) to make DAO deposits, those deposits are only visible if they fall within the sync range. For `CUSTOM` or `NEW_WALLET` sync modes, older DAO deposits will be invisible — but so will all other historical transactions. This is the trade-off the user accepted when choosing that sync mode.
+
+**UX mitigation (Week 3/4 polish):** In the DAO empty state, include a hint: "Not seeing expected deposits? Try resyncing from an earlier block in Settings." This is cheap, non-blocking, and covers the edge case without adding complexity to the sync logic.
+
 ### Testing
 
 - Verify `nativeGetCells` with DAO type script returns results after registration
 - Verify lock script registration is not disrupted by DAO type script addition
 - Verify re-registration after `sendTransaction` preserves both scripts
+- Verify DAO type script uses same block number as lock script for all sync modes (NEW_WALLET, RECENT, FULL_HISTORY, CUSTOM)
 
 ---
 
@@ -429,6 +445,7 @@ Scaffold
 - Lock icon, "Earn rewards with Nervos DAO" heading
 - "Deposit CKB to earn ~2.5% annual compensation. 180-epoch lock cycles."
 - "Make First Deposit" button → opens deposit bottom sheet
+- Subtle hint (small text, muted color): "Not seeing expected deposits? Try resyncing from an earlier block in Settings." — covers the imported wallet edge case where DAO deposits exist before the sync start block
 
 **Deposit bottom sheet** (`ModalBottomSheet`):
 - Amount input field with available balance display
