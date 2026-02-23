@@ -1,0 +1,22 @@
+Pocket Node is the only Android CKB wallet that runs a real light client directly on your device. No remote servers. No middlemen. Full sovereignty over your Nervos blockchain interactions.
+
+Unlike typical mobile wallets that depend on third-party servers, Pocket Node embeds a Rust-based CKB light client as a native library, giving you direct access to the Nervos network.
+
+Features:
+- Embedded CKB light client running locally via JNI
+- BIP39 mnemonic seed phrase generation and import
+- Biometric and PIN authentication
+- Send and receive CKB with QR code scanning
+- Real-time balance and transaction history
+- Full node sync status monitoring
+- Mainnet and testnet support
+- No accounts, no emails, no KYC
+
+Security:
+- Private keys never leave your device
+- Keys stored in Android EncryptedSharedPreferences
+- All blockchain queries run locally through the embedded light client
+- No analytics or tracking
+- Fully open source
+
+Pocket Node is funded by a CKB Community DAO grant and is free and open source software.

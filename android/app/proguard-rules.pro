@@ -48,6 +48,9 @@
 
 # Suppress warnings for classes not available on Android
 -dontwarn javax.naming.**
+-dontwarn com.google.j2objc.annotations.**
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn org.checkerframework.**
 -dontwarn org.bouncycastle.jsse.**
 -dontwarn org.conscrypt.**
 -dontwarn org.openjsse.**

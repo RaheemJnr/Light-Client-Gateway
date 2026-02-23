@@ -53,9 +53,9 @@ export ANDROID_API_LEVEL=21
 echo "Using NDK: $ANDROID_NDK_HOME"
 echo "NDK Host: $NDK_HOST"
 
-# Multi-ABI setup
-RUST_TARGETS=("aarch64-linux-android" "armv7-linux-androideabi" "x86_64-linux-android")
-ANDROID_ARCHS=("arm64-v8a" "armeabi-v7a" "x86_64")
+# Multi-ABI setup (arm64 + armv7 only — x86_64 is emulator-only and excluded from APK)
+RUST_TARGETS=("aarch64-linux-android" "armv7-linux-androideabi")
+ANDROID_ARCHS=("arm64-v8a" "armeabi-v7a")
 
 # Environment common flags
 ROCKSDB_DISABLE_FLAGS="-DROCKSDB_NO_DYNAMIC_EXTENSION -DROCKSDB_LITE"
@@ -73,7 +73,7 @@ export ROCKSDB_DISABLE_AUXV=1
 STUBS_BASE_DIR="$(pwd)/target/android-stubs"
 mkdir -p "$STUBS_BASE_DIR"
 
-for i in 0 1 2; do
+for i in "${!RUST_TARGETS[@]}"; do
     TARGET="${RUST_TARGETS[$i]}"
     ARCH="${ANDROID_ARCHS[$i]}"
     
@@ -145,7 +145,14 @@ for i in 0 1 2; do
     
     mkdir -p "$MAIN_JNILIBS"
     cp "$SO_FILE" "$MAIN_JNILIBS/"
-    
+
+    # Strip debug symbols to reduce .so size (~30-40% smaller)
+    LLVM_STRIP="$NDK_BIN/llvm-strip"
+    if [ -x "$LLVM_STRIP" ]; then
+        "$LLVM_STRIP" --strip-all "$MAIN_JNILIBS/libckb_light_client_lib.so"
+        echo "Stripped libckb_light_client_lib.so"
+    fi
+
     # Copy libc++_shared.so
     NDK_TARGET_DIR=$TARGET
     if [ "$TARGET" == "armv7-linux-androideabi" ]; then
@@ -154,6 +161,10 @@ for i in 0 1 2; do
     LIBCXX=$(find "$ANDROID_NDK_HOME" -name "libc++_shared.so" | grep "$NDK_TARGET_DIR" | head -n 1)
     if [ -n "$LIBCXX" ]; then
         cp "$LIBCXX" "$MAIN_JNILIBS/"
+        if [ -x "$LLVM_STRIP" ]; then
+            "$LLVM_STRIP" --strip-all "$MAIN_JNILIBS/libc++_shared.so"
+            echo "Stripped libc++_shared.so"
+        fi
     fi
     
     echo "Completed $ARCH build."

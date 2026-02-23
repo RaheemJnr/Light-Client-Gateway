@@ -5,6 +5,7 @@ import android.util.Log
 import android.view.ViewGroup
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -29,9 +30,12 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.google.accompanist.permissions.shouldShowRationale
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.common.InputImage
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
+import com.google.zxing.MultiFormatReader
+import com.google.zxing.PlanarYUVLuminanceSource
+import com.google.zxing.common.HybridBinarizer
 import com.rjnr.pocketnode.util.extractCkbAddress
 import java.util.concurrent.Executors
 
@@ -107,12 +111,15 @@ private fun CameraPreviewWithScanner(
     var camera by remember { mutableStateOf<androidx.camera.core.Camera?>(null) }
 
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
-    val barcodeScanner = remember { BarcodeScanning.getClient() }
+    val qrReader = remember {
+        MultiFormatReader().apply {
+            setHints(mapOf(DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE)))
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose {
             cameraExecutor.shutdown()
-            barcodeScanner.close()
         }
     }
 
@@ -150,37 +157,16 @@ private fun CameraPreviewWithScanner(
                                     return@setAnalyzer
                                 }
 
-                                val mediaImage = imageProxy.image
-                                if (mediaImage != null) {
-                                    val image = InputImage.fromMediaImage(
-                                        mediaImage,
-                                        imageProxy.imageInfo.rotationDegrees
-                                    )
+                                val decoded = decodeQrFromImage(imageProxy, qrReader)
+                                imageProxy.close()
 
-                                    barcodeScanner.process(image)
-                                        .addOnSuccessListener { barcodes ->
-                                            for (barcode in barcodes) {
-                                                if (barcode.valueType == Barcode.TYPE_TEXT ||
-                                                    barcode.valueType == Barcode.TYPE_UNKNOWN) {
-                                                    barcode.rawValue?.let { value ->
-                                                        val address = extractCkbAddress(value)
-                                                        if (address != null && !hasScanned) {
-                                                            hasScanned = true
-                                                            Log.d(TAG, "Scanned CKB address: $address")
-                                                            onScanResult(address)
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        .addOnFailureListener { e ->
-                                            Log.e(TAG, "Barcode scanning failed", e)
-                                        }
-                                        .addOnCompleteListener {
-                                            imageProxy.close()
-                                        }
-                                } else {
-                                    imageProxy.close()
+                                if (decoded != null) {
+                                    val address = extractCkbAddress(decoded)
+                                    if (address != null && !hasScanned) {
+                                        hasScanned = true
+                                        Log.d(TAG, "Scanned CKB address: $address")
+                                        onScanResult(address)
+                                    }
                                 }
                             }
                         }
@@ -229,6 +215,32 @@ private fun CameraPreviewWithScanner(
                 }
             }
         }
+    }
+}
+
+/**
+ * Decode a QR code from a CameraX [ImageProxy] using ZXing.
+ * Returns the raw text or null if no QR code was found.
+ */
+private fun decodeQrFromImage(imageProxy: ImageProxy, reader: MultiFormatReader): String? {
+    val plane = imageProxy.planes[0]
+    val buffer = plane.buffer
+    val bytes = ByteArray(buffer.remaining())
+    buffer.get(bytes)
+
+    val width = imageProxy.width
+    val height = imageProxy.height
+    val source = PlanarYUVLuminanceSource(
+        bytes, width, height, 0, 0, width, height, false
+    )
+    val bitmap = BinaryBitmap(HybridBinarizer(source))
+
+    return try {
+        reader.decodeWithState(bitmap).text
+    } catch (_: Exception) {
+        null
+    } finally {
+        reader.reset()
     }
 }
 

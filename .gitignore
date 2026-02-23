@@ -193,3 +193,4 @@ docs/
 *.tmp
 *.temp
 *.orig
+.vercel

@@ -140,12 +140,11 @@ dependencies {
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
-    // CameraX & ML Kit for QR scanning
+    // CameraX for camera preview (ZXing decodes frames — no ML Kit native libs)
     implementation(libs.camerax.core)
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
-    implementation(libs.mlkit.barcode.scanning)
     implementation(libs.accompanist.permissions)
 
     // QR Code generation (Receive screen)

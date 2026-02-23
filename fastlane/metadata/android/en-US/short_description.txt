@@ -1,0 +1,1 @@
+Self-sovereign CKB wallet with an embedded light client on your phone.

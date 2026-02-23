@@ -17,7 +17,6 @@ bouncycastle = "1.70"
 biometric = "1.1.0"
 bip39 = "1.0.8"
 cameraX = "1.4.2"
-mlkitBarcodeScanning = "17.3.0"
 accompanistPermissions = "0.34.0"
 serializationJson = "1.8.0"
 zxing = "3.5.3"
@@ -68,7 +67,6 @@ camerax-core = { group = "androidx.camera", name = "camera-core", version.ref = 
 camerax-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "cameraX" }
 camerax-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "cameraX" }
 camerax-view = { group = "androidx.camera", name = "camera-view", version.ref = "cameraX" }
-mlkit-barcode-scanning = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "mlkitBarcodeScanning" }
 accompanist-permissions = { group = "com.google.accompanist", name = "accompanist-permissions", version.ref = "accompanistPermissions" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 compose-icons-lucide = { group = "com.composables", name = "icons-lucide", version.ref = "lucide" }
