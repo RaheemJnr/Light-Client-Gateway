@@ -177,17 +177,25 @@ pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_native
     };
 
     // Hop 1: BlockNumber → BlockHash
-    let block_hash_bytes = match swc.storage().get(Key::BlockNumber(block_num).into_vec())
-        .expect("db get should be ok")
-    {
-        Some(bytes) => bytes,
-        None => {
+    let block_hash_bytes = match swc.storage().get(Key::BlockNumber(block_num).into_vec()) {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) => {
             debug!("nativeGetHeaderByNumber: no block hash for number {}", block_num);
+            return ptr::null_mut();
+        }
+        Err(e) => {
+            error!("nativeGetHeaderByNumber: db error for block {}: {}", block_num, e);
             return ptr::null_mut();
         }
     };
 
-    let block_hash = packed::Byte32::from_slice(&block_hash_bytes).expect("stored block hash");
+    let block_hash = match packed::Byte32::from_slice(&block_hash_bytes) {
+        Ok(h) => h,
+        Err(e) => {
+            error!("nativeGetHeaderByNumber: malformed block hash for block {}: {}", block_num, e);
+            return ptr::null_mut();
+        }
+    };
 
     // Hop 2: BlockHash → Header
     match swc.storage().get_header(&block_hash) {
@@ -1071,6 +1079,15 @@ pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_native
     }
 
     // 3. Check fetch queue status or add to fetch queue
+    // Verify network controller is available before queuing fetches
+    let _net_controller = match NET_CONTROL.get() {
+        Some(nc) => nc,
+        None => {
+            error!("nativeFetchTransaction: network controller not initialized");
+            return ptr::null_mut();
+        }
+    };
+
     let now = unix_time_as_millis();
     let fetch_status: FetchStatus<crate::service::TransactionWithStatus> =
         if let Some((added_ts, first_sent, missing)) = swc.get_tx_fetch_info(&tx_hash) {
