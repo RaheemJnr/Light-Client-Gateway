@@ -140,6 +140,68 @@ pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_native
     }
 }
 
+/// Get header by block number (two-hop lookup: BlockNumber → BlockHash → Header)
+/// Only works for blocks that the light client has processed (matched transactions).
+#[no_mangle]
+pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_nativeGetHeaderByNumber(
+    mut env: JNIEnv,
+    _class: JClass,
+    block_number: JString,
+) -> jstring {
+    check_running!(env);
+
+    let number_str: String = match env.get_string(&block_number) {
+        Ok(s) => s.into(),
+        Err(e) => {
+            error!("nativeGetHeaderByNumber: failed to get string: {}", e);
+            return ptr::null_mut();
+        }
+    };
+
+    // Strip 0x prefix if present and parse as u64
+    let num_hex = number_str.strip_prefix("0x").unwrap_or(&number_str);
+    let block_num: u64 = match u64::from_str_radix(num_hex, if number_str.starts_with("0x") { 16 } else { 10 }) {
+        Ok(n) => n,
+        Err(e) => {
+            warn!("nativeGetHeaderByNumber: invalid block number '{}': {}", number_str, e);
+            return ptr::null_mut();
+        }
+    };
+
+    let swc = match STORAGE_WITH_DATA.get() {
+        Some(s) => s,
+        None => {
+            error!("nativeGetHeaderByNumber: storage not initialized");
+            return ptr::null_mut();
+        }
+    };
+
+    // Hop 1: BlockNumber → BlockHash
+    let block_hash_bytes = match swc.storage().get(Key::BlockNumber(block_num).into_vec())
+        .expect("db get should be ok")
+    {
+        Some(bytes) => bytes,
+        None => {
+            debug!("nativeGetHeaderByNumber: no block hash for number {}", block_num);
+            return ptr::null_mut();
+        }
+    };
+
+    let block_hash = packed::Byte32::from_slice(&block_hash_bytes).expect("stored block hash");
+
+    // Hop 2: BlockHash → Header
+    match swc.storage().get_header(&block_hash) {
+        Some(header) => {
+            let header_view: HeaderView = header.into();
+            to_jstring(&mut env, &header_view)
+        }
+        None => {
+            warn!("nativeGetHeaderByNumber: block hash found but header missing for number {}", block_num);
+            ptr::null_mut()
+        }
+    }
+}
+
 /// Fetch header (with fetch status)
 #[no_mangle]
 pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_nativeFetchHeader(
@@ -881,15 +943,18 @@ pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_native
     let hash_str: String = match env.get_string(&hash) {
         Ok(s) => s.into(),
         Err(e) => {
-            error!("Failed to get hash string: {}", e);
+            error!("nativeGetTransaction: failed to get hash string: {}", e);
             return ptr::null_mut();
         }
     };
 
-    let tx_hash = match H256::from_str(&hash_str) {
+    // Strip 0x prefix if present — Kotlin often passes "0xabc..." but H256::from_str expects no prefix
+    let hash_hex = hash_str.strip_prefix("0x").unwrap_or(&hash_str);
+
+    let tx_hash = match H256::from_str(hash_hex) {
         Ok(h) => h,
         Err(e) => {
-            error!("Invalid tx hash: {}", e);
+            warn!("nativeGetTransaction: H256 parse failed for '{}': {}", hash_str, e);
             return ptr::null_mut();
         }
     };
@@ -898,12 +963,13 @@ pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_native
     let swc = match STORAGE_WITH_DATA.get() {
         Some(s) => s,
         None => {
-            error!("Storage not initialized");
+            error!("nativeGetTransaction: storage not initialized");
             return ptr::null_mut();
         }
     };
 
     let result = if let Some((transaction, header)) = swc.storage().get_transaction_with_header(&byte32) {
+        debug!("nativeGetTransaction: found committed tx {}", hash_str);
         crate::service::TransactionWithStatus {
             transaction: Some(transaction.into_view().into()),
             cycles: None,
@@ -913,6 +979,7 @@ pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_native
             },
         }
     } else if let Some((transaction, cycles, _)) = swc.pending_txs().read().expect("pending_txs lock").get(&byte32) {
+        debug!("nativeGetTransaction: found pending tx {}", hash_str);
         crate::service::TransactionWithStatus {
             transaction: Some(transaction.into_view().into()),
             cycles: Some(cycles.into()),
@@ -922,6 +989,7 @@ pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_native
             },
         }
     } else {
+        warn!("nativeGetTransaction: tx not found in storage or pending: {}", hash_str);
         crate::service::TransactionWithStatus {
             transaction: None,
             cycles: None,
@@ -937,13 +1005,101 @@ pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_native
 
 #[no_mangle]
 pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_nativeFetchTransaction(
-    _env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
-    _hash: JString,
+    hash: JString,
 ) -> jstring {
-    // TODO: Implement
-    warn!("nativeFetchTransaction not yet implemented");
-    ptr::null_mut()
+    check_running!(env);
+
+    let hash_str: String = match env.get_string(&hash) {
+        Ok(s) => s.into(),
+        Err(e) => {
+            error!("nativeFetchTransaction: failed to get hash string: {}", e);
+            return ptr::null_mut();
+        }
+    };
+
+    let hash_hex = hash_str.strip_prefix("0x").unwrap_or(&hash_str);
+
+    let tx_hash = match H256::from_str(hash_hex) {
+        Ok(h) => h,
+        Err(e) => {
+            warn!("nativeFetchTransaction: H256 parse failed for '{}': {}", hash_str, e);
+            return ptr::null_mut();
+        }
+    };
+    let byte32 = packed::Byte32::from_slice(tx_hash.as_bytes()).expect("H256 to Byte32");
+
+    let swc = match STORAGE_WITH_DATA.get() {
+        Some(s) => s,
+        None => {
+            error!("nativeFetchTransaction: storage not initialized");
+            return ptr::null_mut();
+        }
+    };
+
+    // 1. Check if tx is already in local storage (committed)
+    if let Some((transaction, header)) = swc.storage().get_transaction_with_header(&byte32) {
+        debug!("nativeFetchTransaction: tx {} already in storage", hash_str);
+        let tws = crate::service::TransactionWithStatus {
+            transaction: Some(transaction.into_view().into()),
+            cycles: None,
+            tx_status: crate::service::TxStatus {
+                block_hash: Some(header.into_view().hash().unpack()),
+                status: crate::service::Status::Committed,
+            },
+        };
+        let fetch_status: FetchStatus<crate::service::TransactionWithStatus> =
+            FetchStatus::Fetched { data: tws };
+        return to_jstring(&mut env, &fetch_status);
+    }
+
+    // 2. Check if tx is in pending pool
+    if let Some((transaction, cycles, _)) = swc.pending_txs().read().expect("pending_txs lock").get(&byte32) {
+        debug!("nativeFetchTransaction: tx {} is pending", hash_str);
+        let tws = crate::service::TransactionWithStatus {
+            transaction: Some(transaction.into_view().into()),
+            cycles: Some(cycles.into()),
+            tx_status: crate::service::TxStatus {
+                block_hash: None,
+                status: crate::service::Status::Pending,
+            },
+        };
+        let fetch_status: FetchStatus<crate::service::TransactionWithStatus> =
+            FetchStatus::Fetched { data: tws };
+        return to_jstring(&mut env, &fetch_status);
+    }
+
+    // 3. Check fetch queue status or add to fetch queue
+    let now = unix_time_as_millis();
+    let fetch_status: FetchStatus<crate::service::TransactionWithStatus> =
+        if let Some((added_ts, first_sent, missing)) = swc.get_tx_fetch_info(&tx_hash) {
+            if missing {
+                // Previously missing, re-add to fetch queue
+                debug!("nativeFetchTransaction: tx {} was missing, re-adding to fetch queue", hash_str);
+                swc.add_fetch_tx(tx_hash, now);
+                FetchStatus::NotFound
+            } else if first_sent > 0 {
+                debug!("nativeFetchTransaction: tx {} is being fetched", hash_str);
+                FetchStatus::Fetching {
+                    first_sent: first_sent.into(),
+                }
+            } else {
+                debug!("nativeFetchTransaction: tx {} is queued for fetch", hash_str);
+                FetchStatus::Added {
+                    timestamp: added_ts.into(),
+                }
+            }
+        } else {
+            // Not in fetch queue — add it
+            debug!("nativeFetchTransaction: adding tx {} to fetch queue", hash_str);
+            swc.add_fetch_tx(tx_hash, now);
+            FetchStatus::Added {
+                timestamp: now.into(),
+            }
+        };
+
+    to_jstring(&mut env, &fetch_status)
 }
 
 #[no_mangle]

@@ -85,6 +85,15 @@ object LightClientNative {
     external fun nativeFetchHeader(hash: String): String?
 
     /**
+     * Get header by block number
+     * Two-hop lookup: BlockNumber → BlockHash → Header.
+     * Only works for blocks the light client has processed (containing matched transactions).
+     * @param blockNumber Block number as decimal or hex string (with 0x prefix)
+     * @return JSON string of HeaderView, or null if not found
+     */
+    external fun nativeGetHeaderByNumber(blockNumber: String): String?
+
+    /**
      * Set filter scripts
      * @param scriptsJson JSON array of ScriptStatus
      * @param command Command type: 0=All, 1=Partial, 2=Delete
