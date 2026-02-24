@@ -979,6 +979,32 @@ class GatewayRepository @Inject constructor(
         return null
     }
 
+    /**
+     * Fetch a block header from peers via nativeFetchHeader with retries.
+     * The light client only stores headers for blocks it has processed locally;
+     * for older blocks we need to request them from the peer network.
+     */
+    private suspend fun fetchHeaderWithRetry(blockHash: String): JniHeaderView? {
+        for (attempt in 1..3) {
+            val fetchJson = LightClientNative.nativeFetchHeader(blockHash)
+            if (fetchJson == null) {
+                Log.w(TAG, "  fetch_header returned null on attempt $attempt")
+                break
+            }
+            val fetchResp = json.decodeFromString<JniFetchHeaderResponse>(fetchJson)
+            Log.d(TAG, "  fetch_header attempt $attempt: status=${fetchResp.status}")
+            if (fetchResp.status == "fetched" && fetchResp.data != null) {
+                return fetchResp.data
+            }
+            if (fetchResp.status == "fetching" || fetchResp.status == "added") {
+                delay(2000)
+            } else {
+                break
+            }
+        }
+        return null
+    }
+
     suspend fun getDaoDeposits(): Result<List<DaoDeposit>> = runCatching {
         val info = _walletInfo.value ?: throw Exception("No wallet")
 
@@ -1043,13 +1069,19 @@ class GatewayRepository @Inject constructor(
             var unlockEpoch: EpochInfo? = null
             var lockRemainingHours: Int? = null
 
-            // Try to get block header for richer data (compensation, epoch)
-            // The light client's get_transaction doesn't work for indexed-only txs,
-            // so we try to get the header directly if we can find the block hash.
+            // Try to get block header for compensation & epoch data.
+            // Strategy: get block hash from tx → try local header → fetch from peers if needed.
             val blockHash = getBlockHashForCell(cell.outPoint.txHash)
             val cellBlockHeader = if (blockHash != null) {
-                val hJson = LightClientNative.nativeGetHeader(blockHash)
-                hJson?.let { json.decodeFromString<JniHeaderView>(it) }
+                // Try local header first
+                val localHeader = LightClientNative.nativeGetHeader(blockHash)
+                if (localHeader != null) {
+                    json.decodeFromString<JniHeaderView>(localHeader)
+                } else {
+                    // Header not cached locally — fetch from peers
+                    Log.d(TAG, "  Header not local for $cellId, fetching from peers...")
+                    fetchHeaderWithRetry(blockHash)
+                }
             } else null
 
             if (cellBlockHeader != null) {
@@ -1080,7 +1112,12 @@ class GatewayRepository @Inject constructor(
                     val withdrawTx = withdrawTxJson?.let { json.decodeFromString<JniTransactionWithStatus>(it) }
                     val origDepositBlockHash = withdrawTx?.transaction?.headerDeps?.firstOrNull()
                     val origDepositHeader = origDepositBlockHash?.let { h ->
-                        LightClientNative.nativeGetHeader(h)?.let { json.decodeFromString<JniHeaderView>(it) }
+                        val localHeader = LightClientNative.nativeGetHeader(h)
+                        if (localHeader != null) {
+                            json.decodeFromString<JniHeaderView>(localHeader)
+                        } else {
+                            fetchHeaderWithRetry(h)
+                        }
                     }
 
                     if (origDepositHeader != null) {
