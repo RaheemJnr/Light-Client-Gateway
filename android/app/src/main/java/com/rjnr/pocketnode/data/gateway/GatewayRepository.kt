@@ -22,6 +22,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
+import com.rjnr.pocketnode.data.database.dao.TransactionDao
+import com.rjnr.pocketnode.data.database.dao.BalanceCacheDao
+import com.rjnr.pocketnode.data.database.entity.TransactionEntity
+import com.rjnr.pocketnode.data.database.entity.BalanceCacheEntity
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -31,7 +35,9 @@ class GatewayRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val keyManager: KeyManager,
     private val walletPreferences: WalletPreferences,
-    private val json: Json
+    private val json: Json,
+    private val transactionDao: TransactionDao,
+    private val balanceCacheDao: BalanceCacheDao
 ) {
     private val _walletInfo = MutableStateFlow<WalletInfo?>(null)
     val walletInfo: StateFlow<WalletInfo?> = _walletInfo.asStateFlow()
