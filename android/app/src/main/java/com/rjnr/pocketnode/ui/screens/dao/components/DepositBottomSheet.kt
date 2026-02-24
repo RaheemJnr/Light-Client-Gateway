@@ -1,16 +1,23 @@
 package com.rjnr.pocketnode.ui.screens.dao.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.rjnr.pocketnode.data.gateway.DaoConstants
+import com.rjnr.pocketnode.util.sanitizeAmount
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,23 +66,98 @@ fun DepositBottomSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            OutlinedTextField(
-                value = amountText,
-                onValueChange = { amountText = it },
-                label = { Text("Amount (CKB)") },
-                placeholder = { Text("Min 102 CKB") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                isError = amountText.isNotEmpty() && !isValid,
-                supportingText = {
-                    if (amountText.isNotEmpty() && amountShannons < DaoConstants.MIN_DEPOSIT_SHANNONS) {
-                        Text("Minimum deposit is 102 CKB")
-                    } else if (amountText.isNotEmpty() && amountShannons > maxDepositable) {
-                        Text("Exceeds available balance")
-                    }
-                }
+            // Amount label
+            Text(
+                "Amount",
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
             )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Amount input row (matches SendScreen pattern)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant,
+                        RoundedCornerShape(8.dp)
+                    )
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                BasicTextField(
+                    value = amountText,
+                    onValueChange = { newValue ->
+                        val sanitized = sanitizeAmount(newValue)
+                        if (sanitized != null) {
+                            amountText = sanitized
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    textStyle = TextStyle(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    decorationBox = { innerTextField ->
+                        if (amountText.isEmpty()) {
+                            Text(
+                                "Min 102 CKB",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                            )
+                        }
+                        innerTextField()
+                    }
+                )
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                    shape = CircleShape,
+                    onClick = {
+                        val maxCkb = maxDepositable / 100_000_000.0
+                        amountText = "%.8f".format(maxCkb).trimEnd('0').trimEnd('.').ifEmpty { "0" }
+                    },
+                    enabled = maxDepositable >= DaoConstants.MIN_DEPOSIT_SHANNONS,
+                ) {
+                    Text(
+                        "MAX",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "CKB",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    fontSize = 14.sp
+                )
+            }
+
+            // Helper + validation text
+            Text(
+                "Min: 102 CKB · Max 8 decimal places",
+                modifier = Modifier.padding(top = 8.dp, start = 4.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                fontSize = 12.sp
+            )
+            if (amountText.isNotEmpty() && amountShannons < DaoConstants.MIN_DEPOSIT_SHANNONS) {
+                Text(
+                    "Minimum deposit is 102 CKB",
+                    modifier = Modifier.padding(top = 4.dp, start = 4.dp),
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 12.sp
+                )
+            } else if (amountText.isNotEmpty() && amountShannons > maxDepositable) {
+                Text(
+                    "Exceeds available balance",
+                    modifier = Modifier.padding(top = 4.dp, start = 4.dp),
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 12.sp
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 

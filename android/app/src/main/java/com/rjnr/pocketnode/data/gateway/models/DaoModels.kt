@@ -1,5 +1,6 @@
 package com.rjnr.pocketnode.data.gateway.models
 
+import com.rjnr.pocketnode.data.auth.AuthMethod
 import kotlinx.serialization.Serializable
 
 // -- 7-state enum (modeled after Neuron's getDAOCellStatus.ts) --
@@ -56,8 +57,8 @@ data class DaoDeposit(
     val capacity: Long,                   // deposited shannons
     val status: DaoCellStatus,
     val depositBlockNumber: Long,
-    val depositBlockHash: String,
-    val depositEpoch: EpochInfo,
+    val depositBlockHash: String = "",
+    val depositEpoch: EpochInfo? = null,
     val withdrawBlockNumber: Long? = null,
     val withdrawBlockHash: String? = null,
     val withdrawEpoch: EpochInfo? = null,
@@ -95,7 +96,9 @@ data class DaoUiState(
     val selectedTab: DaoTab = DaoTab.ACTIVE,
     val isLoading: Boolean = true,
     val error: String? = null,
-    val pendingAction: DaoAction? = null
+    val pendingAction: DaoAction? = null,
+    val requiresAuth: Boolean = false,
+    val authMethod: AuthMethod? = null
 )
 
 // -- DAO header field extraction result --

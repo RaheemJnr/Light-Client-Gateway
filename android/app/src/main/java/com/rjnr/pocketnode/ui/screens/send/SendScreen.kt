@@ -2,6 +2,7 @@ package com.rjnr.pocketnode.ui.screens.send
 
 import android.content.Intent
 import android.net.Uri
+import com.rjnr.pocketnode.data.auth.AuthMethod
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat

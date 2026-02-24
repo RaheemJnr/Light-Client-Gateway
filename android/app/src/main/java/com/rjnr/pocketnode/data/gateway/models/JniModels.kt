@@ -72,6 +72,12 @@ data class JniFetchHeaderResponse(
 )
 
 @Serializable
+data class JniFetchTransactionResponse(
+    val status: String,
+    val data: JniTransactionWithStatus? = null
+)
+
+@Serializable
 data class JniScriptStatus(
     val script: Script,
     @SerialName("script_type") val scriptType: String = "lock",

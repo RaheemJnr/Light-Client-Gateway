@@ -2,6 +2,7 @@ package com.rjnr.pocketnode.ui
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -38,6 +39,8 @@ fun MainScreen(
     onNavigateToBackup: () -> Unit,
     onNavigateToSecuritySettings: () -> Unit,
     onNavigateToImport: () -> Unit,
+    onNavigateToPinVerify: () -> Unit = {},
+    daoPinVerified: Boolean = false,
 ) {
     val innerNav = rememberNavController()
     val navBackStackEntry by innerNav.currentBackStackEntryAsState()
@@ -45,7 +48,9 @@ fun MainScreen(
 
     Scaffold(
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface
+            ) {
                 BottomTab.entries.forEach { tab ->
                     val selected = currentRoute == tab.route
                     NavigationBarItem(
@@ -106,7 +111,11 @@ fun MainScreen(
                 ActivityScreen()
             }
             composable(BottomTab.DAO.route) {
-                DaoScreen(viewModel = hiltViewModel())
+                DaoScreen(
+                    viewModel = hiltViewModel(),
+                    onNavigateToPinVerify = onNavigateToPinVerify,
+                    daoPinVerified = daoPinVerified
+                )
             }
             composable(BottomTab.Settings.route) {
                 SettingsScreen(

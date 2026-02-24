@@ -377,25 +377,44 @@ fun TransactionItems(
 
                 }
             }
-            Surface(
-                color = if (transaction.isConfirmed()) {
-                    SuccessGreen.copy(alpha = 0.15f)
-                } else {
-                    PendingAmber.copy(alpha = 0.15f)
-                },
-                shape = CircleShape
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text(
-                    if (transaction.isConfirmed()) "Confirmed" else "Pending",
+                if (transaction.isDaoRelated) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        shape = CircleShape
+                    ) {
+                        Text(
+                            "DAO",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                Surface(
                     color = if (transaction.isConfirmed()) {
-                        SuccessGreen
+                        SuccessGreen.copy(alpha = 0.15f)
                     } else {
-                        PendingAmber
+                        PendingAmber.copy(alpha = 0.15f)
                     },
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                )
+                    shape = CircleShape
+                ) {
+                    Text(
+                        if (transaction.isConfirmed()) "Confirmed" else "Pending",
+                        color = if (transaction.isConfirmed()) {
+                            SuccessGreen
+                        } else {
+                            PendingAmber
+                        },
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+                }
             }
         }
     }

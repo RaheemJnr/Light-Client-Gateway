@@ -167,6 +167,12 @@ fun CkbNavGraph(
                                         ?.set("send_pin_verified", true)
                                     navController.popBackStack()
                                 }
+                                Screen.Main.route -> {
+                                    navController.previousBackStackEntry
+                                        ?.savedStateHandle
+                                        ?.set("dao_pin_verified", true)
+                                    navController.popBackStack()
+                                }
                                 else -> {
                                     navController.navigate(Screen.Main.route) {
                                         popUpTo(Screen.Auth.route) { inclusive = true }
@@ -220,7 +226,15 @@ fun CkbNavGraph(
             )
         }
 
-        composable(Screen.Main.route) {
+        composable(Screen.Main.route) { backStackEntry ->
+            val daoPinVerified = backStackEntry.savedStateHandle
+                .get<Boolean>("dao_pin_verified") == true
+            if (daoPinVerified) {
+                LaunchedEffect(Unit) {
+                    backStackEntry.savedStateHandle.remove<Boolean>("dao_pin_verified")
+                }
+            }
+
             MainScreen(
                 onNavigateToSend = { navController.navigate(Screen.Send.route) },
                 onNavigateToReceive = { navController.navigate(Screen.Receive.route) },
@@ -228,6 +242,10 @@ fun CkbNavGraph(
                 onNavigateToBackup = { navController.navigate(Screen.MnemonicBackup.route) },
                 onNavigateToSecuritySettings = { navController.navigate(Screen.SecuritySettings.route) },
                 onNavigateToImport = { navController.navigate(Screen.MnemonicImport.route) },
+                onNavigateToPinVerify = {
+                    navController.navigate(Screen.PinEntry.createRoute("verify"))
+                },
+                daoPinVerified = daoPinVerified,
             )
         }
 

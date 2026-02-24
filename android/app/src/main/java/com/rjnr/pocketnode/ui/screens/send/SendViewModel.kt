@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
 import java.math.RoundingMode
+import com.rjnr.pocketnode.data.auth.AuthMethod
 import javax.inject.Inject
 
 enum class TransactionState {
@@ -28,8 +29,6 @@ enum class TransactionState {
     CONFIRMED,      // Transaction confirmed on chain
     FAILED          // Transaction failed
 }
-
-enum class AuthMethod { BIOMETRIC, PIN }
 
 data class SendUiState(
     val recipientAddress: String = "",

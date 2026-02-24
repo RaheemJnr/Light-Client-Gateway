@@ -1,5 +1,6 @@
 package com.rjnr.pocketnode.ui.screens.dao
 
+import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11,25 +12,39 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
+import com.rjnr.pocketnode.data.auth.AuthMethod
+import com.rjnr.pocketnode.data.gateway.models.DaoAction
 import com.rjnr.pocketnode.data.gateway.models.DaoDeposit
 import com.rjnr.pocketnode.data.gateway.models.DaoOverview
 import com.rjnr.pocketnode.data.gateway.models.DaoTab
+import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.ui.screens.dao.components.DaoDepositCard
 import com.rjnr.pocketnode.ui.screens.dao.components.DepositBottomSheet
+import com.rjnr.pocketnode.ui.theme.PendingAmber
+import com.rjnr.pocketnode.ui.theme.TestnetOrange
 
 private val DaoGreen = Color(0xFF1ED882)
 
 @Composable
-fun DaoScreen(viewModel: DaoViewModel) {
+fun DaoScreen(
+    viewModel: DaoViewModel,
+    onNavigateToPinVerify: () -> Unit = {},
+    daoPinVerified: Boolean = false
+) {
     val uiState by viewModel.uiState.collectAsState()
     val availableBalance by viewModel.availableBalance.collectAsState()
+    val networkType by viewModel.networkType.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showDepositSheet by remember { mutableStateOf(false) }
     var withdrawTarget by remember { mutableStateOf<DaoDeposit?>(null) }
     var unlockTarget by remember { mutableStateOf<DaoDeposit?>(null) }
+    val context = LocalContext.current
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -44,6 +59,8 @@ fun DaoScreen(viewModel: DaoViewModel) {
 
             DaoOverviewCard(
                 overview = uiState.overview,
+                availableBalance = availableBalance,
+                networkType = networkType,
                 onDepositClick = { showDepositSheet = true }
             )
 
@@ -57,6 +74,37 @@ fun DaoScreen(viewModel: DaoViewModel) {
             )
 
             Spacer(modifier = Modifier.height(8.dp))
+
+            // Pending action indicator
+            uiState.pendingAction?.let { action ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = PendingAmber.copy(alpha = 0.1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = PendingAmber
+                        )
+                        Text(
+                            text = when (action) {
+                                is DaoAction.Depositing -> "Depositing ${formatCkb(action.amount)} CKB..."
+                                is DaoAction.Withdrawing -> "Withdrawing from DAO..."
+                                is DaoAction.Unlocking -> "Unlocking DAO deposit..."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = PendingAmber
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
 
             val deposits = when (uiState.selectedTab) {
                 DaoTab.ACTIVE -> uiState.activeDeposits
@@ -77,11 +125,21 @@ fun DaoScreen(viewModel: DaoViewModel) {
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "No completed deposits yet",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "No completed deposits",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Fully unlocked deposits are consumed on-chain. Check your transaction history for past DAO activity.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 32.dp)
+                        )
+                    }
                 }
             } else {
                 LazyColumn(
@@ -105,6 +163,54 @@ fun DaoScreen(viewModel: DaoViewModel) {
         LaunchedEffect(error) {
             snackbarHostState.showSnackbar(error)
             viewModel.clearError()
+        }
+    }
+
+    // Handle PIN auth result
+    LaunchedEffect(daoPinVerified) {
+        if (daoPinVerified) {
+            viewModel.executeDeposit()
+        }
+    }
+
+    // Handle auth requirement (biometric prompt or PIN navigation)
+    LaunchedEffect(uiState.requiresAuth, uiState.authMethod) {
+        if (!uiState.requiresAuth) return@LaunchedEffect
+        when (uiState.authMethod) {
+            AuthMethod.BIOMETRIC -> {
+                val activity = context as? FragmentActivity ?: run {
+                    viewModel.cancelAuth()
+                    return@LaunchedEffect
+                }
+                val executor = ContextCompat.getMainExecutor(context)
+                val prompt = BiometricPrompt(
+                    activity, executor,
+                    object : BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                            viewModel.executeDeposit()
+                        }
+                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                            if (errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
+                                viewModel.dismissAuthPrompt()
+                                onNavigateToPinVerify()
+                            } else {
+                                viewModel.cancelAuth()
+                            }
+                        }
+                    }
+                )
+                val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                    .setTitle("Authenticate to Deposit")
+                    .setSubtitle("Verify your identity to deposit to Nervos DAO")
+                    .setNegativeButtonText("Use PIN")
+                    .build()
+                prompt.authenticate(promptInfo)
+            }
+            AuthMethod.PIN -> {
+                viewModel.dismissAuthPrompt()
+                onNavigateToPinVerify()
+            }
+            null -> {}
         }
     }
 
@@ -188,6 +294,8 @@ fun DaoScreen(viewModel: DaoViewModel) {
 @Composable
 private fun DaoOverviewCard(
     overview: DaoOverview,
+    availableBalance: Long,
+    networkType: NetworkType,
     onDepositClick: () -> Unit
 ) {
     Surface(
@@ -229,7 +337,39 @@ private fun DaoOverviewCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Available Balance",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "${formatCkb(availableBalance)} CKB",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Text(
+                text = if (networkType == NetworkType.TESTNET) "Testnet" else "Mainnet",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (networkType == NetworkType.TESTNET) TestnetOrange
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             Button(
                 onClick = onDepositClick,
@@ -249,19 +389,40 @@ private fun DaoTabRow(
     completedCount: Int,
     onTabSelected: (DaoTab) -> Unit
 ) {
-    TabRow(
-        selectedTabIndex = if (selectedTab == DaoTab.ACTIVE) 0 else 1
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant
     ) {
-        Tab(
-            selected = selectedTab == DaoTab.ACTIVE,
-            onClick = { onTabSelected(DaoTab.ACTIVE) },
-            text = { Text("Active ($activeCount)") }
-        )
-        Tab(
-            selected = selectedTab == DaoTab.COMPLETED,
-            onClick = { onTabSelected(DaoTab.COMPLETED) },
-            text = { Text("Completed ($completedCount)") }
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(4.dp)
+        ) {
+            val tabs = listOf(
+                DaoTab.ACTIVE to "Active ($activeCount)",
+                DaoTab.COMPLETED to "Completed ($completedCount)"
+            )
+            tabs.forEach { (tab, label) ->
+                val isSelected = selectedTab == tab
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isSelected) MaterialTheme.colorScheme.surface
+                            else Color.Transparent,
+                    onClick = { onTabSelected(tab) }
+                ) {
+                    Text(
+                        text = label,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (isSelected) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 }
 

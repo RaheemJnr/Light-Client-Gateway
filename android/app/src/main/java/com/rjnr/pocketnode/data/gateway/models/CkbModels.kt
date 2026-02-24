@@ -92,7 +92,9 @@ data class TransactionRecord(
     val fee: String,
     val confirmations: Int,
     // Raw hex timestamp from CKB block header (e.g. "0x18c8d0a7a00"), null if not yet fetched
-    @SerialName("block_timestamp_hex") val blockTimestampHex: String? = null
+    @SerialName("block_timestamp_hex") val blockTimestampHex: String? = null,
+    // True if the transaction interacts with a DAO type script cell
+    @SerialName("is_dao_related") val isDaoRelated: Boolean = false
 ) {
     /**
      * Get balance change as CKB amount (from shannons)

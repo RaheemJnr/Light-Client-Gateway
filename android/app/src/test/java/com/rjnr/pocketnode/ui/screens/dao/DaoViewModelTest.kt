@@ -1,5 +1,7 @@
 package com.rjnr.pocketnode.ui.screens.dao
 
+import com.rjnr.pocketnode.data.auth.AuthManager
+import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.*
 import io.mockk.every
@@ -20,6 +22,8 @@ class DaoViewModelTest {
 
     private val testDispatcher = UnconfinedTestDispatcher()
     private lateinit var repository: GatewayRepository
+    private lateinit var authManager: AuthManager
+    private lateinit var pinManager: PinManager
 
     private val testOutPoint = OutPoint("0x" + "ab".repeat(32), "0x0")
     private val otherOutPoint = OutPoint("0x" + "cd".repeat(32), "0x0")
@@ -42,6 +46,13 @@ class DaoViewModelTest {
         Dispatchers.setMain(testDispatcher)
         repository = mockk(relaxed = true) {
             every { balance } returns MutableStateFlow<BalanceResponse?>(null)
+            every { network } returns MutableStateFlow(NetworkType.TESTNET)
+        }
+        authManager = mockk(relaxed = true) {
+            every { isAuthBeforeSendEnabled() } returns false
+        }
+        pinManager = mockk(relaxed = true) {
+            every { hasPin() } returns false
         }
     }
 
@@ -54,14 +65,14 @@ class DaoViewModelTest {
 
     @Test
     fun `selectTab changes tab to COMPLETED`() {
-        val vm = DaoViewModel(repository)
+        val vm = DaoViewModel(repository, authManager, pinManager)
         vm.selectTab(DaoTab.COMPLETED)
         assertEquals(DaoTab.COMPLETED, vm.uiState.value.selectedTab)
     }
 
     @Test
     fun `selectTab changes tab back to ACTIVE`() {
-        val vm = DaoViewModel(repository)
+        val vm = DaoViewModel(repository, authManager, pinManager)
         vm.selectTab(DaoTab.COMPLETED)
         vm.selectTab(DaoTab.ACTIVE)
         assertEquals(DaoTab.ACTIVE, vm.uiState.value.selectedTab)
@@ -69,14 +80,14 @@ class DaoViewModelTest {
 
     @Test
     fun `clearError sets error to null`() {
-        val vm = DaoViewModel(repository)
+        val vm = DaoViewModel(repository, authManager, pinManager)
         vm.clearError()
         assertNull(vm.uiState.value.error)
     }
 
     @Test
     fun `deposit sets pending action to Depositing`() {
-        val vm = DaoViewModel(repository)
+        val vm = DaoViewModel(repository, authManager, pinManager)
         val amount = 10_200_000_000L
         vm.deposit(amount)
         assertEquals(DaoAction.Depositing(amount), vm.uiState.value.pendingAction)
@@ -84,7 +95,7 @@ class DaoViewModelTest {
 
     @Test
     fun `withdraw sets pending action to Withdrawing`() {
-        val vm = DaoViewModel(repository)
+        val vm = DaoViewModel(repository, authManager, pinManager)
         val deposit = makeDaoDeposit()
         vm.withdraw(deposit)
         assertEquals(DaoAction.Withdrawing(deposit.outPoint), vm.uiState.value.pendingAction)
@@ -92,7 +103,7 @@ class DaoViewModelTest {
 
     @Test
     fun `unlock sets pending action to Unlocking`() {
-        val vm = DaoViewModel(repository)
+        val vm = DaoViewModel(repository, authManager, pinManager)
         val deposit = makeDaoDeposit()
         vm.unlock(deposit)
         assertEquals(DaoAction.Unlocking(deposit.outPoint), vm.uiState.value.pendingAction)
