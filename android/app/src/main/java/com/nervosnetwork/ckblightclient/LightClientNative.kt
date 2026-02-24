@@ -190,6 +190,27 @@ object LightClientNative {
     external fun callRpc(method: String): String?
 
     // ========================================
+    // DAO Utility Functions
+    // ========================================
+
+    /** Extract C, AR, S, U from 32-byte DAO header field. Returns JSON. */
+    external fun nativeExtractDaoFields(daoHex: String): String?
+
+    /** Calculate max withdrawable capacity (deposit + compensation) in shannons. */
+    external fun nativeCalculateMaxWithdraw(
+        depositHeaderDaoHex: String,
+        withdrawHeaderDaoHex: String,
+        depositCapacity: Long,
+        occupiedCapacity: Long
+    ): Long
+
+    /** Calculate the since value (absolute epoch) for phase 2 unlock. Returns hex string. */
+    external fun nativeCalculateUnlockEpoch(
+        depositEpochHex: String,
+        withdrawEpochHex: String
+    ): String?
+
+    // ========================================
     // Callback Interfaces
     // ========================================
 

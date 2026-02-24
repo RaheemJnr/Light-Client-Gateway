@@ -94,6 +94,7 @@ fun HomeScreen(
     onNavigateToReceive: () -> Unit = {},
     onNavigateToBackup: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    onNavigateToDao: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -292,6 +293,7 @@ fun HomeScreen(
                 onNavigateToBackup = onNavigateToBackup,
                 onNavigateToSend = onNavigateToSend,
                 onNavigateToReceive = onNavigateToReceive,
+                onNavigateToDao = onNavigateToDao,
                 dismissBackupReminder = { viewModel.dismissBackupReminder() },
                 clipboardManager = clipboardManager,
                 snackbarHostState = snackbarHostState,
@@ -310,6 +312,7 @@ fun HomeScreenUI(
     onNavigateToBackup: () -> Unit,
     onNavigateToSend: () -> Unit,
     onNavigateToReceive: () -> Unit,
+    onNavigateToDao: () -> Unit = {},
     dismissBackupReminder: () -> Unit,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
     snackbarHostState: SnackbarHostState,
@@ -367,7 +370,8 @@ fun HomeScreenUI(
             item {
                 ActionRow(
                     onSend = onNavigateToSend,
-                    onReceive = onNavigateToReceive
+                    onReceive = onNavigateToReceive,
+                    onStake = onNavigateToDao
                 )
             }
 

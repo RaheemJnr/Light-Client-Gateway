@@ -5,6 +5,7 @@ import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.crypto.Blake2b
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
+import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.MnemonicManager
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
@@ -77,6 +78,7 @@ object AppModule {
         @ApplicationContext context: Context,
         keyManager: KeyManager,
         walletPreferences: WalletPreferences,
-        json: Json
-    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json)
+        json: Json,
+        transactionBuilder: TransactionBuilder
+    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, transactionBuilder)
 }

@@ -1,0 +1,211 @@
+//! DAO utility JNI functions for Nervos DAO compensation and epoch calculations.
+//!
+//! Three functions exposing `ckb-dao-utils` for:
+//! - Extracting DAO header fields (C, AR, S, U)
+//! - Calculating max withdrawable capacity (deposit + compensation)
+//! - Calculating unlock epoch (since value for phase 2)
+
+use jni::objects::{JClass, JString};
+use jni::sys::{jlong, jstring};
+use jni::JNIEnv;
+use log::error;
+use std::ptr;
+
+use ckb_types::core::EpochNumberWithFraction;
+
+/// Helper: create a JNI string from a Rust string
+fn dao_to_jstring(env: &mut JNIEnv, s: &str) -> jstring {
+    match env.new_string(s) {
+        Ok(js) => js.into_raw(),
+        Err(e) => {
+            error!("Failed to create JString: {}", e);
+            ptr::null_mut()
+        }
+    }
+}
+
+/// Helper: get a Rust String from a JNI JString
+fn get_string(env: &mut JNIEnv, input: &JString) -> Option<String> {
+    match env.get_string(input) {
+        Ok(s) => Some(s.into()),
+        Err(e) => {
+            error!("Failed to get string from JNI: {}", e);
+            None
+        }
+    }
+}
+
+/// Decode a hex string (with optional 0x prefix) into bytes.
+fn decode_hex(hex_str: &str) -> Option<Vec<u8>> {
+    let stripped = hex_str.strip_prefix("0x").unwrap_or(hex_str);
+    if stripped.len() % 2 != 0 {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(stripped.len() / 2);
+    for i in (0..stripped.len()).step_by(2) {
+        match u8::from_str_radix(&stripped[i..i + 2], 16) {
+            Ok(b) => bytes.push(b),
+            Err(_) => return None,
+        }
+    }
+    Some(bytes)
+}
+
+/// Parse 32-byte DAO header field into 4 u64 values (C, AR, S, U).
+/// Little-endian byte order: bytes 0-8 = C, 8-16 = AR, 16-24 = S, 24-32 = U.
+/// Returns JSON: {"c":"0x...","ar":"0x...","s":"0x...","u":"0x..."}
+#[no_mangle]
+pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_nativeExtractDaoFields(
+    mut env: JNIEnv,
+    _class: JClass,
+    dao_hex: JString,
+) -> jstring {
+    let dao_str = match get_string(&mut env, &dao_hex) {
+        Some(s) => s,
+        None => return ptr::null_mut(),
+    };
+
+    let bytes = match decode_hex(&dao_str) {
+        Some(b) if b.len() == 32 => b,
+        Some(b) => {
+            error!("DAO field must be 32 bytes, got {}", b.len());
+            return ptr::null_mut();
+        }
+        None => {
+            error!("Failed to decode DAO hex");
+            return ptr::null_mut();
+        }
+    };
+
+    let c = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
+    let ar = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
+    let s = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
+    let u = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
+
+    let json = format!(
+        r#"{{"c":"0x{:x}","ar":"0x{:x}","s":"0x{:x}","u":"0x{:x}"}}"#,
+        c, ar, s, u
+    );
+
+    dao_to_jstring(&mut env, &json)
+}
+
+/// Calculate max withdrawable capacity (deposit + compensation).
+/// Formula: (capacity - occupied) * AR_withdraw / AR_deposit + occupied
+#[no_mangle]
+pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_nativeCalculateMaxWithdraw(
+    mut env: JNIEnv,
+    _class: JClass,
+    deposit_header_dao_hex: JString,
+    withdraw_header_dao_hex: JString,
+    deposit_capacity: jlong,
+    occupied_capacity: jlong,
+) -> jlong {
+    let deposit_dao_str = match get_string(&mut env, &deposit_header_dao_hex) {
+        Some(s) => s,
+        None => return -1,
+    };
+    let withdraw_dao_str = match get_string(&mut env, &withdraw_header_dao_hex) {
+        Some(s) => s,
+        None => return -1,
+    };
+
+    let parse_ar = |hex_str: &str| -> Option<u64> {
+        let bytes = decode_hex(hex_str)?;
+        if bytes.len() != 32 { return None; }
+        Some(u64::from_le_bytes(bytes[8..16].try_into().ok()?))
+    };
+
+    let ar_deposit = match parse_ar(&deposit_dao_str) {
+        Some(ar) => ar as u128,
+        None => {
+            error!("Failed to parse deposit DAO AR");
+            return -1;
+        }
+    };
+
+    let ar_withdraw = match parse_ar(&withdraw_dao_str) {
+        Some(ar) => ar as u128,
+        None => {
+            error!("Failed to parse withdraw DAO AR");
+            return -1;
+        }
+    };
+
+    let capacity = deposit_capacity as u128;
+    let occupied = occupied_capacity as u128;
+
+    // Formula from RFC-0023
+    let counted_capacity = capacity - occupied;
+    let max_withdraw = counted_capacity * ar_withdraw / ar_deposit + occupied;
+
+    max_withdraw as jlong
+}
+
+/// Calculate the since value (absolute epoch) for phase 2 unlock.
+/// Parse epoch hex -> calc deposited epochs -> round up to 180-boundary -> encode.
+#[no_mangle]
+pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_nativeCalculateUnlockEpoch(
+    mut env: JNIEnv,
+    _class: JClass,
+    deposit_epoch_hex: JString,
+    withdraw_epoch_hex: JString,
+) -> jstring {
+    let deposit_str = match get_string(&mut env, &deposit_epoch_hex) {
+        Some(s) => s,
+        None => return ptr::null_mut(),
+    };
+    let withdraw_str = match get_string(&mut env, &withdraw_epoch_hex) {
+        Some(s) => s,
+        None => return ptr::null_mut(),
+    };
+
+    let parse_epoch = |s: &str| -> Option<u64> {
+        let stripped = s.strip_prefix("0x").unwrap_or(s);
+        u64::from_str_radix(stripped, 16).ok()
+    };
+
+    let deposit_epoch_raw = match parse_epoch(&deposit_str) {
+        Some(e) => e,
+        None => {
+            error!("Failed to parse deposit epoch hex");
+            return ptr::null_mut();
+        }
+    };
+    let withdraw_epoch_raw = match parse_epoch(&withdraw_str) {
+        Some(e) => e,
+        None => {
+            error!("Failed to parse withdraw epoch hex");
+            return ptr::null_mut();
+        }
+    };
+
+    let deposit_epoch = EpochNumberWithFraction::from_full_value(deposit_epoch_raw);
+    let withdraw_epoch = EpochNumberWithFraction::from_full_value(withdraw_epoch_raw);
+
+    let deposit_number = deposit_epoch.number();
+    let withdraw_number = withdraw_epoch.number();
+
+    // Calculate deposited epochs (withdraw fraction > deposit fraction means +1)
+    let deposited_epochs = if withdraw_epoch.index() * deposit_epoch.length()
+        > deposit_epoch.index() * withdraw_epoch.length()
+    {
+        withdraw_number - deposit_number + 1
+    } else {
+        withdraw_number - deposit_number
+    };
+
+    // Round up to next 180-epoch boundary
+    let lock_epochs = ((deposited_epochs + 179) / 180) * 180;
+    let minimal_unlock_epoch = deposit_number + lock_epochs;
+
+    // Encode as absolute epoch since value (0x20 prefix = absolute epoch flag)
+    // Since field: bits 0-23 = epoch number, bits 24-39 = index (0), bits 40-55 = length (1)
+    // With 0x20 prefix in the top byte for absolute epoch
+    let since_epoch = EpochNumberWithFraction::new(minimal_unlock_epoch, 0, 1);
+    // Absolute epoch flag: 0x2000000000000000
+    let since_value = 0x2000_0000_0000_0000u64 | since_epoch.full_value();
+
+    let result = format!("0x{:x}", since_value);
+    dao_to_jstring(&mut env, &result)
+}

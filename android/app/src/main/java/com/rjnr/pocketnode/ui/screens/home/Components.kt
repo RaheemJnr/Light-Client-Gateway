@@ -156,7 +156,8 @@ fun WalletBalanceCard(
 @Composable
 fun ActionRow(
     onSend: () -> Unit,
-    onReceive: () -> Unit
+    onReceive: () -> Unit,
+    onStake: () -> Unit
 ) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         ActionButton(
@@ -176,10 +177,9 @@ fun ActionRow(
         ActionButton(
             icon = Lucide.Landmark,
             label = "STAKE",
-            variant = ActionVariant.Disabled,
-            badge = "M2",
+            variant = ActionVariant.Outline,
             modifier = Modifier.weight(1f),
-            onAction = {}
+            onAction = onStake
         )
     }
 }
@@ -418,7 +418,8 @@ private fun WalletBalanceCardPreview() {
 private fun ActionRowPreview() {
     ActionRow(
         onSend = {},
-        onReceive = {}
+        onReceive = {},
+        onStake = {}
     )
 }
 

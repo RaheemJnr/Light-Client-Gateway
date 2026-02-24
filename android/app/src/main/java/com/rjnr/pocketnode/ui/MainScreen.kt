@@ -24,6 +24,7 @@ import com.composables.icons.lucide.Settings
 import com.composables.icons.lucide.Wallet
 import com.rjnr.pocketnode.ui.navigation.BottomTab
 import com.rjnr.pocketnode.ui.screens.activity.ActivityScreen
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.rjnr.pocketnode.ui.screens.dao.DaoScreen
 import com.rjnr.pocketnode.ui.screens.home.HomeScreen
 import com.rjnr.pocketnode.ui.screens.settings.SettingsScreen
@@ -90,13 +91,22 @@ fun MainScreen(
                             restoreState = true
                         }
                     },
+                    onNavigateToDao = {
+                        innerNav.navigate(BottomTab.DAO.route) {
+                            popUpTo(innerNav.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                 )
             }
             composable(BottomTab.Activity.route) {
                 ActivityScreen()
             }
             composable(BottomTab.DAO.route) {
-                DaoScreen()
+                DaoScreen(viewModel = hiltViewModel())
             }
             composable(BottomTab.Settings.route) {
                 SettingsScreen(

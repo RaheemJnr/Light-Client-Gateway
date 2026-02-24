@@ -1,0 +1,252 @@
+package com.rjnr.pocketnode.data.transaction
+
+import com.rjnr.pocketnode.data.gateway.DaoConstants
+import com.rjnr.pocketnode.data.gateway.models.*
+import com.rjnr.pocketnode.data.validation.NetworkValidator
+import org.junit.Assert.*
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+
+@RunWith(RobolectricTestRunner::class)
+class TransactionBuilderDaoTest {
+
+    private val builder = TransactionBuilder(NetworkValidator())
+    private val testPrivateKey = ByteArray(32) { (it + 1).toByte() }
+    private val testScript = Script(
+        codeHash = Script.SECP256K1_CODE_HASH,
+        hashType = "type",
+        args = "0x" + "aa".repeat(20)
+    )
+
+    private fun makeCell(capacityShannons: Long, index: Int = 0): Cell = Cell(
+        outPoint = OutPoint("0x" + "ab".repeat(32), "0x${index.toString(16)}"),
+        capacity = "0x${capacityShannons.toString(16)}",
+        blockNumber = "0x100",
+        lock = testScript
+    )
+
+    private fun makeDepositCell(): Cell = Cell(
+        outPoint = OutPoint("0x" + "cd".repeat(32), "0x0"),
+        capacity = "0x${DaoConstants.MIN_DEPOSIT_SHANNONS.toString(16)}",
+        blockNumber = "0x100",
+        lock = testScript,
+        type = DaoConstants.DAO_TYPE_SCRIPT,
+        data = "0x0000000000000000"
+    )
+
+    private fun makeWithdrawingCell(): Cell = Cell(
+        outPoint = OutPoint("0x" + "cc".repeat(32), "0x0"),
+        capacity = "0x${DaoConstants.MIN_DEPOSIT_SHANNONS.toString(16)}",
+        blockNumber = "0x200",
+        lock = testScript,
+        type = DaoConstants.DAO_TYPE_SCRIPT
+    )
+
+    // --- buildDaoDeposit ---
+
+    @Test
+    fun `buildDaoDeposit output has DAO type script`() {
+        val tx = builder.buildDaoDeposit(
+            amountShannons = DaoConstants.MIN_DEPOSIT_SHANNONS,
+            availableCells = listOf(makeCell(20_000_00000000L)),
+            senderScript = testScript,
+            privateKey = testPrivateKey,
+            network = NetworkType.TESTNET
+        )
+        assertEquals(DaoConstants.DAO_TYPE_SCRIPT, tx.cellOutputs[0].type)
+    }
+
+    @Test
+    fun `buildDaoDeposit first output data is 8 zero bytes`() {
+        val tx = builder.buildDaoDeposit(
+            amountShannons = DaoConstants.MIN_DEPOSIT_SHANNONS,
+            availableCells = listOf(makeCell(20_000_00000000L)),
+            senderScript = testScript,
+            privateKey = testPrivateKey,
+            network = NetworkType.TESTNET
+        )
+        assertEquals("0x0000000000000000", tx.outputsData[0])
+    }
+
+    @Test
+    fun `buildDaoDeposit has secp256k1 and DAO cell deps`() {
+        val tx = builder.buildDaoDeposit(
+            amountShannons = DaoConstants.MIN_DEPOSIT_SHANNONS,
+            availableCells = listOf(makeCell(20_000_00000000L)),
+            senderScript = testScript,
+            privateKey = testPrivateKey,
+            network = NetworkType.TESTNET
+        )
+        assertEquals(2, tx.cellDeps.size)
+        assertEquals(CellDep.SECP256K1_TESTNET, tx.cellDeps[0])
+        assertEquals(DaoConstants.daoCellDep(NetworkType.TESTNET), tx.cellDeps[1])
+    }
+
+    @Test
+    fun `buildDaoDeposit creates change output when sufficient`() {
+        val tx = builder.buildDaoDeposit(
+            amountShannons = DaoConstants.MIN_DEPOSIT_SHANNONS,
+            availableCells = listOf(makeCell(20_000_00000000L)),
+            senderScript = testScript,
+            privateKey = testPrivateKey,
+            network = NetworkType.TESTNET
+        )
+        assertEquals(2, tx.cellOutputs.size)
+        assertNull(tx.cellOutputs[1].type)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `buildDaoDeposit rejects below minimum deposit`() {
+        builder.buildDaoDeposit(
+            amountShannons = DaoConstants.MIN_DEPOSIT_SHANNONS - 1,
+            availableCells = listOf(makeCell(20_000_00000000L)),
+            senderScript = testScript,
+            privateKey = testPrivateKey,
+            network = NetworkType.TESTNET
+        )
+    }
+
+    @Test
+    fun `buildDaoDeposit throws on insufficient balance`() {
+        try {
+            builder.buildDaoDeposit(
+                amountShannons = DaoConstants.MIN_DEPOSIT_SHANNONS,
+                availableCells = listOf(makeCell(100_00000000L)), // 100 CKB < 102 needed
+                senderScript = testScript,
+                privateKey = testPrivateKey,
+                network = NetworkType.TESTNET
+            )
+            fail("Should throw on insufficient balance")
+        } catch (e: Exception) {
+            assertTrue(e.message!!.contains("Insufficient"))
+        }
+    }
+
+    @Test
+    fun `buildDaoDeposit uses mainnet cell deps for MAINNET`() {
+        val tx = builder.buildDaoDeposit(
+            amountShannons = DaoConstants.MIN_DEPOSIT_SHANNONS,
+            availableCells = listOf(makeCell(20_000_00000000L)),
+            senderScript = testScript,
+            privateKey = testPrivateKey,
+            network = NetworkType.MAINNET
+        )
+        assertEquals(CellDep.SECP256K1_MAINNET, tx.cellDeps[0])
+        assertEquals(DaoConstants.daoCellDep(NetworkType.MAINNET), tx.cellDeps[1])
+    }
+
+    // --- buildDaoWithdraw ---
+
+    @Test
+    fun `buildDaoWithdraw data contains block number in little-endian`() {
+        val tx = builder.buildDaoWithdraw(
+            depositCell = makeDepositCell(),
+            depositBlockNumber = 12345L,
+            depositBlockHash = "0x" + "ee".repeat(32),
+            senderScript = testScript,
+            privateKey = testPrivateKey,
+            network = NetworkType.TESTNET
+        )
+        // 12345 = 0x3039, LE bytes: 39 30 00 00 00 00 00 00
+        assertEquals("0x3930000000000000", tx.outputsData[0])
+    }
+
+    @Test
+    fun `buildDaoWithdraw has deposit block hash in header deps`() {
+        val depositBlockHash = "0x" + "ee".repeat(32)
+        val tx = builder.buildDaoWithdraw(
+            depositCell = makeDepositCell(),
+            depositBlockNumber = 100L,
+            depositBlockHash = depositBlockHash,
+            senderScript = testScript,
+            privateKey = testPrivateKey,
+            network = NetworkType.TESTNET
+        )
+        assertEquals(1, tx.headerDeps.size)
+        assertEquals(depositBlockHash, tx.headerDeps[0])
+    }
+
+    @Test
+    fun `buildDaoWithdraw output has DAO type script`() {
+        val tx = builder.buildDaoWithdraw(
+            depositCell = makeDepositCell(),
+            depositBlockNumber = 100L,
+            depositBlockHash = "0x" + "ee".repeat(32),
+            senderScript = testScript,
+            privateKey = testPrivateKey,
+            network = NetworkType.TESTNET
+        )
+        assertEquals(DaoConstants.DAO_TYPE_SCRIPT, tx.cellOutputs[0].type)
+    }
+
+    // --- buildDaoUnlock ---
+
+    @Test
+    fun `buildDaoUnlock header deps order is deposit then withdraw`() {
+        val depositHash = "0x" + "aa".repeat(32)
+        val withdrawHash = "0x" + "bb".repeat(32)
+        val tx = builder.buildDaoUnlock(
+            withdrawingCell = makeWithdrawingCell(),
+            maxWithdraw = 10_300_000_000L,
+            sinceValue = "0x2000180000b0000a",
+            depositBlockHash = depositHash,
+            withdrawBlockHash = withdrawHash,
+            senderScript = testScript,
+            privateKey = testPrivateKey,
+            network = NetworkType.TESTNET
+        )
+        assertEquals(2, tx.headerDeps.size)
+        assertEquals(depositHash, tx.headerDeps[0])
+        assertEquals(withdrawHash, tx.headerDeps[1])
+    }
+
+    @Test
+    fun `buildDaoUnlock output has no type script`() {
+        val tx = builder.buildDaoUnlock(
+            withdrawingCell = makeWithdrawingCell(),
+            maxWithdraw = 10_300_000_000L,
+            sinceValue = "0x2000180000b0000a",
+            depositBlockHash = "0x" + "aa".repeat(32),
+            withdrawBlockHash = "0x" + "bb".repeat(32),
+            senderScript = testScript,
+            privateKey = testPrivateKey,
+            network = NetworkType.TESTNET
+        )
+        assertNull(tx.cellOutputs[0].type)
+    }
+
+    @Test
+    fun `buildDaoUnlock output capacity is maxWithdraw minus fee`() {
+        val maxWithdraw = 10_300_000_000L
+        val tx = builder.buildDaoUnlock(
+            withdrawingCell = makeWithdrawingCell(),
+            maxWithdraw = maxWithdraw,
+            sinceValue = "0x2000180000b0000a",
+            depositBlockHash = "0x" + "aa".repeat(32),
+            withdrawBlockHash = "0x" + "bb".repeat(32),
+            senderScript = testScript,
+            privateKey = testPrivateKey,
+            network = NetworkType.TESTNET
+        )
+        val expected = maxWithdraw - TransactionBuilder.DEFAULT_FEE
+        val actual = tx.cellOutputs[0].capacity.removePrefix("0x").toLong(16)
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `buildDaoUnlock input has since value set`() {
+        val sinceValue = "0x2000180000b0000a"
+        val tx = builder.buildDaoUnlock(
+            withdrawingCell = makeWithdrawingCell(),
+            maxWithdraw = 10_300_000_000L,
+            sinceValue = sinceValue,
+            depositBlockHash = "0x" + "aa".repeat(32),
+            withdrawBlockHash = "0x" + "bb".repeat(32),
+            senderScript = testScript,
+            privateKey = testPrivateKey,
+            network = NetworkType.TESTNET
+        )
+        assertEquals(sinceValue, tx.cellInputs[0].since)
+    }
+}
