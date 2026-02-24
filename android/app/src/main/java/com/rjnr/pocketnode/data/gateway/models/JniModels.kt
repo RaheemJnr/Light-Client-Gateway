@@ -74,7 +74,9 @@ data class JniFetchHeaderResponse(
 @Serializable
 data class JniFetchTransactionResponse(
     val status: String,
-    val data: JniTransactionWithStatus? = null
+    val data: JniTransactionWithStatus? = null,
+    val timestamp: String? = null,
+    @SerialName("first_sent") val firstSent: String? = null
 )
 
 @Serializable
