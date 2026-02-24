@@ -2,6 +2,8 @@ package com.rjnr.pocketnode.ui.screens.dao.components
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -9,13 +11,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.rjnr.pocketnode.data.gateway.DaoConstants
 import com.rjnr.pocketnode.data.gateway.models.DaoCellStatus
 import com.rjnr.pocketnode.data.gateway.models.DaoDeposit
+import com.rjnr.pocketnode.ui.screens.dao.formatCkb
+import com.rjnr.pocketnode.ui.screens.dao.formatCkbFull
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private val DaoGreen = Color(0xFF1ED882)
-private val StatusAmber = Color(0xFFF59E0B)
-private val StatusGray = Color(0xFFA0A0A0)
-private val MutedGreen = Color(0xFF4ADE80)
 
 @Composable
 fun DaoDepositCard(
@@ -30,80 +36,121 @@ fun DaoDepositCard(
         color = MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Amount + compensation row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
+            // Full-precision amount
+            Text(
+                text = "${formatCkbFull(deposit.capacity)} CKB",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            // Compensation + APC row
+            if (deposit.compensation > 0) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "${formatCkb(deposit.capacity)} CKB",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        text = "+${formatCkb(deposit.compensation)} CKB",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = DaoGreen
                     )
-                    if (deposit.compensation > 0) {
+                    if (deposit.apc > 0.0) {
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "+${formatCkb(deposit.compensation)} CKB",
+                            text = "APC \u2248 ${"%.2f".format(deposit.apc)}%",
                             style = MaterialTheme.typography.bodySmall,
-                            color = DaoGreen
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
-
-                StatusBadge(deposit.status, deposit.lockRemainingHours)
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Progress bar
+            // Progress bar with triangle marker
             CompensationProgressBar(
                 progress = deposit.compensationCycleProgress,
                 phase = deposit.cyclePhase
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            // Countdown + action
+            // Cycle countdown text
+            val cycleText = when (deposit.status) {
+                DaoCellStatus.DEPOSITED -> {
+                    val remainingProgress = 1f - deposit.compensationCycleProgress
+                    val remainingDays = (remainingProgress * DaoConstants.WITHDRAW_EPOCHS * DaoConstants.HOURS_PER_EPOCH / 24).toInt()
+                    if (remainingDays > 0) "The next compensation cycle starts in ~$remainingDays days"
+                    else "Compensation cycle ending soon"
+                }
+                DaoCellStatus.LOCKED -> {
+                    val hours = deposit.lockRemainingHours ?: 0
+                    val days = hours / 24
+                    val h = hours % 24
+                    "Unlockable in ${days}d ${h}h"
+                }
+                DaoCellStatus.UNLOCKABLE -> "Ready to unlock!"
+                DaoCellStatus.DEPOSITING, DaoCellStatus.WITHDRAWING, DaoCellStatus.UNLOCKING ->
+                    "Confirming..."
+                else -> ""
+            }
+            if (cycleText.isNotEmpty()) {
+                Text(
+                    text = cycleText,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Bottom row: date + action button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val countdownText = when (deposit.status) {
-                    DaoCellStatus.LOCKED -> {
-                        val hours = deposit.lockRemainingHours ?: 0
-                        val days = hours / 24
-                        val remainingHours = hours % 24
-                        "Unlockable in ${days}d ${remainingHours}h"
-                    }
-                    DaoCellStatus.UNLOCKABLE -> "Ready to unlock!"
-                    DaoCellStatus.DEPOSITING, DaoCellStatus.WITHDRAWING, DaoCellStatus.UNLOCKING ->
-                        "Confirming..."
-                    else -> ""
+                // Deposit date with clock icon
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Outlined.Schedule,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = formatStatusWithDate(deposit.status, deposit.depositTimestamp),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
 
-                Text(
-                    text = countdownText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
+                // Action button
                 when (deposit.status) {
                     DaoCellStatus.DEPOSITED -> {
-                        OutlinedButton(
+                        Button(
                             onClick = onWithdraw,
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = DaoGreen,
+                                contentColor = Color.Black
+                            ),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                         ) {
-                            Text("Withdraw")
+                            Text("Withdraw", fontWeight = FontWeight.Medium)
                         }
                     }
                     DaoCellStatus.UNLOCKABLE -> {
                         Button(
                             onClick = onUnlock,
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = DaoGreen,
+                                contentColor = Color.Black
+                            ),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                         ) {
-                            Text("Unlock")
+                            Text("Unlock", fontWeight = FontWeight.Medium)
                         }
                     }
                     DaoCellStatus.DEPOSITING, DaoCellStatus.WITHDRAWING, DaoCellStatus.UNLOCKING -> {
@@ -119,37 +166,14 @@ fun DaoDepositCard(
     }
 }
 
-@Composable
-private fun StatusBadge(status: DaoCellStatus, lockRemainingHours: Int?) {
-    val (color, label) = when (status) {
-        DaoCellStatus.DEPOSITING -> StatusAmber to "Depositing..."
-        DaoCellStatus.DEPOSITED -> DaoGreen to "Active"
-        DaoCellStatus.WITHDRAWING -> StatusAmber to "Withdrawing..."
-        DaoCellStatus.LOCKED -> {
-            val hours = lockRemainingHours ?: 0
-            val days = hours / 24
-            val h = hours % 24
-            StatusGray to "Locked \u2014 ${days}d ${h}h"
-        }
-        DaoCellStatus.UNLOCKABLE -> DaoGreen to "Ready to Unlock"
-        DaoCellStatus.UNLOCKING -> StatusAmber to "Unlocking..."
-        DaoCellStatus.COMPLETED -> MutedGreen to "Completed"
+private fun formatStatusWithDate(status: DaoCellStatus, timestampMs: Long): String {
+    val prefix = when (status) {
+        DaoCellStatus.DEPOSITED, DaoCellStatus.DEPOSITING -> "Deposited"
+        DaoCellStatus.LOCKED, DaoCellStatus.UNLOCKABLE -> "Locked"
+        DaoCellStatus.WITHDRAWING, DaoCellStatus.UNLOCKING -> "Withdrawing"
+        DaoCellStatus.COMPLETED -> "Completed"
     }
-
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = color.copy(alpha = 0.15f)
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = color
-        )
-    }
-}
-
-private fun formatCkb(shannons: Long): String {
-    val ckb = shannons / 100_000_000.0
-    return String.format("%.2f", ckb)
+    if (timestampMs <= 0L) return prefix
+    val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+    return "$prefix ${sdf.format(Date(timestampMs))}"
 }

@@ -66,7 +66,9 @@ data class DaoDeposit(
     val unlockEpoch: EpochInfo? = null,   // earliest epoch for phase 2
     val lockRemainingHours: Int? = null,
     val compensationCycleProgress: Float = 0f,
-    val cyclePhase: CyclePhase = CyclePhase.NORMAL
+    val cyclePhase: CyclePhase = CyclePhase.NORMAL,
+    val depositTimestamp: Long = 0L,  // Unix millis from block header
+    val apc: Double = 0.0             // annualized per-deposit APC %
 )
 
 // -- Aggregate overview --

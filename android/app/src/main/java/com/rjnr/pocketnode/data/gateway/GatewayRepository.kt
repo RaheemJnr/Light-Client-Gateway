@@ -1068,6 +1068,8 @@ class GatewayRepository @Inject constructor(
             var compensation = 0L
             var unlockEpoch: EpochInfo? = null
             var lockRemainingHours: Int? = null
+            var depositTimestampMs = 0L
+            var apc = 0.0
 
             // Try to get block header for compensation & epoch data.
             // Strategy: get block hash from tx → try local header → fetch from peers if needed.
@@ -1088,6 +1090,8 @@ class GatewayRepository @Inject constructor(
                 val cellBlockEpoch = EpochInfo.fromHex(cellBlockHeader.epoch)
                 depositBlockHash = cellBlockHeader.hash
                 depositEpoch = cellBlockEpoch
+                // Default timestamp from this cell's block; overridden for withdrawing cells below
+                depositTimestampMs = cellBlockHeader.timestamp.removePrefix("0x").toLong(16)
 
                 if (isWithdrawing) {
                     // Cell data contains deposit block number as 8-byte LE
@@ -1123,6 +1127,7 @@ class GatewayRepository @Inject constructor(
                     if (origDepositHeader != null) {
                         depositBlockHash = origDepositHeader.hash
                         depositEpoch = EpochInfo.fromHex(origDepositHeader.epoch)
+                        depositTimestampMs = origDepositHeader.timestamp.removePrefix("0x").toLong(16)
                         val maxWithdraw = LightClientNative.nativeCalculateMaxWithdraw(
                             origDepositHeader.dao, cellBlockHeader.dao, capacityShannons, 61_00000000L
                         )
@@ -1167,6 +1172,14 @@ class GatewayRepository @Inject constructor(
                 }
             }
 
+            // Compute per-deposit APC when enough time has elapsed
+            if (compensation > 0 && depositTimestampMs > 0 && capacityShannons > 0) {
+                val elapsedDays = (System.currentTimeMillis() - depositTimestampMs) / 86_400_000.0
+                if (elapsedDays >= 1.0) {
+                    apc = (compensation.toDouble() / capacityShannons) / (elapsedDays / 365.25) * 100.0
+                }
+            }
+
             // Calculate cycle progress (best-effort with available epoch data)
             val depositedEpochs = if (currentEpoch != null && depositEpoch != null) {
                 (currentEpoch.value - depositEpoch.value).coerceAtLeast(0.0)
@@ -1196,7 +1209,9 @@ class GatewayRepository @Inject constructor(
                 unlockEpoch = unlockEpoch,
                 lockRemainingHours = lockRemainingHours,
                 compensationCycleProgress = cycleProgress,
-                cyclePhase = cyclePhaseFromProgress(cycleProgress)
+                cyclePhase = cyclePhaseFromProgress(cycleProgress),
+                depositTimestamp = depositTimestampMs,
+                apc = apc
             ))
             Log.d(TAG, "✅ DAO deposit added: $cellId, status=$status, capacity=$capacityShannons")
         }
@@ -1208,10 +1223,17 @@ class GatewayRepository @Inject constructor(
         val active = deposits.filter { it.status != DaoCellStatus.COMPLETED }
         val completed = deposits.filter { it.status == DaoCellStatus.COMPLETED }
 
+        // Capacity-weighted average APC from deposits that have APC data
+        val depositsWithApc = active.filter { it.apc > 0.0 }
+        val weightedApc = if (depositsWithApc.isNotEmpty()) {
+            val totalCap = depositsWithApc.sumOf { it.capacity }.toDouble()
+            depositsWithApc.sumOf { it.apc * it.capacity } / totalCap
+        } else 2.47 // fallback until headers are available
+
         DaoOverview(
             totalLocked = active.sumOf { it.capacity },
             totalCompensation = deposits.sumOf { it.compensation },
-            currentApc = 2.47, // approximate, can be refined later
+            currentApc = weightedApc,
             activeCount = active.size,
             completedCount = completed.size
         )

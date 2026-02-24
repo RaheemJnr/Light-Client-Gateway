@@ -5,6 +5,8 @@ import org.junit.Test
 
 class DaoFormatTest {
 
+    // -- formatCkb (2 decimal places, thousand separators) --
+
     @Test
     fun `formatCkb returns 0_00 for zero shannons`() {
         assertEquals("0.00", formatCkb(0L))
@@ -32,14 +34,31 @@ class DaoFormatTest {
     }
 
     @Test
-    fun `formatCkb handles large amounts`() {
-        assertEquals("10000.00", formatCkb(1_000_000_000_000L))
+    fun `formatCkb handles large amounts with thousand separators`() {
+        assertEquals("10,000.00", formatCkb(1_000_000_000_000L))
     }
 
     @Test
     fun `formatCkb rounds up at midpoint`() {
-        // 1.005 CKB = 100,500,000 shannons → should round to "1.01" (banker rounding may vary)
-        // Actually String.format uses half-up rounding
         assertEquals("1.01", formatCkb(100_500_000L))
+    }
+
+    // -- formatCkbFull (8 decimal places, thousand separators) --
+
+    @Test
+    fun `formatCkbFull returns 0_00000000 for zero shannons`() {
+        assertEquals("0.00000000", formatCkbFull(0L))
+    }
+
+    @Test
+    fun `formatCkbFull returns full precision`() {
+        // 19413969478266 shannons = 194,139.69478266 CKB
+        assertEquals("194,139.69478266", formatCkbFull(19_413_969_478_266L))
+    }
+
+    @Test
+    fun `formatCkbFull shows thousand separators`() {
+        // 1,000,000,000,000 shannons = 10,000 CKB
+        assertEquals("10,000.00000000", formatCkbFull(1_000_000_000_000L))
     }
 }

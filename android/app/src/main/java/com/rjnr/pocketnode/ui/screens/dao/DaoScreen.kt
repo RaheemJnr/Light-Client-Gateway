@@ -482,5 +482,10 @@ private fun DaoEmptyState(onDepositClick: () -> Unit) {
 
 internal fun formatCkb(shannons: Long): String {
     val ckb = shannons / 100_000_000.0
-    return String.format("%.2f", ckb)
+    return String.format("%,.2f", ckb)
+}
+
+internal fun formatCkbFull(shannons: Long): String {
+    val ckb = shannons / 100_000_000.0
+    return String.format("%,.8f", ckb)
 }

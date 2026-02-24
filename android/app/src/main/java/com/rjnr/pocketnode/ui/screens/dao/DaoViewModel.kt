@@ -61,10 +61,16 @@ class DaoViewModel @Inject constructor(
                     .filter { it.status == DaoCellStatus.COMPLETED }
                     .sortedByDescending { it.depositBlockNumber }
 
+                val depositsWithApc = active.filter { it.apc > 0.0 }
+                val weightedApc = if (depositsWithApc.isNotEmpty()) {
+                    val totalCap = depositsWithApc.sumOf { it.capacity }.toDouble()
+                    depositsWithApc.sumOf { it.apc * it.capacity } / totalCap
+                } else 2.47
+
                 val overview = DaoOverview(
                     totalLocked = active.sumOf { it.capacity },
                     totalCompensation = deposits.sumOf { it.compensation },
-                    currentApc = 2.47, // approximate
+                    currentApc = weightedApc,
                     activeCount = active.size,
                     completedCount = completed.size
                 )

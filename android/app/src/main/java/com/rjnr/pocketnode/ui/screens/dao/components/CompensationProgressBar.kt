@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.unit.dp
 import com.rjnr.pocketnode.data.gateway.models.CyclePhase
 
@@ -31,24 +33,43 @@ fun CompensationProgressBar(
     Canvas(
         modifier = modifier
             .fillMaxWidth()
-            .height(8.dp)
+            .height(16.dp)
     ) {
+        val barHeight = 8.dp.toPx()
+        val triangleHeight = 6.dp.toPx()
+        val barTop = triangleHeight + 2.dp.toPx()
         val cornerRadius = CornerRadius(4.dp.toPx())
 
         // Track
         drawRoundRect(
             color = TrackColor,
+            topLeft = Offset(0f, barTop),
             cornerRadius = cornerRadius,
-            size = size
+            size = Size(size.width, barHeight)
         )
 
         // Progress
-        if (progress > 0f) {
+        val clampedProgress = progress.coerceIn(0f, 1f)
+        if (clampedProgress > 0f) {
             drawRoundRect(
                 color = progressColor,
+                topLeft = Offset(0f, barTop),
                 cornerRadius = cornerRadius,
-                size = Size(size.width * progress.coerceIn(0f, 1f), size.height)
+                size = Size(size.width * clampedProgress, barHeight)
             )
+        }
+
+        // Triangle marker above the progress position
+        if (clampedProgress > 0f) {
+            val markerX = size.width * clampedProgress
+            val halfBase = 4.dp.toPx()
+            val path = Path().apply {
+                moveTo(markerX, barTop)                        // tip (points down to bar)
+                lineTo(markerX - halfBase, barTop - triangleHeight) // top-left
+                lineTo(markerX + halfBase, barTop - triangleHeight) // top-right
+                close()
+            }
+            drawPath(path, color = progressColor)
         }
     }
 }
