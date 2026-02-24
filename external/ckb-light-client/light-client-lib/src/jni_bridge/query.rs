@@ -1092,7 +1092,10 @@ pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_native
     let fetch_status: FetchStatus<crate::service::TransactionWithStatus> =
         if let Some((added_ts, first_sent, missing)) = swc.get_tx_fetch_info(&tx_hash) {
             if missing {
-                // Previously missing, re-add to fetch queue
+                // Previously missing — re-add to fetch queue for retry.
+                // Return NotFound (not Added) to mirror WASM/RPC behavior (rpc.rs:876-879):
+                // the caller learns the tx was not found on the previous attempt.
+                // On subsequent polls the status will progress to Added → Fetching → Fetched.
                 debug!("nativeFetchTransaction: tx {} was missing, re-adding to fetch queue", hash_str);
                 swc.add_fetch_tx(tx_hash, now);
                 FetchStatus::NotFound
