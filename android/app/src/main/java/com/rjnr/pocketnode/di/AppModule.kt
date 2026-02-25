@@ -6,6 +6,7 @@ import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.crypto.Blake2b
 import com.rjnr.pocketnode.data.database.AppDatabase
+import com.rjnr.pocketnode.data.database.MIGRATION_1_2
 import com.rjnr.pocketnode.data.database.dao.BalanceCacheDao
 import com.rjnr.pocketnode.data.database.dao.DaoCellDao
 import com.rjnr.pocketnode.data.database.dao.HeaderCacheDao
@@ -83,6 +84,7 @@ object AppModule {
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "pocket_node.db")
+            .addMigrations(MIGRATION_1_2)
             .fallbackToDestructiveMigration()
             .build()
 
