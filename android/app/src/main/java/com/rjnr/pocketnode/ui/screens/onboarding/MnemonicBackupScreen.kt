@@ -25,6 +25,7 @@ import androidx.lifecycle.ViewModel
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.util.toHex
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -279,9 +280,14 @@ private fun MnemonicDisplayStep(
         if (privateKeyHex != null) {
             OutlinedButton(
                 onClick = {
-                    clipboardManager.setText(AnnotatedString("0x$privateKeyHex"))
+                    val keyValue = "0x$privateKeyHex"
+                    clipboardManager.setText(AnnotatedString(keyValue))
                     scope.launch {
-                        snackbarHostState.showSnackbar("Private key copied to clipboard")
+                        snackbarHostState.showSnackbar("Private key copied — clipboard will be cleared in 30s")
+                        delay(30_000L)
+                        if (clipboardManager.getText()?.text == keyValue) {
+                            clipboardManager.setText(AnnotatedString(""))
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
