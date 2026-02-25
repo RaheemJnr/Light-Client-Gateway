@@ -7,7 +7,11 @@ import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.crypto.Blake2b
 import com.rjnr.pocketnode.data.database.AppDatabase
 import com.rjnr.pocketnode.data.database.dao.BalanceCacheDao
+import com.rjnr.pocketnode.data.database.dao.DaoCellDao
+import com.rjnr.pocketnode.data.database.dao.HeaderCacheDao
 import com.rjnr.pocketnode.data.database.dao.TransactionDao
+import com.rjnr.pocketnode.data.gateway.CacheManager
+import com.rjnr.pocketnode.data.gateway.DaoSyncManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.MnemonicManager
@@ -89,13 +93,33 @@ object AppModule {
     fun provideBalanceCacheDao(db: AppDatabase): BalanceCacheDao = db.balanceCacheDao()
 
     @Provides
+    fun provideHeaderCacheDao(db: AppDatabase): HeaderCacheDao = db.headerCacheDao()
+
+    @Provides
+    fun provideDaoCellDao(db: AppDatabase): DaoCellDao = db.daoCellDao()
+
+    @Provides
+    @Singleton
+    fun provideCacheManager(
+        transactionDao: TransactionDao,
+        balanceCacheDao: BalanceCacheDao
+    ): CacheManager = CacheManager(transactionDao, balanceCacheDao)
+
+    @Provides
+    @Singleton
+    fun provideDaoSyncManager(
+        headerCacheDao: HeaderCacheDao,
+        daoCellDao: DaoCellDao
+    ): DaoSyncManager = DaoSyncManager(headerCacheDao, daoCellDao)
+
+    @Provides
     @Singleton
     fun provideGatewayRepository(
         @ApplicationContext context: Context,
         keyManager: KeyManager,
         walletPreferences: WalletPreferences,
         json: Json,
-        transactionDao: TransactionDao,
-        balanceCacheDao: BalanceCacheDao
-    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, transactionDao, balanceCacheDao)
+        cacheManager: CacheManager,
+        daoSyncManager: DaoSyncManager
+    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, cacheManager, daoSyncManager)
 }
