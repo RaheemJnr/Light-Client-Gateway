@@ -293,6 +293,7 @@ fun HomeScreen(
                 onNavigateToSend = onNavigateToSend,
                 onNavigateToReceive = onNavigateToReceive,
                 dismissBackupReminder = { viewModel.dismissBackupReminder() },
+                onToggleBalanceVisibility = { viewModel.toggleBalanceVisibility() },
                 clipboardManager = clipboardManager,
                 snackbarHostState = snackbarHostState,
                 scope = scope,
@@ -311,6 +312,7 @@ fun HomeScreenUI(
     onNavigateToSend: () -> Unit,
     onNavigateToReceive: () -> Unit,
     dismissBackupReminder: () -> Unit,
+    onToggleBalanceVisibility: () -> Unit,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
     snackbarHostState: SnackbarHostState,
     scope: CoroutineScope,
@@ -351,6 +353,8 @@ fun HomeScreenUI(
                     fiatBalance = uiState.fiatBalance,
                     address = uiState.address,
                     peerCount = uiState.peerCount,
+                    isBalanceHidden = uiState.isBalanceHidden,
+                    onToggleVisibility = onToggleBalanceVisibility,
                     onCopyAddress = {
                         clipboardManager.setText(AnnotatedString(uiState.address))
                         scope.launch {
@@ -984,6 +988,7 @@ private fun HomeScreenUIPreview() {
             onNavigateToSend = {},
             onNavigateToReceive = {},
             dismissBackupReminder = {},
+            onToggleBalanceVisibility = {},
             clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current,
             snackbarHostState = remember { SnackbarHostState() },
             scope = rememberCoroutineScope(),

@@ -366,6 +366,10 @@ class HomeViewModel @Inject constructor(
         _uiState.update { it.copy(showBackupReminder = false) }
     }
 
+    fun toggleBalanceVisibility() {
+        _uiState.update { it.copy(isBalanceHidden = !it.isBalanceHidden) }
+    }
+
     fun isMnemonicWallet(): Boolean = _uiState.value.walletType == KeyManager.WALLET_TYPE_MNEMONIC
 
     /**
@@ -511,5 +515,6 @@ data class HomeUiState(
     val currentNetwork: NetworkType = NetworkType.MAINNET,
     val isSwitchingNetwork: Boolean = false,
     val showNetworkSwitchDialog: Boolean = false,
-    val pendingNetworkSwitch: NetworkType? = null
+    val pendingNetworkSwitch: NetworkType? = null,
+    val isBalanceHidden: Boolean = false
 )
