@@ -232,6 +232,16 @@ class GatewayRepository @Inject constructor(
             // calls while already initialized ("Already initialized!"). The only reliable path is
             // to persist the selection and restart the process — Android will relaunch the app and
             // initializeNode() will pick up the new network from WalletPreferences.
+
+            // Clear Room caches before process restart
+            try {
+                transactionDao.deleteAll()
+                balanceCacheDao.deleteAll()
+                Log.d(TAG, "Room caches cleared for network switch")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to clear Room caches: ${e.message}")
+            }
+
             walletPreferences.setSelectedNetwork(target) // uses commit() — synchronous flush
             Log.d(TAG, "Persisted ${target.name}, restarting process for clean JNI init")
             android.os.Process.killProcess(android.os.Process.myPid())
@@ -439,6 +449,16 @@ class GatewayRepository @Inject constructor(
         val addr = address ?: getCurrentAddress() ?: throw Exception("Wallet not initialized")
         val info = _walletInfo.value ?: throw Exception("No wallet")
 
+        // --- Cache-first: emit cached balance immediately ---
+        try {
+            val cached = balanceCacheDao.getByNetwork(currentNetwork.name)
+            if (cached != null) {
+                _balance.value = cached.toBalanceResponse()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to read balance cache: ${e.message}")
+        }
+
         val searchKey = JniSearchKey(script = info.script)
         Log.d(TAG, "🔍 Fetching balance for script: ${json.encodeToString(searchKey)}")
 
@@ -546,6 +566,14 @@ class GatewayRepository @Inject constructor(
             asOfBlock = cap.blockNumber
         )
         _balance.value = resp
+
+        // --- Cache write ---
+        try {
+            balanceCacheDao.upsert(BalanceCacheEntity.from(resp, currentNetwork.name))
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to write balance cache: ${e.message}")
+        }
+
         resp
     }
 
@@ -687,6 +715,28 @@ class GatewayRepository @Inject constructor(
         val txHash = rawResult.trim('"')
         Log.d(TAG, "✅ sendTransaction: Success! txHash=$txHash (raw: $rawResult)")
 
+        // --- Insert pending transaction into Room cache ---
+        try {
+            transactionDao.insert(TransactionEntity(
+                txHash = txHash,
+                blockNumber = "",
+                blockHash = "",
+                timestamp = System.currentTimeMillis(),
+                balanceChange = "0x0",
+                direction = "out",
+                fee = "0x186a0",
+                confirmations = 0,
+                blockTimestampHex = null,
+                network = currentNetwork.name,
+                status = "PENDING",
+                isLocal = true,
+                cachedAt = System.currentTimeMillis()
+            ))
+            Log.d(TAG, "Pending transaction cached in Room: $txHash")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to cache pending tx: ${e.message}")
+        }
+
         // After sending a transaction, we need to re-register the script from a few blocks back
         // to ensure the light client scans the block containing our new change output.
         // This is necessary because the change output is created when the tx is confirmed,
@@ -824,7 +874,39 @@ class GatewayRepository @Inject constructor(
             )
         }
 
-        TransactionsResponse(items, pag.lastCursor)
+        // --- Cache write: upsert JNI results into Room ---
+        try {
+            val entities = items.map { record ->
+                TransactionEntity.fromTransactionRecord(
+                    txHash = record.txHash,
+                    blockNumber = record.blockNumber,
+                    blockHash = record.blockHash,
+                    timestamp = record.timestamp,
+                    balanceChange = record.balanceChange,
+                    direction = record.direction,
+                    fee = record.fee,
+                    confirmations = record.confirmations,
+                    blockTimestampHex = record.blockTimestampHex,
+                    network = currentNetwork.name
+                )
+            }
+            transactionDao.insertAll(entities)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to write transaction cache: ${e.message}")
+        }
+
+        // Merge: include pending local txs not yet returned by JNI
+        val jniTxHashes = items.map { it.txHash }.toSet()
+        val pendingLocal = try {
+            transactionDao.getPending(currentNetwork.name)
+                .filter { it.isLocal && it.txHash !in jniTxHashes }
+                .map { it.toTransactionRecord() }
+        } catch (e: Exception) {
+            emptyList()
+        }
+        val mergedItems = pendingLocal + items
+
+        TransactionsResponse(mergedItems, pag.lastCursor)
     }
 
     suspend fun getTransactionStatus(txHash: String): Result<TransactionStatusResponse> = runCatching {
