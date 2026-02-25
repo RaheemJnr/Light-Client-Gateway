@@ -6,6 +6,7 @@ import com.rjnr.pocketnode.data.database.dao.HeaderCacheDao
 import com.rjnr.pocketnode.data.database.entity.DaoCellEntity
 import com.rjnr.pocketnode.data.database.entity.HeaderCacheEntity
 import com.rjnr.pocketnode.data.gateway.models.JniHeaderView
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,8 +20,10 @@ class DaoSyncManager @Inject constructor(
     suspend fun getCachedHeader(blockHash: String): HeaderCacheEntity? {
         return try {
             headerCacheDao.getByBlockHash(blockHash)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to read header cache: ${e.message}")
+            Log.w(TAG, "Failed to read header cache", e)
             null
         }
     }
@@ -28,8 +31,10 @@ class DaoSyncManager @Inject constructor(
     suspend fun cacheHeader(header: JniHeaderView, network: String) {
         try {
             headerCacheDao.upsert(HeaderCacheEntity.from(header, network))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to write header cache: ${e.message}")
+            Log.w(TAG, "Failed to write header cache", e)
         }
     }
 
@@ -38,8 +43,10 @@ class DaoSyncManager @Inject constructor(
     suspend fun getActiveDeposits(network: String): List<DaoCellEntity> {
         return try {
             daoCellDao.getActiveByNetwork(network)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to read active deposits: ${e.message}")
+            Log.w(TAG, "Failed to read active deposits", e)
             emptyList()
         }
     }
@@ -47,8 +54,10 @@ class DaoSyncManager @Inject constructor(
     suspend fun getCompletedDeposits(network: String): List<DaoCellEntity> {
         return try {
             daoCellDao.getCompletedByNetwork(network)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to read completed deposits: ${e.message}")
+            Log.w(TAG, "Failed to read completed deposits", e)
             emptyList()
         }
     }
@@ -56,8 +65,10 @@ class DaoSyncManager @Inject constructor(
     suspend fun getByOutPoint(txHash: String, index: String): DaoCellEntity? {
         return try {
             daoCellDao.getByOutPoint(txHash, index)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to read DAO cell: ${e.message}")
+            Log.w(TAG, "Failed to read DAO cell", e)
             null
         }
     }
@@ -65,33 +76,39 @@ class DaoSyncManager @Inject constructor(
     suspend fun upsertDaoCell(entity: DaoCellEntity) {
         try {
             daoCellDao.upsert(entity)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to upsert DAO cell: ${e.message}")
+            Log.w(TAG, "Failed to upsert DAO cell", e)
         }
     }
 
     suspend fun upsertDaoCells(entities: List<DaoCellEntity>) {
         try {
             daoCellDao.upsertAll(entities)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to upsert DAO cells: ${e.message}")
+            Log.w(TAG, "Failed to upsert DAO cells", e)
         }
     }
 
     suspend fun updateStatus(txHash: String, index: String, status: String) {
         try {
             daoCellDao.updateStatus(txHash, index, status)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to update DAO cell status: ${e.message}")
+            Log.w(TAG, "Failed to update DAO cell status", e)
         }
     }
 
-    suspend fun insertPendingDeposit(txHash: String, capacity: Long, network: String) {
+    suspend fun insertPendingDeposit(txHash: String, capacity: Long, network: String, index: String = "0x0") {
         try {
             daoCellDao.upsert(
                 DaoCellEntity(
                     txHash = txHash,
-                    index = "0x0",
+                    index = index,
                     capacity = capacity,
                     status = "DEPOSITING",
                     depositBlockNumber = 0L,
@@ -108,8 +125,10 @@ class DaoSyncManager @Inject constructor(
                 )
             )
             Log.d(TAG, "Pending DAO deposit cached: $txHash")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to cache pending deposit: ${e.message}")
+            Log.w(TAG, "Failed to cache pending deposit", e)
         }
     }
 
@@ -120,8 +139,10 @@ class DaoSyncManager @Inject constructor(
             headerCacheDao.deleteByNetwork(network)
             daoCellDao.deleteByNetwork(network)
             Log.d(TAG, "DAO caches cleared for $network")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to clear DAO caches: ${e.message}")
+            Log.w(TAG, "Failed to clear DAO caches", e)
         }
     }
 
@@ -130,8 +151,10 @@ class DaoSyncManager @Inject constructor(
             headerCacheDao.deleteAll()
             daoCellDao.deleteAll()
             Log.d(TAG, "All DAO caches cleared")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to clear DAO caches: ${e.message}")
+            Log.w(TAG, "Failed to clear DAO caches", e)
         }
     }
 

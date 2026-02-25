@@ -83,9 +83,10 @@ class CacheManagerTest {
 
         cacheManager.cacheTransactions(records, "MAINNET")
 
-        // Verify via getPendingNotIn (won't return confirmed, but clearAll should work)
-        val pending = cacheManager.getPendingNotIn("MAINNET", emptySet())
-        assertEquals(0, pending.size) // confirmed tx is not pending
+        val stored = db.transactionDao().getByTxHash("0xabc")
+        assertNotNull(stored)
+        assertEquals("0x174876e800", stored!!.balanceChange)
+        assertEquals("CONFIRMED", stored.status)
     }
 
     @Test

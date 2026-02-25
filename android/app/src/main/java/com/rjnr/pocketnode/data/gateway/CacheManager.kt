@@ -7,6 +7,7 @@ import com.rjnr.pocketnode.data.database.entity.BalanceCacheEntity
 import com.rjnr.pocketnode.data.database.entity.TransactionEntity
 import com.rjnr.pocketnode.data.gateway.models.BalanceResponse
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,8 +21,10 @@ class CacheManager @Inject constructor(
     suspend fun getCachedBalance(network: String): BalanceResponse? {
         return try {
             balanceCacheDao.getByNetwork(network)?.toBalanceResponse()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to read balance cache: ${e.message}")
+            Log.w(TAG, "Failed to read balance cache", e)
             null
         }
     }
@@ -29,8 +32,10 @@ class CacheManager @Inject constructor(
     suspend fun cacheBalance(response: BalanceResponse, network: String) {
         try {
             balanceCacheDao.upsert(BalanceCacheEntity.from(response, network))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to write balance cache: ${e.message}")
+            Log.w(TAG, "Failed to write balance cache", e)
         }
     }
 
@@ -53,8 +58,10 @@ class CacheManager @Inject constructor(
                 )
             }
             transactionDao.insertAll(entities)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to write transaction cache: ${e.message}")
+            Log.w(TAG, "Failed to write transaction cache", e)
         }
     }
 
@@ -78,8 +85,10 @@ class CacheManager @Inject constructor(
                 )
             )
             Log.d(TAG, "Pending transaction cached in Room: $txHash")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to cache pending tx: ${e.message}")
+            Log.w(TAG, "Failed to cache pending tx", e)
         }
     }
 
@@ -88,7 +97,10 @@ class CacheManager @Inject constructor(
             transactionDao.getPending(network)
                 .filter { it.isLocal && it.txHash !in excludeHashes }
                 .map { it.toTransactionRecord() }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
+            Log.w(TAG, "Failed to read pending transactions", e)
             emptyList()
         }
     }
@@ -100,8 +112,10 @@ class CacheManager @Inject constructor(
             transactionDao.deleteAll()
             balanceCacheDao.deleteAll()
             Log.d(TAG, "All caches cleared")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to clear caches: ${e.message}")
+            Log.w(TAG, "Failed to clear caches", e)
         }
     }
 

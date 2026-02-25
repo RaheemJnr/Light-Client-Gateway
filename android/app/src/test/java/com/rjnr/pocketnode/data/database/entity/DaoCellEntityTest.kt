@@ -38,7 +38,7 @@ class DaoCellEntityTest {
     }
 
     @Test
-    fun `withdrawing entity has withdraw fields populated`() {
+    fun `locked entity has withdraw fields populated`() {
         val entity = makeDeposited().copy(
             status = "LOCKED",
             withdrawBlockNumber = 200L,

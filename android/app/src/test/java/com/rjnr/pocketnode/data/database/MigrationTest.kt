@@ -12,8 +12,14 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Tests that MIGRATION_1_2 correctly creates header_cache and dao_cells tables
- * while preserving existing data in transactions and balance_cache.
+ * Verifies that the v2 database schema is correct and all four tables
+ * (transactions, balance_cache, header_cache, dao_cells) are accessible.
+ *
+ * NOTE: These tests use an in-memory DB which creates a fresh v2 schema,
+ * so MIGRATION_1_2 SQL is not actually exercised here. For true migration
+ * path testing (v1 → v2 with data preservation), use MigrationTestHelper
+ * in an instrumented test (src/androidTest/) with exported schemas.
+ * TODO: Add instrumented migration test with MigrationTestHelper.
  */
 @RunWith(RobolectricTestRunner::class)
 class MigrationTest {
@@ -44,7 +50,7 @@ class MigrationTest {
     }
 
     @Test
-    fun `migration SQL creates header_cache with correct schema`() = runTest {
+    fun `v2 header_cache table has correct schema`() = runTest {
         val entity = com.rjnr.pocketnode.data.database.entity.HeaderCacheEntity(
             blockHash = "0xmigtest",
             number = "0x100",
@@ -62,7 +68,7 @@ class MigrationTest {
     }
 
     @Test
-    fun `migration SQL creates dao_cells with correct schema`() = runTest {
+    fun `v2 dao_cells table has correct schema`() = runTest {
         val entity = com.rjnr.pocketnode.data.database.entity.DaoCellEntity(
             txHash = "0xmigtest",
             index = "0x0",
