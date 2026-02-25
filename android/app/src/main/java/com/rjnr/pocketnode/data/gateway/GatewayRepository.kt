@@ -32,7 +32,9 @@ class GatewayRepository @Inject constructor(
     private val keyManager: KeyManager,
     private val walletPreferences: WalletPreferences,
     private val json: Json,
-    private val transactionBuilder: TransactionBuilder
+    private val transactionBuilder: TransactionBuilder,
+    private val cacheManager: CacheManager,
+    private val daoSyncManager: DaoSyncManager
 ) {
     private val _walletInfo = MutableStateFlow<WalletInfo?>(null)
     val walletInfo: StateFlow<WalletInfo?> = _walletInfo.asStateFlow()
@@ -227,6 +229,11 @@ class GatewayRepository @Inject constructor(
             // calls while already initialized ("Already initialized!"). The only reliable path is
             // to persist the selection and restart the process — Android will relaunch the app and
             // initializeNode() will pick up the new network from WalletPreferences.
+
+            // Clear Room caches before process restart
+            cacheManager.clearAll()
+            daoSyncManager.clearAll()
+
             walletPreferences.setSelectedNetwork(target) // uses commit() — synchronous flush
             Log.d(TAG, "Persisted ${target.name}, restarting process for clean JNI init")
             android.os.Process.killProcess(android.os.Process.myPid())
@@ -426,6 +433,11 @@ class GatewayRepository @Inject constructor(
         val addr = address ?: getCurrentAddress() ?: throw Exception("Wallet not initialized")
         val info = _walletInfo.value ?: throw Exception("No wallet")
 
+        // --- Cache-first: emit cached balance immediately ---
+        cacheManager.getCachedBalance(currentNetwork.name)?.let {
+            _balance.value = it
+        }
+
         val searchKey = JniSearchKey(script = info.script)
         Log.d(TAG, "🔍 Fetching balance for script: ${json.encodeToString(searchKey)}")
 
@@ -541,6 +553,10 @@ class GatewayRepository @Inject constructor(
             asOfBlock = cap.blockNumber
         )
         _balance.value = resp
+
+        // --- Cache write ---
+        cacheManager.cacheBalance(resp, currentNetwork.name)
+
         resp
     }
 
@@ -687,9 +703,11 @@ class GatewayRepository @Inject constructor(
         val txHash = rawResult.trim('"')
         Log.d(TAG, "✅ sendTransaction: Success! txHash=$txHash (raw: $rawResult)")
 
+        // Cache pending transaction in Room
+        cacheManager.insertPendingTransaction(txHash, currentNetwork.name)
+
         // After sending, nudge the light client to rescan from a few blocks back
         // so it picks up the new change output when the tx confirms.
-        // Use CMD_SET_SCRIPTS_PARTIAL to update the block number without replacing all scripts.
         scope.launch {
             try {
                 delay(5000) // Wait a bit for tx to propagate
@@ -827,7 +845,15 @@ class GatewayRepository @Inject constructor(
             )
         }
 
-        TransactionsResponse(items, pag.lastCursor)
+        // --- Cache write: upsert JNI results into Room ---
+        cacheManager.cacheTransactions(items, currentNetwork.name)
+
+        // Merge: include pending local txs not yet returned by JNI
+        val jniTxHashes = items.map { it.txHash }.toSet()
+        val pendingLocal = cacheManager.getPendingNotIn(currentNetwork.name, jniTxHashes)
+        val mergedItems = pendingLocal + items
+
+        TransactionsResponse(mergedItems, pag.lastCursor)
     }
 
     suspend fun getTransactionStatus(txHash: String): Result<TransactionStatusResponse> = runCatching {
@@ -1005,6 +1031,33 @@ class GatewayRepository @Inject constructor(
         return null
     }
 
+    /**
+     * Cache-first header lookup: Room DB → local JNI → peer fetch.
+     * Block headers are immutable, so cached results are always valid.
+     */
+    private suspend fun getOrFetchHeader(blockHash: String): JniHeaderView? {
+        // 1. Check Room cache
+        val cached = daoSyncManager.getCachedHeader(blockHash)
+        if (cached != null) {
+            return cached.toJniHeaderView()
+        }
+
+        // 2. Try local JNI (light client may have it in memory)
+        val localJson = LightClientNative.nativeGetHeader(blockHash)
+        if (localJson != null) {
+            val header = json.decodeFromString<JniHeaderView>(localJson)
+            daoSyncManager.cacheHeader(header, currentNetwork.name)
+            return header
+        }
+
+        // 3. Fetch from peers
+        val fetched = fetchHeaderWithRetry(blockHash)
+        if (fetched != null) {
+            daoSyncManager.cacheHeader(fetched, currentNetwork.name)
+        }
+        return fetched
+    }
+
     suspend fun getDaoDeposits(): Result<List<DaoDeposit>> = runCatching {
         val info = _walletInfo.value ?: throw Exception("No wallet")
 
@@ -1071,19 +1124,10 @@ class GatewayRepository @Inject constructor(
             var depositTimestampMs = 0L
             var apc = 0.0
 
-            // Try to get block header for compensation & epoch data.
-            // Strategy: get block hash from tx → try local header → fetch from peers if needed.
+            // Get block header for compensation & epoch data (cache-first).
             val blockHash = getBlockHashForCell(cell.outPoint.txHash)
             val cellBlockHeader = if (blockHash != null) {
-                // Try local header first
-                val localHeader = LightClientNative.nativeGetHeader(blockHash)
-                if (localHeader != null) {
-                    json.decodeFromString<JniHeaderView>(localHeader)
-                } else {
-                    // Header not cached locally — fetch from peers
-                    Log.d(TAG, "  Header not local for $cellId, fetching from peers...")
-                    fetchHeaderWithRetry(blockHash)
-                }
+                getOrFetchHeader(blockHash)
             } else null
 
             if (cellBlockHeader != null) {
@@ -1111,17 +1155,12 @@ class GatewayRepository @Inject constructor(
                     withdrawEpoch = cellBlockEpoch
                     depositBlockNumber = depositBlockNum
 
-                    // Try to get original deposit header for compensation
+                    // Get original deposit header for compensation (cache-first)
                     val withdrawTxJson = LightClientNative.nativeGetTransaction(cell.outPoint.txHash)
                     val withdrawTx = withdrawTxJson?.let { json.decodeFromString<JniTransactionWithStatus>(it) }
                     val origDepositBlockHash = withdrawTx?.transaction?.headerDeps?.firstOrNull()
                     val origDepositHeader = origDepositBlockHash?.let { h ->
-                        val localHeader = LightClientNative.nativeGetHeader(h)
-                        if (localHeader != null) {
-                            json.decodeFromString<JniHeaderView>(localHeader)
-                        } else {
-                            fetchHeaderWithRetry(h)
-                        }
+                        getOrFetchHeader(h)
                     }
 
                     if (origDepositHeader != null) {
@@ -1260,6 +1299,10 @@ class GatewayRepository @Inject constructor(
 
         val txHash = sendTransaction(tx).getOrThrow()
         Log.d(TAG, "DAO deposit sent: $txHash")
+
+        // Track pending deposit in Room so UI shows it before JNI confirms
+        daoSyncManager.insertPendingDeposit(txHash, amountShannons, net.name)
+
         txHash
     }
 
@@ -1316,14 +1359,12 @@ class GatewayRepository @Inject constructor(
 
         val privateKey = keyManager.getPrivateKey()
 
-        // Get headers for max withdraw calculation
-        val depositHeaderJson = LightClientNative.nativeGetHeader(depositBlockHash)
+        // Get headers for max withdraw calculation (cache-first)
+        val depositHeader = getOrFetchHeader(depositBlockHash)
             ?: throw Exception("Failed to get deposit header")
-        val depositHeader = json.decodeFromString<JniHeaderView>(depositHeaderJson)
 
-        val withdrawHeaderJson = LightClientNative.nativeGetHeader(withdrawBlockHash)
+        val withdrawHeader = getOrFetchHeader(withdrawBlockHash)
             ?: throw Exception("Failed to get withdraw header")
-        val withdrawHeader = json.decodeFromString<JniHeaderView>(withdrawHeaderJson)
 
         val maxWithdraw = LightClientNative.nativeCalculateMaxWithdraw(
             depositHeader.dao,

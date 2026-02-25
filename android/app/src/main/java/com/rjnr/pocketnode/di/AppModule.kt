@@ -1,9 +1,18 @@
 package com.rjnr.pocketnode.di
 
 import android.content.Context
+import androidx.room.Room
 import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.crypto.Blake2b
+import com.rjnr.pocketnode.data.database.AppDatabase
+import com.rjnr.pocketnode.data.database.MIGRATION_1_2
+import com.rjnr.pocketnode.data.database.dao.BalanceCacheDao
+import com.rjnr.pocketnode.data.database.dao.DaoCellDao
+import com.rjnr.pocketnode.data.database.dao.HeaderCacheDao
+import com.rjnr.pocketnode.data.database.dao.TransactionDao
+import com.rjnr.pocketnode.data.gateway.CacheManager
+import com.rjnr.pocketnode.data.gateway.DaoSyncManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
@@ -74,11 +83,46 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
+        Room.databaseBuilder(context, AppDatabase::class.java, "pocket_node.db")
+            .addMigrations(MIGRATION_1_2)
+            .build()
+
+    @Provides
+    fun provideTransactionDao(db: AppDatabase): TransactionDao = db.transactionDao()
+
+    @Provides
+    fun provideBalanceCacheDao(db: AppDatabase): BalanceCacheDao = db.balanceCacheDao()
+
+    @Provides
+    fun provideHeaderCacheDao(db: AppDatabase): HeaderCacheDao = db.headerCacheDao()
+
+    @Provides
+    fun provideDaoCellDao(db: AppDatabase): DaoCellDao = db.daoCellDao()
+
+    @Provides
+    @Singleton
+    fun provideCacheManager(
+        transactionDao: TransactionDao,
+        balanceCacheDao: BalanceCacheDao
+    ): CacheManager = CacheManager(transactionDao, balanceCacheDao)
+
+    @Provides
+    @Singleton
+    fun provideDaoSyncManager(
+        headerCacheDao: HeaderCacheDao,
+        daoCellDao: DaoCellDao
+    ): DaoSyncManager = DaoSyncManager(headerCacheDao, daoCellDao)
+
+    @Provides
+    @Singleton
     fun provideGatewayRepository(
         @ApplicationContext context: Context,
         keyManager: KeyManager,
         walletPreferences: WalletPreferences,
         json: Json,
-        transactionBuilder: TransactionBuilder
-    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, transactionBuilder)
+        transactionBuilder: TransactionBuilder,
+        cacheManager: CacheManager,
+        daoSyncManager: DaoSyncManager
+    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, transactionBuilder, cacheManager, daoSyncManager)
 }
