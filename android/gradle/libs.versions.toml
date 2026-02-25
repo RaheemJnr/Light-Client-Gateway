@@ -25,6 +25,7 @@ firebaseBom = "33.7.0"
 firebaseAppDistribution = "5.1.0"
 ktor = "3.0.3"
 lucide = "1.1.0"
+mockk = "1.13.13"
 
 [libraries]
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serializationJson" }
@@ -70,6 +71,7 @@ camerax-view = { group = "androidx.camera", name = "camera-view", version.ref = 
 accompanist-permissions = { group = "com.google.accompanist", name = "accompanist-permissions", version.ref = "accompanistPermissions" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 compose-icons-lucide = { group = "com.composables", name = "icons-lucide", version.ref = "lucide" }
+mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
 
 # Ktor HTTP client
 ktor-client-android = { group = "io.ktor", name = "ktor-client-android", version.ref = "ktor" }
