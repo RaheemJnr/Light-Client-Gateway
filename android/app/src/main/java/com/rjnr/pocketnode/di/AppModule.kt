@@ -1,9 +1,13 @@
 package com.rjnr.pocketnode.di
 
 import android.content.Context
+import androidx.room.Room
 import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.crypto.Blake2b
+import com.rjnr.pocketnode.data.database.AppDatabase
+import com.rjnr.pocketnode.data.database.dao.BalanceCacheDao
+import com.rjnr.pocketnode.data.database.dao.TransactionDao
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.MnemonicManager
@@ -73,10 +77,25 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
+        Room.databaseBuilder(context, AppDatabase::class.java, "pocket_node.db")
+            .fallbackToDestructiveMigration()
+            .build()
+
+    @Provides
+    fun provideTransactionDao(db: AppDatabase): TransactionDao = db.transactionDao()
+
+    @Provides
+    fun provideBalanceCacheDao(db: AppDatabase): BalanceCacheDao = db.balanceCacheDao()
+
+    @Provides
+    @Singleton
     fun provideGatewayRepository(
         @ApplicationContext context: Context,
         keyManager: KeyManager,
         walletPreferences: WalletPreferences,
-        json: Json
-    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json)
+        json: Json,
+        transactionDao: TransactionDao,
+        balanceCacheDao: BalanceCacheDao
+    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, transactionDao, balanceCacheDao)
 }

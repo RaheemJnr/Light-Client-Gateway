@@ -54,3 +54,6 @@
 -dontwarn org.bouncycastle.jsse.**
 -dontwarn org.conscrypt.**
 -dontwarn org.openjsse.**
+
+# Keep Room database entities (annotations + field names used by Room codegen)
+-keep class com.rjnr.pocketnode.data.database.entity.** { *; }
