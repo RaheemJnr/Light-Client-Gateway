@@ -7,7 +7,7 @@ Pocket Node is a native Android CKB (Nervos Common Knowledge Base) wallet that r
 The app handles key generation, address derivation, transaction building/signing, balance tracking, and transaction history -- all locally on the device.
 
 - **Package**: `com.rjnr.pocketnode`
-- **Current version**: 1.0.1
+- **Current version**: 1.2.2
 - **Application ID**: `com.rjnr.pocketnode`
 
 > The `/server/` directory contains a legacy Rust gateway server (Axum). It is NOT used in the current JNI-based architecture.
