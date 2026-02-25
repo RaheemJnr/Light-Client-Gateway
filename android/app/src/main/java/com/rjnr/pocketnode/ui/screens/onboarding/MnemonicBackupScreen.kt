@@ -14,14 +14,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
+import com.rjnr.pocketnode.util.toHex
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,6 +37,7 @@ import javax.inject.Inject
 data class MnemonicBackupUiState(
     val currentStep: Int = 1,
     val words: List<String> = emptyList(),
+    val privateKeyHex: String? = null,
     val verifyPositions: List<Int> = emptyList(),
     val verifyOptions: Map<Int, List<String>> = emptyMap(),
     val userSelections: Map<Int, String> = emptyMap(),
@@ -69,8 +74,13 @@ class MnemonicBackupViewModel @Inject constructor(
             val choices = mutableListOf(correct).apply { addAll(decoys) }
             choices.apply { shuffle(random) }.toList()
         }
+        val privateKeyHex = try {
+            repository.getPrivateKey().toHex()
+        } catch (_: Exception) {
+            null
+        }
         _uiState.update {
-            it.copy(words = words, verifyPositions = positions, verifyOptions = options)
+            it.copy(words = words, privateKeyHex = privateKeyHex, verifyPositions = positions, verifyOptions = options)
         }
     }
 
@@ -166,6 +176,8 @@ fun MnemonicBackupScreen(
         when (uiState.currentStep) {
             1 -> MnemonicDisplayStep(
                 words = uiState.words,
+                privateKeyHex = uiState.privateKeyHex,
+                snackbarHostState = snackbarHostState,
                 onNext = { viewModel.advanceToVerify() },
                 modifier = Modifier.padding(padding)
             )
@@ -188,9 +200,14 @@ fun MnemonicBackupScreen(
 @Composable
 private fun MnemonicDisplayStep(
     words: List<String>,
+    privateKeyHex: String?,
+    snackbarHostState: SnackbarHostState,
     onNext: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val clipboardManager = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -255,6 +272,27 @@ private fun MnemonicDisplayStep(
                         )
                     }
                 }
+            }
+        }
+
+        // Copy Private Key
+        if (privateKeyHex != null) {
+            OutlinedButton(
+                onClick = {
+                    clipboardManager.setText(AnnotatedString("0x$privateKeyHex"))
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Private key copied to clipboard")
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    Lucide.KeyRound,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Copy Private Key")
             }
         }
 
