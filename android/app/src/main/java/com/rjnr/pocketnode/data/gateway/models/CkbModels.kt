@@ -109,15 +109,15 @@ data class TransactionRecord(
      */
     fun formattedAmount(): String {
         val amount = balanceChangeAsCkb()
-        // Use smart formatting: 2 decimals for >= 1 CKB, more for tiny amounts
         val formattedValue = when {
             amount >= 1.0 -> String.format("%.2f", amount)
             amount >= 0.0001 -> String.format("%.4f", amount)
             else -> String.format("%.8f", amount)
         }
         return when (direction) {
-            "in" -> "+$formattedValue CKB"
-            "out" -> "-$formattedValue CKB"
+            "in", "dao_unlock" -> "+$formattedValue CKB"
+            "out", "dao_deposit" -> "-$formattedValue CKB"
+            "dao_withdraw" -> "$formattedValue CKB"
             "self" -> "$formattedValue CKB"
             else -> "$formattedValue CKB"
         }
@@ -134,20 +134,14 @@ data class TransactionRecord(
         }
     }
 
-    /**
-     * Check if this is an incoming transaction
-     */
     fun isIncoming(): Boolean = direction == "in"
-
-    /**
-     * Check if this is an outgoing transaction
-     */
     fun isOutgoing(): Boolean = direction == "out"
-
-    /**
-     * Check if this is a self-transfer
-     */
     fun isSelfTransfer(): Boolean = direction == "self"
+
+    fun isDaoDeposit(): Boolean = direction == "dao_deposit"
+    fun isDaoWithdraw(): Boolean = direction == "dao_withdraw"
+    fun isDaoUnlock(): Boolean = direction == "dao_unlock"
+    fun isDaoTransaction(): Boolean = isDaoRelated || direction.startsWith("dao_")
 
     /**
      * Check if transaction is confirmed

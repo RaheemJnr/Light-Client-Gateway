@@ -826,9 +826,31 @@ class GatewayRepository @Inject constructor(
                 0  // unknown = treat as pending
             }
 
-            // Check if any output has the DAO type script
-            val isDaoRelated = tx.outputs.any { output ->
+            // Detect DAO operation type from output type scripts and header deps:
+            //   Deposit:  DAO output + no header deps
+            //   Withdraw: DAO output + 1 header dep (deposit block)
+            //   Unlock:   no DAO output + 2 header deps (deposit + withdraw blocks)
+            val hasDaoOutput = tx.outputs.any { output ->
                 output.type?.codeHash == DaoConstants.DAO_CODE_HASH
+            }
+
+            val (finalDirection, finalAmount) = if (hasDaoOutput) {
+                val daoOutputCapacity = tx.outputs
+                    .first { it.type?.codeHash == DaoConstants.DAO_CODE_HASH }
+                    .capacity.removePrefix("0x").toLong(16)
+                if (tx.headerDeps.isEmpty()) {
+                    "dao_deposit" to daoOutputCapacity
+                } else {
+                    "dao_withdraw" to daoOutputCapacity
+                }
+            } else if (tx.headerDeps.size >= 2) {
+                // Unlock: show total CKB returned (deposit + compensation)
+                val totalOutput = cellInteractions
+                    .filter { it.ioType == "output" }
+                    .sumOf { it.ioCapacity.removePrefix("0x").toLong(16) }
+                "dao_unlock" to totalOutput
+            } else {
+                direction to amount
             }
 
             TransactionRecord(
@@ -836,12 +858,12 @@ class GatewayRepository @Inject constructor(
                 blockNumber = firstInteraction.blockNumber,
                 blockHash = headerInfo.hash ?: "0x0",
                 timestamp = 0L,
-                balanceChange = "0x${amount.toString(16)}",
-                direction = direction,
-                fee = "0x0", // Fee calculation could be added if needed: Sum(Inputs) - Sum(Outputs)
+                balanceChange = "0x${finalAmount.toString(16)}",
+                direction = finalDirection,
+                fee = "0x0",
                 confirmations = confirmations,
                 blockTimestampHex = headerInfo.timestampHex,
-                isDaoRelated = isDaoRelated
+                isDaoRelated = hasDaoOutput || tx.headerDeps.size >= 2
             )
         }
 

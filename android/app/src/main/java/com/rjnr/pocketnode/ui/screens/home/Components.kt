@@ -274,10 +274,8 @@ fun TransactionItems(
     transaction: TransactionRecord,
     onClick: () -> Unit
 ) {
-    val isIncoming = transaction.isIncoming()
-    val isOutgoing = transaction.isOutgoing()
-    val isSelf = transaction.isSelfTransfer()
     val isPending = transaction.isPending()
+    val daoColor = MaterialTheme.colorScheme.primary
 
     val backgroundColor by animateColorAsState(
         targetValue = if (isPending) {
@@ -289,19 +287,37 @@ fun TransactionItems(
     )
 
     val (icon, iconBgColor, amountColor) = when {
-        isIncoming -> Triple(
+        transaction.isDaoDeposit() -> Triple(
+            Lucide.Landmark,
+            daoColor.copy(alpha = 0.15f),
+            daoColor
+        )
+
+        transaction.isDaoWithdraw() -> Triple(
+            Lucide.Landmark,
+            PendingAmber.copy(alpha = 0.15f),
+            PendingAmber
+        )
+
+        transaction.isDaoUnlock() -> Triple(
             Lucide.ArrowDownLeft,
             SuccessGreen.copy(alpha = 0.15f),
             SuccessGreen
         )
 
-        isOutgoing -> Triple(
+        transaction.isIncoming() -> Triple(
+            Lucide.ArrowDownLeft,
+            SuccessGreen.copy(alpha = 0.15f),
+            SuccessGreen
+        )
+
+        transaction.isOutgoing() -> Triple(
             Lucide.ArrowUpRight,
             ErrorRed.copy(alpha = 0.15f),
             ErrorRed
         )
 
-        isSelf -> Triple(
+        transaction.isSelfTransfer() -> Triple(
             Lucide.ArrowLeftRight,
             MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
             MaterialTheme.colorScheme.onSurface
@@ -311,7 +327,6 @@ fun TransactionItems(
             Lucide.CircleHelp,
             Color(0xFFF2994A).copy(alpha = 0.15f),
             Color(0xFFF2994A)
-
         )
     }
     Surface(
@@ -381,14 +396,20 @@ fun TransactionItems(
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                if (transaction.isDaoRelated) {
+                if (transaction.isDaoTransaction()) {
+                    val badgeLabel = when {
+                        transaction.isDaoDeposit() -> "Dao Deposit"
+                        transaction.isDaoWithdraw() -> "Dao Withdraw"
+                        transaction.isDaoUnlock() -> "Dao Unlock"
+                        else -> "DAO"
+                    }
                     Surface(
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        color = daoColor.copy(alpha = 0.1f),
                         shape = CircleShape
                     ) {
                         Text(
-                            "DAO",
-                            color = MaterialTheme.colorScheme.primary,
+                            badgeLabel,
+                            color = daoColor,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)

@@ -105,6 +105,15 @@ fun MainScreen(
                             restoreState = true
                         }
                     },
+                    onNavigateToActivity = {
+                        innerNav.navigate(BottomTab.Activity.route) {
+                            popUpTo(innerNav.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                 )
             }
             composable(BottomTab.Activity.route) {

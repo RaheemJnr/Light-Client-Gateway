@@ -266,17 +266,27 @@ private fun ActivityTransactionItem(
     transaction: TransactionRecord,
     onClick: () -> Unit
 ) {
-    val isIncoming = transaction.isIncoming()
-    val isSelf = transaction.isSelfTransfer()
     val isPending = transaction.isPending()
 
     val primaryColor = MaterialTheme.colorScheme.primary
     val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     val (icon, iconBg, amountColor) = when {
-        isIncoming -> Triple(Lucide.ArrowDownLeft, primaryColor.copy(alpha = 0.15f), primaryColor)
-        isSelf -> Triple(Lucide.ArrowLeftRight, onSurfaceVariantColor.copy(alpha = 0.15f), onSurfaceVariantColor)
+        transaction.isDaoDeposit() -> Triple(Lucide.Landmark, primaryColor.copy(alpha = 0.15f), primaryColor)
+        transaction.isDaoWithdraw() -> Triple(Lucide.Landmark, AmberPending.copy(alpha = 0.15f), AmberPending)
+        transaction.isDaoUnlock() -> Triple(Lucide.ArrowDownLeft, SuccessGreen.copy(alpha = 0.15f), SuccessGreen)
+        transaction.isIncoming() -> Triple(Lucide.ArrowDownLeft, primaryColor.copy(alpha = 0.15f), primaryColor)
+        transaction.isSelfTransfer() -> Triple(Lucide.ArrowLeftRight, onSurfaceVariantColor.copy(alpha = 0.15f), onSurfaceVariantColor)
         else -> Triple(Lucide.ArrowUpRight, ErrorRed.copy(alpha = 0.15f), ErrorRed)
+    }
+
+    val typeLabel = when {
+        transaction.isDaoDeposit() -> "Dao Deposit"
+        transaction.isDaoWithdraw() -> "Dao Withdraw"
+        transaction.isDaoUnlock() -> "Dao Unlock"
+        transaction.isIncoming() -> "Received"
+        transaction.isSelfTransfer() -> "Self Transfer"
+        else -> "Sent"
     }
 
     Row(
@@ -308,11 +318,7 @@ private fun ActivityTransactionItem(
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = when {
-                        isIncoming -> "Received"
-                        isSelf -> "Self Transfer"
-                        else -> "Sent"
-                    },
+                    text = typeLabel,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium
                 )
@@ -440,11 +446,11 @@ private fun TransactionDetailSheet(
     onOpenExplorer: (String) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val isIncoming = transaction.isIncoming()
-    val isOutgoing = transaction.isOutgoing()
     val amountColor = when {
-        isIncoming -> MaterialTheme.colorScheme.primary
-        isOutgoing -> ErrorRed
+        transaction.isDaoDeposit() -> MaterialTheme.colorScheme.primary
+        transaction.isDaoWithdraw() -> AmberPending
+        transaction.isDaoUnlock() || transaction.isIncoming() -> MaterialTheme.colorScheme.primary
+        transaction.isOutgoing() -> ErrorRed
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
@@ -493,8 +499,11 @@ private fun TransactionDetailSheet(
                 ) {
                     Text(
                         text = when {
-                            isIncoming -> "Received"
-                            isOutgoing -> "Sent"
+                            transaction.isDaoDeposit() -> "Dao Deposit"
+                            transaction.isDaoWithdraw() -> "Dao Withdraw"
+                            transaction.isDaoUnlock() -> "Dao Unlock"
+                            transaction.isIncoming() -> "Received"
+                            transaction.isOutgoing() -> "Sent"
                             else -> "Amount"
                         },
                         style = MaterialTheme.typography.labelMedium,

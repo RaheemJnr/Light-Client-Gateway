@@ -95,6 +95,7 @@ fun HomeScreen(
     onNavigateToBackup: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onNavigateToDao: () -> Unit = {},
+    onNavigateToActivity: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -294,6 +295,7 @@ fun HomeScreen(
                 onNavigateToSend = onNavigateToSend,
                 onNavigateToReceive = onNavigateToReceive,
                 onNavigateToDao = onNavigateToDao,
+                onNavigateToActivity = onNavigateToActivity,
                 dismissBackupReminder = { viewModel.dismissBackupReminder() },
                 clipboardManager = clipboardManager,
                 snackbarHostState = snackbarHostState,
@@ -313,6 +315,7 @@ fun HomeScreenUI(
     onNavigateToSend: () -> Unit,
     onNavigateToReceive: () -> Unit,
     onNavigateToDao: () -> Unit = {},
+    onNavigateToActivity: () -> Unit = {},
     dismissBackupReminder: () -> Unit,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
     snackbarHostState: SnackbarHostState,
@@ -398,7 +401,7 @@ fun HomeScreenUI(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
-                    TextButton(onClick = {}) {
+                    TextButton(onClick = onNavigateToActivity) {
                         Text(
                             text = "See All",
                             style = MaterialTheme.typography.bodySmall,
