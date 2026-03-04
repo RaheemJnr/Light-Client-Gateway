@@ -75,8 +75,8 @@ class ActivityViewModel @Inject constructor(
     fun filteredTransactions(state: ActivityUiState): List<TransactionRecord> {
         return when (state.filter) {
             Filter.ALL -> state.transactions
-            Filter.RECEIVED -> state.transactions.filter { it.isIncoming() }
-            Filter.SENT -> state.transactions.filter { it.isOutgoing() }
+            Filter.RECEIVED -> state.transactions.filter { it.isIncoming() || it.isDaoUnlock() }
+            Filter.SENT -> state.transactions.filter { it.isOutgoing() || it.isDaoDeposit() || it.isDaoWithdraw() }
         }
     }
 }

@@ -17,8 +17,8 @@ android {
         applicationId = "com.rjnr.pocketnode"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.2.2"
+        versionCode = 4
+        versionName = "1.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -161,8 +161,8 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.test:core:1.6.1")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
     testImplementation(libs.mockk)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
 
 tasks.register<Exec>("cargoBuild") {

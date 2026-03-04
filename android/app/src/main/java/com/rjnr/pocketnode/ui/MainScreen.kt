@@ -2,6 +2,7 @@ package com.rjnr.pocketnode.ui
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -24,6 +25,7 @@ import com.composables.icons.lucide.Settings
 import com.composables.icons.lucide.Wallet
 import com.rjnr.pocketnode.ui.navigation.BottomTab
 import com.rjnr.pocketnode.ui.screens.activity.ActivityScreen
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.rjnr.pocketnode.ui.screens.dao.DaoScreen
 import com.rjnr.pocketnode.ui.screens.home.HomeScreen
 import com.rjnr.pocketnode.ui.screens.settings.SettingsScreen
@@ -37,6 +39,8 @@ fun MainScreen(
     onNavigateToBackup: () -> Unit,
     onNavigateToSecuritySettings: () -> Unit,
     onNavigateToImport: () -> Unit,
+    onNavigateToPinVerify: () -> Unit = {},
+    daoPinVerified: Boolean = false,
 ) {
     val innerNav = rememberNavController()
     val navBackStackEntry by innerNav.currentBackStackEntryAsState()
@@ -44,7 +48,9 @@ fun MainScreen(
 
     Scaffold(
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface
+            ) {
                 BottomTab.entries.forEach { tab ->
                     val selected = currentRoute == tab.route
                     NavigationBarItem(
@@ -90,13 +96,35 @@ fun MainScreen(
                             restoreState = true
                         }
                     },
+                    onNavigateToDao = {
+                        innerNav.navigate(BottomTab.DAO.route) {
+                            popUpTo(innerNav.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onNavigateToActivity = {
+                        innerNav.navigate(BottomTab.Activity.route) {
+                            popUpTo(innerNav.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                 )
             }
             composable(BottomTab.Activity.route) {
                 ActivityScreen()
             }
             composable(BottomTab.DAO.route) {
-                DaoScreen()
+                DaoScreen(
+                    viewModel = hiltViewModel(),
+                    onNavigateToPinVerify = onNavigateToPinVerify,
+                    daoPinVerified = daoPinVerified
+                )
             }
             composable(BottomTab.Settings.route) {
                 SettingsScreen(

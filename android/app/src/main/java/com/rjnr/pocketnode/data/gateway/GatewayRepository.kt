@@ -32,6 +32,7 @@ class GatewayRepository @Inject constructor(
     private val keyManager: KeyManager,
     private val walletPreferences: WalletPreferences,
     private val json: Json,
+    private val transactionBuilder: TransactionBuilder,
     private val cacheManager: CacheManager,
     private val daoSyncManager: DaoSyncManager
 ) {
@@ -390,17 +391,9 @@ class GatewayRepository @Inject constructor(
 
         Log.d(TAG, "🔄 Sync mode $syncMode: tip=$tipHeight, targetBlock=$finalBlockNum")
 
-        val scriptStatus = JniScriptStatus(
-            script = info.script,
-            scriptType = "lock",
-            blockNumber = "0x${finalBlockNum.toLongOrNull()?.toString(16) ?: "0"}"
-        )
-        
-        Log.d(TAG, "📝 Registering script with status: ${json.encodeToString(scriptStatus)}")
+        val blockNumberHex = "0x${finalBlockNum.toLongOrNull()?.toString(16) ?: "0"}"
+        val jsonStr = buildScriptStatusList(info.script, blockNumberHex)
 
-        val list = listOf(scriptStatus)
-        val jsonStr = json.encodeToString(list)
-        
         Log.d(TAG, "📡 Calling nativeSetScripts with: $jsonStr")
         val result = LightClientNative.nativeSetScripts(jsonStr, LightClientNative.CMD_SET_SCRIPTS_ALL)
         if (!result) throw Exception("Failed to set scripts")
@@ -501,10 +494,17 @@ class GatewayRepository @Inject constructor(
                 cellsPag.objects.forEach { cell ->
                     val outpointKey = "${cell.outPoint.txHash}:${cell.outPoint.index}"
                     if (outpointKey !in spentOutpoints) {
-                        val cellCapacity = cell.output.capacity.removePrefix("0x").toLong(16)
-                        liveCapacity += cellCapacity
-                        liveCellCount++
-                        Log.d(TAG, "✅ Live cell: $outpointKey = $cellCapacity shannons")
+                        // Exclude cells with type scripts (DAO cells, etc.) from available balance
+                        // Like Neuron: typeHash IS NULL AND hasData = false
+                        if (cell.output.type != null) {
+                            val cellCapacity = cell.output.capacity.removePrefix("0x").toLong(16)
+                            Log.d(TAG, "🔒 DAO/typed cell excluded from balance: $outpointKey = $cellCapacity shannons")
+                        } else {
+                            val cellCapacity = cell.output.capacity.removePrefix("0x").toLong(16)
+                            liveCapacity += cellCapacity
+                            liveCellCount++
+                            Log.d(TAG, "✅ Live cell: $outpointKey = $cellCapacity shannons")
+                        }
                     } else {
                         Log.d(TAG, "❌ Spent cell: $outpointKey (filtered out)")
                     }
@@ -524,15 +524,16 @@ class GatewayRepository @Inject constructor(
                         val rescanFrom = (earliestBlock - 100).coerceAtLeast(0L)
                         Log.d(TAG, "🔄 Rescan from block $rescanFrom (earliest tx at $earliestBlock)")
 
-                        val scriptStatus = JniScriptStatus(
+                        val blockNumberHex = "0x${rescanFrom.toString(16)}"
+                        val lockStatus = JniScriptStatus(
                             script = info.script,
                             scriptType = "lock",
-                            blockNumber = "0x${rescanFrom.toString(16)}"
+                            blockNumber = blockNumberHex
                         )
-                        val jsonStr = json.encodeToString(listOf(scriptStatus))
-                        LightClientNative.nativeSetScripts(jsonStr, LightClientNative.CMD_SET_SCRIPTS_ALL)
+                        val jsonStr = json.encodeToString(listOf(lockStatus))
+                        LightClientNative.nativeSetScripts(jsonStr, LightClientNative.CMD_SET_SCRIPTS_PARTIAL)
                         walletPreferences.setLastSyncedBlock(rescanFrom)
-                        Log.d(TAG, "✅ Rescan triggered - balance should update on next refresh")
+                        Log.d(TAG, "✅ Rescan triggered (partial) - balance should update on next refresh")
                     }
                 }
             }
@@ -661,7 +662,12 @@ class GatewayRepository @Inject constructor(
             if (!isLive) {
                 Log.d(TAG, "❌ getCells: Filtering out spent cell: $outpointKey")
             }
-            isLive
+            // Also exclude cells with type scripts (DAO cells) — they can't be spent as regular inputs
+            val hasTypeScript = cell.output.type != null
+            if (hasTypeScript && isLive) {
+                Log.d(TAG, "🔒 getCells: Excluding typed cell (DAO): $outpointKey")
+            }
+            isLive && !hasTypeScript
         }.map { it.toCell() }
 
         Log.d(TAG, "✅ getCells: ${liveCells.size} live cells (filtered from ${pag.objects.size} total)")
@@ -697,13 +703,11 @@ class GatewayRepository @Inject constructor(
         val txHash = rawResult.trim('"')
         Log.d(TAG, "✅ sendTransaction: Success! txHash=$txHash (raw: $rawResult)")
 
-        // --- Insert pending transaction into Room cache ---
+        // Cache pending transaction in Room
         cacheManager.insertPendingTransaction(txHash, currentNetwork.name)
 
-        // After sending a transaction, we need to re-register the script from a few blocks back
-        // to ensure the light client scans the block containing our new change output.
-        // This is necessary because the change output is created when the tx is confirmed,
-        // and the light client needs to scan that block to index the new cell.
+        // After sending, nudge the light client to rescan from a few blocks back
+        // so it picks up the new change output when the tx confirms.
         scope.launch {
             try {
                 delay(5000) // Wait a bit for tx to propagate
@@ -711,22 +715,20 @@ class GatewayRepository @Inject constructor(
                 if (tipStr != null) {
                     val tip = json.decodeFromString<JniHeaderView>(tipStr)
                     val tipNumber = tip.number.removePrefix("0x").toLong(16)
-                    // Re-register from a few blocks back to catch the tx when it confirms
                     val rescanFrom = (tipNumber - 10).coerceAtLeast(0L)
-                    Log.d(TAG, "🔄 Re-registering script from block $rescanFrom to catch change output")
+                    Log.d(TAG, "🔄 Partial re-register from block $rescanFrom to catch change output")
 
                     val info = _walletInfo.value
                     if (info != null) {
-                        val scriptStatus = JniScriptStatus(
+                        val blockNumberHex = "0x${rescanFrom.toString(16)}"
+                        // Only register lock script (not DAO type) with PARTIAL mode
+                        val lockStatus = JniScriptStatus(
                             script = info.script,
                             scriptType = "lock",
-                            blockNumber = "0x${rescanFrom.toString(16)}"
+                            blockNumber = blockNumberHex
                         )
-                        val jsonStr = json.encodeToString(listOf(scriptStatus))
-                        LightClientNative.nativeSetScripts(jsonStr, LightClientNative.CMD_SET_SCRIPTS_ALL)
-
-                        // Update saved progress to rescan from here
-                        walletPreferences.setLastSyncedBlock(rescanFrom)
+                        val jsonStr = json.encodeToString(listOf(lockStatus))
+                        LightClientNative.nativeSetScripts(jsonStr, LightClientNative.CMD_SET_SCRIPTS_PARTIAL)
                     }
                 }
             } catch (e: Exception) {
@@ -824,16 +826,44 @@ class GatewayRepository @Inject constructor(
                 0  // unknown = treat as pending
             }
 
+            // Detect DAO operation type from output type scripts and header deps:
+            //   Deposit:  DAO output + no header deps
+            //   Withdraw: DAO output + 1 header dep (deposit block)
+            //   Unlock:   no DAO output + 2 header deps (deposit + withdraw blocks)
+            val hasDaoOutput = tx.outputs.any { output ->
+                output.type?.codeHash == DaoConstants.DAO_CODE_HASH
+            }
+
+            val (finalDirection, finalAmount) = if (hasDaoOutput) {
+                val daoOutputCapacity = tx.outputs
+                    .first { it.type?.codeHash == DaoConstants.DAO_CODE_HASH }
+                    .capacity.removePrefix("0x").toLong(16)
+                if (tx.headerDeps.isEmpty()) {
+                    "dao_deposit" to daoOutputCapacity
+                } else {
+                    "dao_withdraw" to daoOutputCapacity
+                }
+            } else if (tx.headerDeps.size >= 2) {
+                // Unlock: show total CKB returned (deposit + compensation)
+                val totalOutput = cellInteractions
+                    .filter { it.ioType == "output" }
+                    .sumOf { it.ioCapacity.removePrefix("0x").toLong(16) }
+                "dao_unlock" to totalOutput
+            } else {
+                direction to amount
+            }
+
             TransactionRecord(
                 txHash = txHash,
                 blockNumber = firstInteraction.blockNumber,
                 blockHash = headerInfo.hash ?: "0x0",
                 timestamp = 0L,
-                balanceChange = "0x${amount.toString(16)}",
-                direction = direction,
-                fee = "0x0", // Fee calculation could be added if needed: Sum(Inputs) - Sum(Outputs)
+                balanceChange = "0x${finalAmount.toString(16)}",
+                direction = finalDirection,
+                fee = "0x0",
                 confirmations = confirmations,
-                blockTimestampHex = headerInfo.timestampHex
+                blockTimestampHex = headerInfo.timestampHex,
+                isDaoRelated = hasDaoOutput || tx.headerDeps.size >= 2
             )
         }
 
@@ -944,6 +974,493 @@ class GatewayRepository @Inject constructor(
 
     suspend fun callRpc(method: String): String? = withContext(Dispatchers.IO) {
         LightClientNative.callRpc(method)
+    }
+
+    // ========================================
+    // DAO Operations
+    // ========================================
+
+    suspend fun getCurrentEpoch(): Result<EpochInfo> = runCatching {
+        val headerJson = LightClientNative.nativeGetTipHeader()
+            ?: throw Exception("Failed to get tip header")
+        val header = json.decodeFromString<JniHeaderView>(headerJson)
+        EpochInfo.fromHex(header.epoch)
+    }
+
+    /**
+     * Helper: get block hash for a cell by looking up its transaction.
+     * The light client's get_transaction often returns null block_hash,
+     * so we fall back to fetch_transaction which requests from peers.
+     */
+    private suspend fun getBlockHashForCell(txHash: String): String? {
+        // Try local cache first
+        val txJson = LightClientNative.nativeGetTransaction(txHash)
+        if (txJson != null) {
+            val txWithStatus = json.decodeFromString<JniTransactionWithStatus>(txJson)
+            if (txWithStatus.txStatus.blockHash != null) {
+                return txWithStatus.txStatus.blockHash
+            }
+            Log.d(TAG, "  get_transaction found tx but no block_hash, trying fetch_transaction...")
+        } else {
+            Log.d(TAG, "  get_transaction returned null, trying fetch_transaction...")
+        }
+
+        // Fallback: fetch from peers (may need retries as it's async)
+        for (attempt in 1..3) {
+            val fetchJson = LightClientNative.nativeFetchTransaction(txHash)
+            if (fetchJson == null) {
+                Log.w(TAG, "  fetch_transaction returned null on attempt $attempt")
+                break
+            }
+            val fetchResp = json.decodeFromString<JniFetchTransactionResponse>(fetchJson)
+            Log.d(TAG, "  fetch_transaction attempt $attempt: status=${fetchResp.status}")
+            if (fetchResp.status == "fetched" && fetchResp.data != null) {
+                return fetchResp.data.txStatus.blockHash
+            }
+            // "fetching" or "added" — wait and retry
+            if (fetchResp.status == "fetching" || fetchResp.status == "added") {
+                delay(2000)
+            } else {
+                break // unknown status, don't retry
+            }
+        }
+        return null
+    }
+
+    /**
+     * Fetch a block header from peers via nativeFetchHeader with retries.
+     * The light client only stores headers for blocks it has processed locally;
+     * for older blocks we need to request them from the peer network.
+     */
+    private suspend fun fetchHeaderWithRetry(blockHash: String): JniHeaderView? {
+        for (attempt in 1..3) {
+            val fetchJson = LightClientNative.nativeFetchHeader(blockHash)
+            if (fetchJson == null) {
+                Log.w(TAG, "  fetch_header returned null on attempt $attempt")
+                break
+            }
+            val fetchResp = json.decodeFromString<JniFetchHeaderResponse>(fetchJson)
+            Log.d(TAG, "  fetch_header attempt $attempt: status=${fetchResp.status}")
+            if (fetchResp.status == "fetched" && fetchResp.data != null) {
+                return fetchResp.data
+            }
+            if (fetchResp.status == "fetching" || fetchResp.status == "added") {
+                delay(2000)
+            } else {
+                break
+            }
+        }
+        return null
+    }
+
+    /**
+     * Cache-first header lookup: Room DB → local JNI → peer fetch.
+     * Block headers are immutable, so cached results are always valid.
+     */
+    private suspend fun getOrFetchHeader(blockHash: String): JniHeaderView? {
+        // 1. Check Room cache
+        val cached = daoSyncManager.getCachedHeader(blockHash)
+        if (cached != null) {
+            return cached.toJniHeaderView()
+        }
+
+        // 2. Try local JNI (light client may have it in memory)
+        val localJson = LightClientNative.nativeGetHeader(blockHash)
+        if (localJson != null) {
+            val header = json.decodeFromString<JniHeaderView>(localJson)
+            daoSyncManager.cacheHeader(header, currentNetwork.name)
+            return header
+        }
+
+        // 3. Fetch from peers
+        val fetched = fetchHeaderWithRetry(blockHash)
+        if (fetched != null) {
+            daoSyncManager.cacheHeader(fetched, currentNetwork.name)
+        }
+        return fetched
+    }
+
+    suspend fun getDaoDeposits(): Result<List<DaoDeposit>> = runCatching {
+        val info = _walletInfo.value ?: throw Exception("No wallet")
+
+        // Query ALL cells by lock script (like Neuron), then filter locally for DAO type
+        val searchKey = JniSearchKey(
+            script = info.script,
+            scriptType = "lock",
+            withData = true
+        )
+        val searchKeyJson = json.encodeToString(searchKey)
+
+        // Paginate all cells by lock script
+        val allCellObjects = mutableListOf<JniCell>()
+        var cellsCursor: String? = null
+        do {
+            val pageJson = LightClientNative.nativeGetCells(searchKeyJson, "desc", 100, cellsCursor)
+                ?: break
+            val page = json.decodeFromString<JniPagination<JniCell>>(pageJson)
+            allCellObjects += page.objects
+            cellsCursor = page.lastCursor?.takeUnless { it == cellsCursor }
+        } while (cellsCursor != null)
+
+        // Filter locally: only cells whose type script matches DAO code hash
+        val daoCells = allCellObjects.filter { cell ->
+            cell.output.type?.codeHash == DaoConstants.DAO_CODE_HASH
+        }
+        Log.d(TAG, "📋 getDaoDeposits: ${daoCells.size} DAO cells out of ${allCellObjects.size} total")
+
+        // Paginate transactions to find spent outpoints
+        val spentOutpoints = mutableSetOf<String>()
+        var txCursor: String? = null
+        do {
+            val txJson = LightClientNative.nativeGetTransactions(searchKeyJson, "desc", 100, txCursor)
+                ?: break
+            val txPag = json.decodeFromString<JniPagination<JniTxWithCell>>(txJson)
+            txPag.objects.forEach { txWithCell ->
+                txWithCell.transaction.inputs.forEach { input ->
+                    spentOutpoints.add("${input.previousOutput.txHash}:${input.previousOutput.index}")
+                }
+            }
+            txCursor = txPag.lastCursor?.takeUnless { it == txCursor }
+        } while (txCursor != null)
+
+        val liveDaoCells = daoCells.filter { cell ->
+            val key = "${cell.outPoint.txHash}:${cell.outPoint.index}"
+            key !in spentOutpoints
+        }
+        Log.d(TAG, "📋 getDaoDeposits: ${liveDaoCells.size} live DAO cells")
+
+        val pagination = JniPagination(objects = liveDaoCells, lastCursor = null)
+
+        val currentEpoch = getCurrentEpoch().getOrNull()
+
+        val deposits = mutableListOf<DaoDeposit>()
+        for (jniCell in pagination.objects) {
+            val cell = jniCell.toCell()
+            val data = cell.data.removePrefix("0x")
+            val cellId = "${cell.outPoint.txHash.take(20)}...:${cell.outPoint.index}"
+            val capacityShannons = cell.capacity.removePrefix("0x").toLong(16)
+
+            // Determine if deposit or withdrawing cell
+            val isWithdrawing = data.length == 16 && data != "0000000000000000"
+            Log.d(TAG, "🏦 Processing DAO cell: $cellId, data=$data, isWithdrawing=$isWithdrawing, capacity=$capacityShannons")
+
+            var depositBlockNumber = cell.blockNumber.removePrefix("0x").toLong(16)
+            var depositBlockHash = "" // may remain empty if header unavailable
+            var depositEpoch: EpochInfo? = null
+            var withdrawBlockNumber: Long? = null
+            var withdrawBlockHash: String? = null
+            var withdrawEpoch: EpochInfo? = null
+            var compensation = 0L
+            var unlockEpoch: EpochInfo? = null
+            var lockRemainingHours: Int? = null
+            var depositTimestampMs = 0L
+            var apc = 0.0
+
+            // Get block header for compensation & epoch data (cache-first).
+            val blockHash = getBlockHashForCell(cell.outPoint.txHash)
+            val cellBlockHeader = if (blockHash != null) {
+                getOrFetchHeader(blockHash)
+            } else null
+
+            if (cellBlockHeader != null) {
+                val cellBlockEpoch = EpochInfo.fromHex(cellBlockHeader.epoch)
+                depositBlockHash = cellBlockHeader.hash
+                depositEpoch = cellBlockEpoch
+                // Default timestamp from this cell's block; overridden for withdrawing cells below
+                depositTimestampMs = cellBlockHeader.timestamp.removePrefix("0x").toLong(16)
+
+                if (isWithdrawing) {
+                    // Cell data contains deposit block number as 8-byte LE
+                    val depositBlockNum = data.chunked(2)
+                        .map { it.toInt(16).toByte() }
+                        .toByteArray()
+                        .let { bytes ->
+                            var num = 0L
+                            for (i in bytes.indices) {
+                                num = num or ((bytes[i].toLong() and 0xFF) shl (i * 8))
+                            }
+                            num
+                        }
+
+                    withdrawBlockNumber = cell.blockNumber.removePrefix("0x").toLong(16)
+                    withdrawBlockHash = cellBlockHeader.hash
+                    withdrawEpoch = cellBlockEpoch
+                    depositBlockNumber = depositBlockNum
+
+                    // Get original deposit header for compensation (cache-first)
+                    val withdrawTxJson = LightClientNative.nativeGetTransaction(cell.outPoint.txHash)
+                    val withdrawTx = withdrawTxJson?.let { json.decodeFromString<JniTransactionWithStatus>(it) }
+                    val origDepositBlockHash = withdrawTx?.transaction?.headerDeps?.firstOrNull()
+                    // Preserve the hash even if full header fetch fails
+                    if (origDepositBlockHash != null) {
+                        depositBlockHash = origDepositBlockHash
+                    }
+                    val origDepositHeader = origDepositBlockHash?.let { h ->
+                        getOrFetchHeader(h)
+                    }
+
+                    if (origDepositHeader != null) {
+                        depositBlockHash = origDepositHeader.hash
+                        depositEpoch = EpochInfo.fromHex(origDepositHeader.epoch)
+                        depositTimestampMs = origDepositHeader.timestamp.removePrefix("0x").toLong(16)
+                        val maxWithdraw = LightClientNative.nativeCalculateMaxWithdraw(
+                            origDepositHeader.dao, cellBlockHeader.dao, capacityShannons, 61_00000000L
+                        )
+                        if (maxWithdraw >= 0) compensation = maxWithdraw - capacityShannons
+                        val sinceHex = LightClientNative.nativeCalculateUnlockEpoch(
+                            origDepositHeader.epoch, cellBlockHeader.epoch
+                        )
+                        if (sinceHex != null) {
+                            val epochVal = sinceHex.removePrefix("0x").toLong(16) and 0x00FF_FFFF_FFFF_FFFFL
+                            unlockEpoch = EpochInfo.fromHex("0x${epochVal.toString(16)}")
+                            if (currentEpoch != null && unlockEpoch!!.value > currentEpoch.value) {
+                                lockRemainingHours = ((unlockEpoch!!.value - currentEpoch.value) * DaoConstants.HOURS_PER_EPOCH).toInt()
+                            }
+                        }
+                    }
+                } else {
+                    // Deposited cell — calculate compensation using current tip header
+                    val tipJson = LightClientNative.nativeGetTipHeader()
+                    if (tipJson != null) {
+                        val tipHeader = json.decodeFromString<JniHeaderView>(tipJson)
+                        val maxWithdraw = LightClientNative.nativeCalculateMaxWithdraw(
+                            cellBlockHeader.dao, tipHeader.dao, capacityShannons, 61_00000000L
+                        )
+                        if (maxWithdraw >= 0) compensation = maxWithdraw - capacityShannons
+                    }
+                }
+            } else {
+                Log.d(TAG, "  No header available for $cellId — showing deposit with basic info")
+                if (isWithdrawing) {
+                    val depositBlockNum = data.chunked(2)
+                        .map { it.toInt(16).toByte() }
+                        .toByteArray()
+                        .let { bytes ->
+                            var num = 0L
+                            for (i in bytes.indices) {
+                                num = num or ((bytes[i].toLong() and 0xFF) shl (i * 8))
+                            }
+                            num
+                        }
+                    withdrawBlockNumber = cell.blockNumber.removePrefix("0x").toLong(16)
+                    depositBlockNumber = depositBlockNum
+                }
+            }
+
+            // Compute per-deposit APC when enough time has elapsed
+            if (compensation > 0 && depositTimestampMs > 0 && capacityShannons > 0) {
+                val elapsedDays = (System.currentTimeMillis() - depositTimestampMs) / 86_400_000.0
+                if (elapsedDays >= 1.0) {
+                    apc = (compensation.toDouble() / capacityShannons) / (elapsedDays / 365.25) * 100.0
+                }
+            }
+
+            // Calculate cycle progress (best-effort with available epoch data)
+            val depositedEpochs = if (currentEpoch != null && depositEpoch != null) {
+                (currentEpoch.value - depositEpoch.value).coerceAtLeast(0.0)
+            } else 0.0
+            val cycleProgress = ((depositedEpochs % DaoConstants.WITHDRAW_EPOCHS) / DaoConstants.WITHDRAW_EPOCHS).toFloat()
+
+            val status = determineDaoStatus(
+                isWithdrawingCell = isWithdrawing,
+                hasPendingWithdraw = false,
+                hasPendingUnlock = false,
+                hasPendingDeposit = false,
+                currentEpoch = currentEpoch,
+                unlockEpoch = unlockEpoch
+            )
+
+            deposits.add(DaoDeposit(
+                outPoint = cell.outPoint,
+                capacity = capacityShannons,
+                status = status,
+                depositBlockNumber = depositBlockNumber,
+                depositBlockHash = depositBlockHash,
+                depositEpoch = depositEpoch,
+                withdrawBlockNumber = withdrawBlockNumber,
+                withdrawBlockHash = withdrawBlockHash,
+                withdrawEpoch = withdrawEpoch,
+                compensation = compensation.coerceAtLeast(0L),
+                unlockEpoch = unlockEpoch,
+                lockRemainingHours = lockRemainingHours,
+                compensationCycleProgress = cycleProgress,
+                cyclePhase = cyclePhaseFromProgress(cycleProgress),
+                depositTimestamp = depositTimestampMs,
+                apc = apc
+            ))
+            Log.d(TAG, "✅ DAO deposit added: $cellId, status=$status, capacity=$capacityShannons")
+        }
+        deposits
+    }
+
+    suspend fun getDaoOverview(): Result<DaoOverview> = runCatching {
+        val deposits = getDaoDeposits().getOrThrow()
+        val active = deposits.filter { it.status != DaoCellStatus.COMPLETED }
+        val completed = deposits.filter { it.status == DaoCellStatus.COMPLETED }
+
+        // Capacity-weighted average APC from deposits that have APC data
+        val depositsWithApc = active.filter { it.apc > 0.0 }
+        val weightedApc = if (depositsWithApc.isNotEmpty()) {
+            val totalCap = depositsWithApc.sumOf { it.capacity }.toDouble()
+            depositsWithApc.sumOf { it.apc * it.capacity } / totalCap
+        } else 2.47 // fallback until headers are available
+
+        DaoOverview(
+            totalLocked = active.sumOf { it.capacity },
+            totalCompensation = deposits.sumOf { it.compensation },
+            currentApc = weightedApc,
+            activeCount = active.size,
+            completedCount = completed.size
+        )
+    }
+
+    suspend fun depositToDao(amountShannons: Long): Result<String> = runCatching {
+        val info = _walletInfo.value ?: throw Exception("No wallet")
+        val net = _network.value
+
+        require(amountShannons >= DaoConstants.MIN_DEPOSIT_SHANNONS) {
+            "Minimum deposit is ${DaoConstants.MIN_DEPOSIT_SHANNONS / 100_000_000} CKB"
+        }
+
+        val cellsResponse = getCells().getOrThrow()
+        val privateKey = keyManager.getPrivateKey()
+
+        val tx = transactionBuilder.buildDaoDeposit(
+            amountShannons = amountShannons,
+            availableCells = cellsResponse.items,
+            senderScript = info.script,
+            privateKey = privateKey,
+            network = net
+        )
+
+        val txHash = sendTransaction(tx).getOrThrow()
+        Log.d(TAG, "DAO deposit sent: $txHash")
+
+        // Track pending deposit in Room so UI shows it before JNI confirms
+        daoSyncManager.insertPendingDeposit(txHash, amountShannons, net.name)
+
+        txHash
+    }
+
+    suspend fun withdrawFromDao(depositOutPoint: OutPoint): Result<String> = runCatching {
+        val info = _walletInfo.value ?: throw Exception("No wallet")
+        val net = _network.value
+
+        // Find the deposit cell
+        val deposits = getDaoDeposits().getOrThrow()
+        val deposit = deposits.find { it.outPoint == depositOutPoint }
+            ?: throw Exception("Deposit not found")
+
+        val privateKey = keyManager.getPrivateKey()
+
+        require(deposit.depositBlockHash.isNotBlank()) {
+            "Deposit block hash unavailable. Please retry after sync."
+        }
+
+        // Build a Cell from the deposit for the transaction builder
+        val depositCell = Cell(
+            outPoint = deposit.outPoint,
+            capacity = "0x${deposit.capacity.toString(16)}",
+            blockNumber = "0x${deposit.depositBlockNumber.toString(16)}",
+            lock = info.script,
+            type = DaoConstants.DAO_TYPE_SCRIPT,
+            data = "0x" + DaoConstants.DAO_DEPOSIT_DATA.joinToString("") { "%02x".format(it) }
+        )
+
+        val tx = transactionBuilder.buildDaoWithdraw(
+            depositCell = depositCell,
+            depositBlockNumber = deposit.depositBlockNumber,
+            depositBlockHash = deposit.depositBlockHash,
+            senderScript = info.script,
+            privateKey = privateKey,
+            network = net
+        )
+
+        val txHash = sendTransaction(tx).getOrThrow()
+        Log.d(TAG, "DAO withdraw (phase 1) sent: $txHash")
+        txHash
+    }
+
+    suspend fun unlockDao(
+        withdrawingOutPoint: OutPoint
+    ): Result<String> = runCatching {
+        val info = _walletInfo.value ?: throw Exception("No wallet")
+        val net = _network.value
+
+        val deposits = getDaoDeposits().getOrThrow()
+        val deposit = deposits.find { it.outPoint == withdrawingOutPoint }
+            ?: throw Exception("Withdrawing cell not found")
+
+        require(deposit.status == DaoCellStatus.UNLOCKABLE) {
+            "Cell is not unlockable yet (status: ${deposit.status})"
+        }
+
+        // Use the deposit object's hashes — it is the single source of truth
+        val depositBlockHash = deposit.depositBlockHash
+        require(depositBlockHash.isNotBlank()) {
+            "Deposit block hash unavailable. Please retry after sync."
+        }
+        val withdrawBlockHash = deposit.withdrawBlockHash
+            ?: throw Exception("Withdraw block hash unavailable. Please retry after sync.")
+
+        val privateKey = keyManager.getPrivateKey()
+
+        // Get headers for max withdraw calculation (cache-first)
+        val depositHeader = getOrFetchHeader(depositBlockHash)
+            ?: throw Exception("Failed to get deposit header")
+
+        val withdrawHeader = getOrFetchHeader(withdrawBlockHash)
+            ?: throw Exception("Failed to get withdraw header")
+
+        val maxWithdraw = LightClientNative.nativeCalculateMaxWithdraw(
+            depositHeader.dao,
+            withdrawHeader.dao,
+            deposit.capacity,
+            61_00000000L
+        )
+        if (maxWithdraw < 0) throw Exception("Failed to calculate max withdraw capacity")
+
+        val sinceValue = LightClientNative.nativeCalculateUnlockEpoch(
+            depositHeader.epoch,
+            withdrawHeader.epoch
+        ) ?: throw Exception("Failed to calculate unlock epoch")
+
+        val withdrawingCell = Cell(
+            outPoint = deposit.outPoint,
+            capacity = "0x${deposit.capacity.toString(16)}",
+            blockNumber = "0x${(deposit.withdrawBlockNumber ?: throw Exception("No withdraw block")).toString(16)}",
+            lock = info.script,
+            type = DaoConstants.DAO_TYPE_SCRIPT
+        )
+
+        val tx = transactionBuilder.buildDaoUnlock(
+            withdrawingCell = withdrawingCell,
+            maxWithdraw = maxWithdraw,
+            sinceValue = sinceValue,
+            depositBlockHash = depositBlockHash,
+            withdrawBlockHash = withdrawBlockHash,
+            senderScript = info.script,
+            privateKey = privateKey,
+            network = net
+        )
+
+        val txHash = sendTransaction(tx).getOrThrow()
+        Log.d(TAG, "DAO unlock (phase 2) sent: $txHash")
+        txHash
+    }
+
+    /**
+     * Build the script status list for registration (lock script only).
+     * DAO cells are discovered via lock script query and filtered locally by type hash,
+     * following the same pattern as Neuron wallet.
+     */
+    private fun buildScriptStatusList(lockScript: Script, blockNumberHex: String): String {
+        val lockStatus = JniScriptStatus(
+            script = lockScript,
+            scriptType = "lock",
+            blockNumber = blockNumberHex
+        )
+        return json.encodeToString(listOf(lockStatus))
     }
 
     companion object {

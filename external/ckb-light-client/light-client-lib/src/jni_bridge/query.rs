@@ -121,10 +121,11 @@ pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_native
         }
     };
 
-    let h256 = match H256::from_str(&hash_str) {
+    let hash_hex = hash_str.strip_prefix("0x").unwrap_or(&hash_str);
+    let h256 = match H256::from_str(hash_hex) {
         Ok(h) => h,
         Err(e) => {
-            error!("Invalid hash: {}", e);
+            error!("nativeGetHeader: invalid hash '{}': {}", hash_str, e);
             return ptr::null_mut();
         }
     };
@@ -243,10 +244,11 @@ pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_native
         }
     };
 
-    let h256 = match H256::from_str(&hash_str) {
+    let hash_hex = hash_str.strip_prefix("0x").unwrap_or(&hash_str);
+    let h256 = match H256::from_str(hash_hex) {
         Ok(h) => h,
         Err(e) => {
-            error!("Invalid hash: {}", e);
+            error!("nativeFetchHeader: invalid hash '{}': {}", hash_str, e);
             return ptr::null_mut();
         }
     };

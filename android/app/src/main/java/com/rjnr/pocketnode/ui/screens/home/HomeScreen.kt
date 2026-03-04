@@ -94,6 +94,8 @@ fun HomeScreen(
     onNavigateToReceive: () -> Unit = {},
     onNavigateToBackup: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    onNavigateToDao: () -> Unit = {},
+    onNavigateToActivity: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -292,6 +294,8 @@ fun HomeScreen(
                 onNavigateToBackup = onNavigateToBackup,
                 onNavigateToSend = onNavigateToSend,
                 onNavigateToReceive = onNavigateToReceive,
+                onNavigateToDao = onNavigateToDao,
+                onNavigateToActivity = onNavigateToActivity,
                 dismissBackupReminder = { viewModel.dismissBackupReminder() },
                 onToggleBalanceVisibility = { viewModel.toggleBalanceVisibility() },
                 clipboardManager = clipboardManager,
@@ -311,6 +315,8 @@ fun HomeScreenUI(
     onNavigateToBackup: () -> Unit,
     onNavigateToSend: () -> Unit,
     onNavigateToReceive: () -> Unit,
+    onNavigateToDao: () -> Unit = {},
+    onNavigateToActivity: () -> Unit = {},
     dismissBackupReminder: () -> Unit,
     onToggleBalanceVisibility: () -> Unit,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
@@ -371,7 +377,8 @@ fun HomeScreenUI(
             item {
                 ActionRow(
                     onSend = onNavigateToSend,
-                    onReceive = onNavigateToReceive
+                    onReceive = onNavigateToReceive,
+                    onStake = onNavigateToDao
                 )
             }
 
@@ -398,7 +405,7 @@ fun HomeScreenUI(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
-                    TextButton(onClick = {}) {
+                    TextButton(onClick = onNavigateToActivity) {
                         Text(
                             text = "See All",
                             style = MaterialTheme.typography.bodySmall,

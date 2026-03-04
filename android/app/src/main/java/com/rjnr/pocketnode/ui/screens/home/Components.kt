@@ -166,7 +166,8 @@ fun WalletBalanceCard(
 @Composable
 fun ActionRow(
     onSend: () -> Unit,
-    onReceive: () -> Unit
+    onReceive: () -> Unit,
+    onStake: () -> Unit
 ) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         ActionButton(
@@ -186,10 +187,9 @@ fun ActionRow(
         ActionButton(
             icon = Lucide.Landmark,
             label = "STAKE",
-            variant = ActionVariant.Disabled,
-            badge = "M2",
+            variant = ActionVariant.Outline,
             modifier = Modifier.weight(1f),
-            onAction = {}
+            onAction = onStake
         )
     }
 }
@@ -284,10 +284,8 @@ fun TransactionItems(
     transaction: TransactionRecord,
     onClick: () -> Unit
 ) {
-    val isIncoming = transaction.isIncoming()
-    val isOutgoing = transaction.isOutgoing()
-    val isSelf = transaction.isSelfTransfer()
     val isPending = transaction.isPending()
+    val daoColor = MaterialTheme.colorScheme.primary
 
     val backgroundColor by animateColorAsState(
         targetValue = if (isPending) {
@@ -299,19 +297,37 @@ fun TransactionItems(
     )
 
     val (icon, iconBgColor, amountColor) = when {
-        isIncoming -> Triple(
+        transaction.isDaoDeposit() -> Triple(
+            Lucide.Landmark,
+            daoColor.copy(alpha = 0.15f),
+            daoColor
+        )
+
+        transaction.isDaoWithdraw() -> Triple(
+            Lucide.Landmark,
+            PendingAmber.copy(alpha = 0.15f),
+            PendingAmber
+        )
+
+        transaction.isDaoUnlock() -> Triple(
             Lucide.ArrowDownLeft,
             SuccessGreen.copy(alpha = 0.15f),
             SuccessGreen
         )
 
-        isOutgoing -> Triple(
+        transaction.isIncoming() -> Triple(
+            Lucide.ArrowDownLeft,
+            SuccessGreen.copy(alpha = 0.15f),
+            SuccessGreen
+        )
+
+        transaction.isOutgoing() -> Triple(
             Lucide.ArrowUpRight,
             ErrorRed.copy(alpha = 0.15f),
             ErrorRed
         )
 
-        isSelf -> Triple(
+        transaction.isSelfTransfer() -> Triple(
             Lucide.ArrowLeftRight,
             MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
             MaterialTheme.colorScheme.onSurface
@@ -321,7 +337,6 @@ fun TransactionItems(
             Lucide.CircleHelp,
             Color(0xFFF2994A).copy(alpha = 0.15f),
             Color(0xFFF2994A)
-
         )
     }
     Surface(
@@ -387,25 +402,50 @@ fun TransactionItems(
 
                 }
             }
-            Surface(
-                color = if (transaction.isConfirmed()) {
-                    SuccessGreen.copy(alpha = 0.15f)
-                } else {
-                    PendingAmber.copy(alpha = 0.15f)
-                },
-                shape = CircleShape
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text(
-                    if (transaction.isConfirmed()) "Confirmed" else "Pending",
+                if (transaction.isDaoTransaction()) {
+                    val badgeLabel = when {
+                        transaction.isDaoDeposit() -> "DAO Deposit"
+                        transaction.isDaoWithdraw() -> "DAO Withdraw"
+                        transaction.isDaoUnlock() -> "DAO Unlock"
+                        else -> "DAO"
+                    }
+                    Surface(
+                        color = daoColor.copy(alpha = 0.1f),
+                        shape = CircleShape
+                    ) {
+                        Text(
+                            badgeLabel,
+                            color = daoColor,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                Surface(
                     color = if (transaction.isConfirmed()) {
-                        SuccessGreen
+                        SuccessGreen.copy(alpha = 0.15f)
                     } else {
-                        PendingAmber
+                        PendingAmber.copy(alpha = 0.15f)
                     },
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                )
+                    shape = CircleShape
+                ) {
+                    Text(
+                        if (transaction.isConfirmed()) "Confirmed" else "Pending",
+                        color = if (transaction.isConfirmed()) {
+                            SuccessGreen
+                        } else {
+                            PendingAmber
+                        },
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+                }
             }
         }
     }
@@ -428,7 +468,8 @@ private fun WalletBalanceCardPreview() {
 private fun ActionRowPreview() {
     ActionRow(
         onSend = {},
-        onReceive = {}
+        onReceive = {},
+        onStake = {}
     )
 }
 

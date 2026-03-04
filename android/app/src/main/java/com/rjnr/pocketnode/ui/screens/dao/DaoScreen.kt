@@ -1,204 +1,491 @@
 package com.rjnr.pocketnode.ui.screens.dao
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
+import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
+import com.rjnr.pocketnode.data.auth.AuthMethod
+import com.rjnr.pocketnode.data.gateway.models.DaoAction
+import com.rjnr.pocketnode.data.gateway.models.DaoDeposit
+import com.rjnr.pocketnode.data.gateway.models.DaoOverview
+import com.rjnr.pocketnode.data.gateway.models.DaoTab
+import com.rjnr.pocketnode.data.gateway.models.NetworkType
+import com.rjnr.pocketnode.ui.screens.dao.components.DaoDepositCard
+import com.rjnr.pocketnode.ui.screens.dao.components.DepositBottomSheet
+import com.rjnr.pocketnode.ui.theme.PendingAmber
+import com.rjnr.pocketnode.ui.theme.TestnetOrange
+
+private val DaoGreen = Color(0xFF1ED882)
 
 @Composable
-fun DaoScreen() {
+fun DaoScreen(
+    viewModel: DaoViewModel,
+    onNavigateToPinVerify: () -> Unit = {},
+    daoPinVerified: Boolean = false
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val availableBalance by viewModel.availableBalance.collectAsState()
+    val networkType by viewModel.networkType.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    var showDepositSheet by remember { mutableStateOf(false) }
+    var withdrawTarget by remember { mutableStateOf<DaoDeposit?>(null) }
+    var unlockTarget by remember { mutableStateOf<DaoDeposit?>(null) }
+    val context = LocalContext.current
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(modifier = Modifier.height(16.dp))
+
+            DaoOverviewCard(
+                overview = uiState.overview,
+                availableBalance = availableBalance,
+                networkType = networkType,
+                onDepositClick = { showDepositSheet = true }
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            DaoTabRow(
+                selectedTab = uiState.selectedTab,
+                activeCount = uiState.overview.activeCount,
+                completedCount = uiState.overview.completedCount,
+                onTabSelected = viewModel::selectTab
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Pending action indicator
+            uiState.pendingAction?.let { action ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = PendingAmber.copy(alpha = 0.1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = PendingAmber
+                        )
+                        Text(
+                            text = when (action) {
+                                is DaoAction.Depositing -> "Depositing ${formatCkb(action.amount)} CKB..."
+                                is DaoAction.Withdrawing -> "Withdrawing from DAO..."
+                                is DaoAction.Unlocking -> "Unlocking DAO deposit..."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = PendingAmber
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            val deposits = when (uiState.selectedTab) {
+                DaoTab.ACTIVE -> uiState.activeDeposits
+                DaoTab.COMPLETED -> uiState.completedDeposits
+            }
+
+            if (uiState.isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else if (deposits.isEmpty() && uiState.selectedTab == DaoTab.ACTIVE) {
+                DaoEmptyState(onDepositClick = { showDepositSheet = true })
+            } else if (deposits.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "No completed deposits",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Fully unlocked deposits are consumed on-chain. Check your transaction history for past DAO activity.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 32.dp)
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(vertical = 8.dp)
+                ) {
+                    items(deposits, key = { "${it.outPoint.txHash}:${it.outPoint.index}" }) { deposit ->
+                        DaoDepositCard(
+                            deposit = deposit,
+                            onWithdraw = { withdrawTarget = deposit },
+                            onUnlock = { unlockTarget = deposit }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // Snackbar for errors
+    uiState.error?.let { error ->
+        LaunchedEffect(error) {
+            snackbarHostState.showSnackbar(error)
+            viewModel.clearError()
+        }
+    }
+
+    // Handle PIN auth result
+    LaunchedEffect(daoPinVerified) {
+        if (daoPinVerified) {
+            viewModel.executeDeposit()
+        }
+    }
+
+    // Handle auth requirement (biometric prompt or PIN navigation)
+    LaunchedEffect(uiState.requiresAuth, uiState.authMethod) {
+        if (!uiState.requiresAuth) return@LaunchedEffect
+        when (uiState.authMethod) {
+            AuthMethod.BIOMETRIC -> {
+                val activity = context as? FragmentActivity ?: run {
+                    viewModel.cancelAuth()
+                    return@LaunchedEffect
+                }
+                val executor = ContextCompat.getMainExecutor(context)
+                val prompt = BiometricPrompt(
+                    activity, executor,
+                    object : BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                            viewModel.executeDeposit()
+                        }
+                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                            if (errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
+                                viewModel.dismissAuthPrompt()
+                                onNavigateToPinVerify()
+                            } else {
+                                viewModel.cancelAuth()
+                            }
+                        }
+                    }
+                )
+                val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                    .setTitle("Authenticate to Deposit")
+                    .setSubtitle("Verify your identity to deposit to Nervos DAO")
+                    .setNegativeButtonText("Use PIN")
+                    .build()
+                prompt.authenticate(promptInfo)
+            }
+            AuthMethod.PIN -> {
+                viewModel.dismissAuthPrompt()
+                onNavigateToPinVerify()
+            }
+            null -> {}
+        }
+    }
+
+    // Deposit bottom sheet
+    if (showDepositSheet) {
+        DepositBottomSheet(
+            availableBalance = availableBalance,
+            currentApc = uiState.overview.currentApc,
+            onDeposit = { amount ->
+                showDepositSheet = false
+                viewModel.deposit(amount)
+            },
+            onDismiss = { showDepositSheet = false }
+        )
+    }
+
+    // Withdraw confirmation
+    withdrawTarget?.let { deposit ->
+        AlertDialog(
+            onDismissRequest = { withdrawTarget = null },
+            title = { Text("Withdraw from DAO") },
+            text = {
+                Column {
+                    Text("Deposit: ${formatCkb(deposit.capacity)} CKB")
+                    Text("Earned: +${formatCkb(deposit.compensation)} CKB")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Your funds will remain locked until the current 180-epoch cycle ends.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.withdraw(deposit)
+                    withdrawTarget = null
+                }) {
+                    Text("Withdraw")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { withdrawTarget = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Unlock confirmation
+    unlockTarget?.let { deposit ->
+        val totalReceived = deposit.capacity + deposit.compensation
+        AlertDialog(
+            onDismissRequest = { unlockTarget = null },
+            title = { Text("Unlock DAO Deposit") },
+            text = {
+                Column {
+                    Text("Deposit: ${formatCkb(deposit.capacity)} CKB")
+                    Text("Compensation: +${formatCkb(deposit.compensation)} CKB")
+                    Text("Total received: ${formatCkb(totalReceived)} CKB")
+                    Text("Fee: ~0.001 CKB")
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.unlock(deposit)
+                    unlockTarget = null
+                }) {
+                    Text("Unlock")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { unlockTarget = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun DaoOverviewCard(
+    overview: DaoOverview,
+    availableBalance: Long,
+    networkType: NetworkType,
+    onDepositClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp)
+        ) {
+            Text(
+                text = "Nervos DAO",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = formatCkb(overview.totalLocked) + " CKB",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "+${formatCkb(overview.totalCompensation)} CKB",
+                style = MaterialTheme.typography.bodyMedium,
+                color = DaoGreen
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "APC ~${String.format("%.2f", overview.currentApc)}%",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Available Balance",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "${formatCkb(availableBalance)} CKB",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Text(
+                text = if (networkType == NetworkType.TESTNET) "Testnet" else "Mainnet",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (networkType == NetworkType.TESTNET) TestnetOrange
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = onDepositClick,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Deposit")
+            }
+        }
+    }
+}
+
+@Composable
+private fun DaoTabRow(
+    selectedTab: DaoTab,
+    activeCount: Int,
+    completedCount: Int,
+    onTabSelected: (DaoTab) -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(4.dp)
+        ) {
+            val tabs = listOf(
+                DaoTab.ACTIVE to "Active ($activeCount)",
+                DaoTab.COMPLETED to "Completed ($completedCount)"
+            )
+            tabs.forEach { (tab, label) ->
+                val isSelected = selectedTab == tab
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isSelected) MaterialTheme.colorScheme.surface
+                            else Color.Transparent,
+                    onClick = { onTabSelected(tab) }
+                ) {
+                    Text(
+                        text = label,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (isSelected) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DaoEmptyState(onDepositClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp)
-            .background(MaterialTheme.colorScheme.surface),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    )
-    {
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 24.dp)
-                .background(MaterialTheme.colorScheme.surface)
-        ) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surface),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                FeatureCard()
-
-                Spacer(Modifier.height(32.dp)) // mt-8
-                ExternalCaption()
-            }
-        }
-
-    }
-}
-
-@Composable
-private fun FeatureCard() {
-    val cardShape = RoundedCornerShape(12.dp) // rounded-lg
-
-    Column(
-        modifier = Modifier
-            .widthIn(max = 380.dp) // max-w-sm
-            .fillMaxWidth()
-            .clip(cardShape)
-            .background(color = MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, cardShape)
-            .padding(32.dp), // p-8
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        // Icon Section with glow
-        Box(
-            modifier = Modifier
-                .padding(bottom = 24.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            // blurred green glow behind lock
-            Box(
-                modifier = Modifier
-                    .size(84.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.20f))
-                    .blur(28.dp)
-            )
-            Icon(
-                imageVector = Icons.Filled.Lock,
-                contentDescription = "Lock",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(48.dp)
-            )
-        }
-
-        Text(
-            text = "Nervos DAO",
-            fontSize = 22.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(bottom = 12.dp)
+        Icon(
+            imageVector = Icons.Filled.Lock,
+            contentDescription = null,
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
         )
 
+        Spacer(modifier = Modifier.height(16.dp))
+
         Text(
-            text = "Earn compensation by locking CKB in the Nervos DAO. Secure your assets while contributing to the network's decentralization.",
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = "Earn rewards with Nervos DAO",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "Deposit CKB to earn ~2.5% annual compensation. 180-epoch lock cycles.",
+            style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
-            lineHeight = 20.sp,
-            modifier = Modifier.padding(bottom = 24.dp)
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        // Separator
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(MaterialTheme.colorScheme.onSurface)
-        )
+        Spacer(modifier = Modifier.height(24.dp))
 
-        Spacer(Modifier.height(24.dp))
-
-        Text(
-            text = "Coming in the next update",
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-            modifier = Modifier.padding(bottom = 24.dp)
-        )
-
-        // Disabled button
         Button(
-            onClick = {},
-            enabled = false,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp) // py-3 feel
+            onClick = onDepositClick,
+            shape = RoundedCornerShape(12.dp)
         ) {
-            Icon(
-                imageVector = Icons.Filled.Notifications,
-                contentDescription = "Notify",
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = "Notify Me",
-                fontWeight = FontWeight.Medium,
-                fontSize = 16.sp
-            )
+            Text("Make First Deposit")
         }
 
+        Spacer(modifier = Modifier.height(16.dp))
+
         Text(
-            text = "M2 — Nervos DAO integration",
-            fontSize = 10.sp,
-            letterSpacing = 2.sp, // tracking-widest-ish
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.60f),
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(top = 24.dp)
+            text = "Not seeing expected deposits? Try resyncing from an earlier block in Settings.",
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
         )
     }
 }
 
-@Composable
-private fun ExternalCaption() {
-    Text(
-        text = "Deposit, withdraw, and track DAO compensation — coming soon.",
-        fontSize = 14.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = TextAlign.Center,
-        lineHeight = 18.sp,
-        modifier = Modifier.padding(horizontal = 32.dp) // px-8
-    )
+internal fun formatCkb(shannons: Long): String {
+    val ckb = shannons / 100_000_000.0
+    return String.format("%,.2f", ckb)
 }
 
-
-@Preview(showBackground = true)
-@Composable
-fun DaoScreenPreview() {
-    CkbWalletTheme {
-        DaoScreen()
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun FeatureCardPreview() {
-    CkbWalletTheme {
-        FeatureCard()
-    }
+internal fun formatCkbFull(shannons: Long): String {
+    val ckb = shannons / 100_000_000.0
+    return String.format("%,.8f", ckb)
 }

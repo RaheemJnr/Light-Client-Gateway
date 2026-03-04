@@ -71,9 +71,11 @@ data class Transaction(
 
 @Serializable
 data class Cell(
-    @SerialName("out_point") val outPoint: OutPoint,
+    @SerialName("out_point")
+    val outPoint: OutPoint,
     val capacity: String,
-    @SerialName("block_number") val blockNumber: String,
+    @SerialName("block_number")
+    val blockNumber: String,
     val lock: Script,
     val type: Script? = null,
     val data: String = "0x"
@@ -92,7 +94,9 @@ data class TransactionRecord(
     val fee: String,
     val confirmations: Int,
     // Raw hex timestamp from CKB block header (e.g. "0x18c8d0a7a00"), null if not yet fetched
-    @SerialName("block_timestamp_hex") val blockTimestampHex: String? = null
+    @SerialName("block_timestamp_hex") val blockTimestampHex: String? = null,
+    // True if the transaction interacts with a DAO type script cell
+    @SerialName("is_dao_related") val isDaoRelated: Boolean = false
 ) {
     /**
      * Get balance change as CKB amount (from shannons)
@@ -107,15 +111,15 @@ data class TransactionRecord(
      */
     fun formattedAmount(): String {
         val amount = balanceChangeAsCkb()
-        // Use smart formatting: 2 decimals for >= 1 CKB, more for tiny amounts
         val formattedValue = when {
             amount >= 1.0 -> String.format("%.2f", amount)
             amount >= 0.0001 -> String.format("%.4f", amount)
             else -> String.format("%.8f", amount)
         }
         return when (direction) {
-            "in" -> "+$formattedValue CKB"
-            "out" -> "-$formattedValue CKB"
+            "in", "dao_unlock" -> "+$formattedValue CKB"
+            "out", "dao_deposit" -> "-$formattedValue CKB"
+            "dao_withdraw" -> "$formattedValue CKB"
             "self" -> "$formattedValue CKB"
             else -> "$formattedValue CKB"
         }
@@ -132,20 +136,14 @@ data class TransactionRecord(
         }
     }
 
-    /**
-     * Check if this is an incoming transaction
-     */
     fun isIncoming(): Boolean = direction == "in"
-
-    /**
-     * Check if this is an outgoing transaction
-     */
     fun isOutgoing(): Boolean = direction == "out"
-
-    /**
-     * Check if this is a self-transfer
-     */
     fun isSelfTransfer(): Boolean = direction == "self"
+
+    fun isDaoDeposit(): Boolean = direction == "dao_deposit"
+    fun isDaoWithdraw(): Boolean = direction == "dao_withdraw"
+    fun isDaoUnlock(): Boolean = direction == "dao_unlock"
+    fun isDaoTransaction(): Boolean = isDaoRelated || direction.startsWith("dao_")
 
     /**
      * Check if transaction is confirmed

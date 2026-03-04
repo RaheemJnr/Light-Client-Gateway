@@ -1,6 +1,7 @@
 package com.rjnr.pocketnode.data.transaction
 
 import android.util.Log
+import com.rjnr.pocketnode.data.gateway.DaoConstants
 import com.rjnr.pocketnode.data.gateway.models.*
 import com.rjnr.pocketnode.data.validation.NetworkValidator
 import com.rjnr.pocketnode.data.wallet.AddressUtils
@@ -205,6 +206,159 @@ class TransactionBuilder @Inject constructor(
         return signTransaction(unsignedTx, privateKey, selectedCells.size)
     }
 
+    // ========================================
+    // DAO Transaction Builders
+    // ========================================
+
+    fun buildDaoDeposit(
+        amountShannons: Long,
+        availableCells: List<Cell>,
+        senderScript: Script,
+        privateKey: ByteArray,
+        network: NetworkType
+    ): Transaction {
+        require(amountShannons >= DaoConstants.MIN_DEPOSIT_SHANNONS) {
+            "Minimum DAO deposit is ${DaoConstants.MIN_DEPOSIT_SHANNONS / 100_000_000} CKB"
+        }
+
+        val (selectedCells, totalInput) = selectCells(availableCells, amountShannons + DEFAULT_FEE)
+        if (totalInput < amountShannons + DEFAULT_FEE) {
+            throw Exception("Insufficient balance. Need ${amountShannons + DEFAULT_FEE}, have $totalInput")
+        }
+
+        val fee = estimateTransferFee(selectedCells.size, 2) // deposit + change
+        val change = totalInput - amountShannons - fee
+
+        val inputs = selectedCells.map { CellInput(previousOutput = it.outPoint) }
+
+        val outputs = mutableListOf(
+            CellOutput(
+                capacity = "0x${amountShannons.toString(16)}",
+                lock = senderScript,
+                type = DaoConstants.DAO_TYPE_SCRIPT
+            )
+        )
+        val outputsData = mutableListOf(
+            "0x" + DaoConstants.DAO_DEPOSIT_DATA.joinToString("") { "%02x".format(it) }
+        )
+
+        if (change >= MIN_CELL_CAPACITY) {
+            outputs.add(CellOutput(
+                capacity = "0x${change.toString(16)}",
+                lock = senderScript
+            ))
+            outputsData.add("0x")
+        }
+
+        val secp256k1Dep = when (network) {
+            NetworkType.TESTNET -> CellDep.SECP256K1_TESTNET
+            NetworkType.MAINNET -> CellDep.SECP256K1_MAINNET
+        }
+
+        val unsignedTx = Transaction(
+            cellDeps = listOf(secp256k1Dep, DaoConstants.daoCellDep(network)),
+            headerDeps = emptyList(),
+            cellInputs = inputs,
+            cellOutputs = outputs,
+            outputsData = outputsData,
+            witnesses = inputs.map { "0x" }
+        )
+
+        return signTransaction(unsignedTx, privateKey, inputs.size)
+    }
+
+    fun buildDaoWithdraw(
+        depositCell: Cell,
+        depositBlockNumber: Long,
+        depositBlockHash: String,
+        senderScript: Script,
+        privateKey: ByteArray,
+        network: NetworkType
+    ): Transaction {
+        val capacity = depositCell.capacity
+
+        // Output mirrors the deposit cell but with block number as data
+        val blockNumberBytes = ByteArray(8)
+        var num = depositBlockNumber
+        for (i in 0 until 8) {
+            blockNumberBytes[i] = (num and 0xFF).toByte()
+            num = num shr 8
+        }
+        val blockNumberHex = "0x" + blockNumberBytes.joinToString("") { "%02x".format(it) }
+
+        val inputs = listOf(CellInput(previousOutput = depositCell.outPoint))
+        val outputs = listOf(
+            CellOutput(
+                capacity = capacity,
+                lock = senderScript,
+                type = DaoConstants.DAO_TYPE_SCRIPT
+            )
+        )
+
+        val secp256k1Dep = when (network) {
+            NetworkType.TESTNET -> CellDep.SECP256K1_TESTNET
+            NetworkType.MAINNET -> CellDep.SECP256K1_MAINNET
+        }
+
+        val unsignedTx = Transaction(
+            cellDeps = listOf(secp256k1Dep, DaoConstants.daoCellDep(network)),
+            headerDeps = listOf(depositBlockHash),
+            cellInputs = inputs,
+            cellOutputs = outputs,
+            outputsData = listOf(blockNumberHex),
+            witnesses = listOf("0x")
+        )
+
+        return signTransaction(unsignedTx, privateKey, 1)
+    }
+
+    fun buildDaoUnlock(
+        withdrawingCell: Cell,
+        maxWithdraw: Long,
+        sinceValue: String,
+        depositBlockHash: String,
+        withdrawBlockHash: String,
+        senderScript: Script,
+        privateKey: ByteArray,
+        network: NetworkType
+    ): Transaction {
+        val fee = DEFAULT_FEE
+
+        val inputs = listOf(
+            CellInput(
+                since = sinceValue,
+                previousOutput = withdrawingCell.outPoint
+            )
+        )
+
+        val outputs = listOf(
+            CellOutput(
+                capacity = "0x${(maxWithdraw - fee).toString(16)}",
+                lock = senderScript
+                // No type script — funds return to normal cell
+            )
+        )
+
+        val secp256k1Dep = when (network) {
+            NetworkType.TESTNET -> CellDep.SECP256K1_TESTNET
+            NetworkType.MAINNET -> CellDep.SECP256K1_MAINNET
+        }
+
+        // output_type in witness = 8-byte LE index of deposit header in header_deps (index 0)
+        val depositHeaderIndex = ByteArray(8) // 8 zero bytes = index 0
+
+        val unsignedTx = Transaction(
+            cellDeps = listOf(secp256k1Dep, DaoConstants.daoCellDep(network)),
+            headerDeps = listOf(depositBlockHash, withdrawBlockHash),
+            cellInputs = inputs,
+            cellOutputs = outputs,
+            outputsData = listOf("0x"),
+            witnesses = listOf("0x")
+        )
+
+        return signTransaction(unsignedTx, privateKey, 1, witnessOutputType = depositHeaderIndex)
+    }
+
     private fun estimateTransactionSize(tx: Transaction): Int {
         return try {
             val rawSize = serializeRawTransaction(tx).size
@@ -244,14 +398,15 @@ class TransactionBuilder @Inject constructor(
     private fun signTransaction(
         tx: Transaction,
         privateKey: ByteArray,
-        inputCount: Int
+        inputCount: Int,
+        witnessOutputType: ByteArray? = null
     ): Transaction {
         // 1. Serialize the raw transaction and compute its hash
         val rawTxBytes = serializeRawTransaction(tx)
         val txHash = blake2bHash(rawTxBytes)
 
         // 2. Create empty witness args (65 zero bytes for signature placeholder)
-        val emptyWitnessArgs = serializeWitnessArgs(ByteArray(65), null, null)
+        val emptyWitnessArgs = serializeWitnessArgs(ByteArray(65), null, witnessOutputType)
 
         // 3. Build the signing message
         val blake2b = Blake2b()
@@ -273,7 +428,7 @@ class TransactionBuilder @Inject constructor(
         val signature = signatureData.signature
 
         // 5. Create signed witness
-        val signedWitnessArgs = serializeWitnessArgs(signature, null, null)
+        val signedWitnessArgs = serializeWitnessArgs(signature, null, witnessOutputType)
         val signedWitnessHex = "0x" + signedWitnessArgs.joinToString("") { "%02x".format(it) }
 
         // 6. Build witnesses list

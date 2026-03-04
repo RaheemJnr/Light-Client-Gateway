@@ -14,6 +14,19 @@ data class HeaderCacheEntity(
     val network: String,
     val cachedAt: Long
 ) {
+    fun toJniHeaderView(): JniHeaderView = JniHeaderView(
+        hash = blockHash,
+        number = number,
+        epoch = epoch,
+        timestamp = timestamp,
+        parentHash = "",
+        transactionsRoot = "",
+        proposalsHash = "",
+        extraHash = "",
+        dao = dao,
+        nonce = ""
+    )
+
     companion object {
         fun from(header: JniHeaderView, network: String): HeaderCacheEntity =
             HeaderCacheEntity(

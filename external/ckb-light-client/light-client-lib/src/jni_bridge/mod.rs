@@ -23,6 +23,7 @@
 //! - Callbacks attach/detach from JVM as needed
 
 pub mod callbacks;
+pub mod dao;
 pub mod lifecycle;
 pub mod query;
 pub mod rpc_handler;
@@ -37,5 +38,7 @@ pub use lifecycle::{
 };
 
 pub use query::*;
+
+pub use dao::*;
 
 pub use rpc_handler::Java_com_nervosnetwork_ckblightclient_LightClientNative_callRpc;

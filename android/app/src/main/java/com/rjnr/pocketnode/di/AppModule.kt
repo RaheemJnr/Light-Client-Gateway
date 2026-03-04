@@ -14,6 +14,7 @@ import com.rjnr.pocketnode.data.database.dao.TransactionDao
 import com.rjnr.pocketnode.data.gateway.CacheManager
 import com.rjnr.pocketnode.data.gateway.DaoSyncManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
+import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.MnemonicManager
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
@@ -120,7 +121,8 @@ object AppModule {
         keyManager: KeyManager,
         walletPreferences: WalletPreferences,
         json: Json,
+        transactionBuilder: TransactionBuilder,
         cacheManager: CacheManager,
         daoSyncManager: DaoSyncManager
-    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, cacheManager, daoSyncManager)
+    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, transactionBuilder, cacheManager, daoSyncManager)
 }
