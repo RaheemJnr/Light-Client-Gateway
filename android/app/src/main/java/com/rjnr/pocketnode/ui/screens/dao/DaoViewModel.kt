@@ -157,11 +157,16 @@ class DaoViewModel @Inject constructor(
     fun unlock(deposit: DaoDeposit) {
         _uiState.update { it.copy(pendingAction = DaoAction.Unlocking(deposit.outPoint)) }
         viewModelScope.launch {
+            val withdrawHash = deposit.withdrawBlockHash
+            if (withdrawHash == null) {
+                _uiState.update { it.copy(error = "No withdraw block hash", pendingAction = null) }
+                return@launch
+            }
+
             repository.unlockDao(
                 withdrawingOutPoint = deposit.outPoint,
                 depositBlockHash = deposit.depositBlockHash,
-                withdrawBlockHash = deposit.withdrawBlockHash
-                    ?: throw Exception("No withdraw block hash")
+                withdrawBlockHash = withdrawHash
             )
                 .onFailure { e ->
                     _uiState.update {
@@ -184,7 +189,9 @@ internal fun shouldClearPendingAction(
     pendingAction: DaoAction,
     deposits: List<DaoDeposit>
 ): Boolean = when (pendingAction) {
-    is DaoAction.Depositing -> deposits.any { it.status == DaoCellStatus.DEPOSITED }
+    is DaoAction.Depositing -> deposits.any {
+        it.status == DaoCellStatus.DEPOSITED && it.capacity == pendingAction.amount
+    }
     is DaoAction.Withdrawing -> deposits.any {
         it.outPoint == pendingAction.outPoint &&
             (it.status == DaoCellStatus.LOCKED || it.status == DaoCellStatus.UNLOCKABLE)

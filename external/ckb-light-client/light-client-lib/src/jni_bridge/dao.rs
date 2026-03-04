@@ -132,12 +132,32 @@ pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_native
         }
     };
 
+    // Validate inputs
+    if deposit_capacity < 0 || occupied_capacity < 0 {
+        error!("Negative capacity inputs");
+        return -1;
+    }
+    if ar_deposit == 0 {
+        error!("ar_deposit is zero, cannot divide");
+        return -1;
+    }
+
     let capacity = deposit_capacity as u128;
     let occupied = occupied_capacity as u128;
 
+    if occupied > capacity {
+        error!("occupied_capacity exceeds deposit_capacity");
+        return -1;
+    }
+
     // Formula from RFC-0023
     let counted_capacity = capacity - occupied;
-    let max_withdraw = counted_capacity * ar_withdraw / ar_deposit + occupied;
+    let max_withdraw = counted_capacity.saturating_mul(ar_withdraw) / ar_deposit + occupied;
+
+    if max_withdraw > jlong::MAX as u128 {
+        error!("max_withdraw overflows jlong");
+        return -1;
+    }
 
     max_withdraw as jlong
 }
@@ -185,6 +205,11 @@ pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_native
 
     let deposit_number = deposit_epoch.number();
     let withdraw_number = withdraw_epoch.number();
+
+    if withdraw_number < deposit_number {
+        error!("Withdraw epoch ({}) is earlier than deposit epoch ({})", withdraw_number, deposit_number);
+        return ptr::null_mut();
+    }
 
     // Calculate deposited epochs (withdraw fraction > deposit fraction means +1)
     let deposited_epochs = if withdraw_epoch.index() * deposit_epoch.length()

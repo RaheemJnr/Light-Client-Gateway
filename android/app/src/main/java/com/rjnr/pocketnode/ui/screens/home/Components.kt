@@ -398,9 +398,9 @@ fun TransactionItems(
             ) {
                 if (transaction.isDaoTransaction()) {
                     val badgeLabel = when {
-                        transaction.isDaoDeposit() -> "Dao Deposit"
-                        transaction.isDaoWithdraw() -> "Dao Withdraw"
-                        transaction.isDaoUnlock() -> "Dao Unlock"
+                        transaction.isDaoDeposit() -> "DAO Deposit"
+                        transaction.isDaoWithdraw() -> "DAO Withdraw"
+                        transaction.isDaoUnlock() -> "DAO Unlock"
                         else -> "DAO"
                     }
                     Surface(

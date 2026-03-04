@@ -61,8 +61,10 @@ fun CompensationProgressBar(
 
         // Triangle marker above the progress position
         if (clampedProgress > 0f) {
-            val markerX = size.width * clampedProgress
             val halfBase = 4.dp.toPx()
+            val minX = halfBase
+            val maxX = (size.width - halfBase).coerceAtLeast(minX)
+            val markerX = (size.width * clampedProgress).coerceIn(minX, maxX)
             val path = Path().apply {
                 moveTo(markerX, barTop)                        // tip (points down to bar)
                 lineTo(markerX - halfBase, barTop - triangleHeight) // top-left

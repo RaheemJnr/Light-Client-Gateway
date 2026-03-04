@@ -112,20 +112,26 @@ class DaoViewModelTest {
     // --- shouldClearPendingAction (pure function) ---
 
     @Test
-    fun `shouldClear Depositing when DEPOSITED exists`() {
+    fun `shouldClear Depositing when DEPOSITED exists with matching amount`() {
         val deposits = listOf(makeDaoDeposit(status = DaoCellStatus.DEPOSITED))
-        assertTrue(shouldClearPendingAction(DaoAction.Depositing(100L), deposits))
+        assertTrue(shouldClearPendingAction(DaoAction.Depositing(10_200_000_000L), deposits))
+    }
+
+    @Test
+    fun `shouldClear Depositing false when DEPOSITED exists but amount differs`() {
+        val deposits = listOf(makeDaoDeposit(status = DaoCellStatus.DEPOSITED))
+        assertFalse(shouldClearPendingAction(DaoAction.Depositing(999L), deposits))
     }
 
     @Test
     fun `shouldClear Depositing false when no DEPOSITED`() {
         val deposits = listOf(makeDaoDeposit(status = DaoCellStatus.DEPOSITING))
-        assertFalse(shouldClearPendingAction(DaoAction.Depositing(100L), deposits))
+        assertFalse(shouldClearPendingAction(DaoAction.Depositing(10_200_000_000L), deposits))
     }
 
     @Test
     fun `shouldClear Depositing false when empty deposits`() {
-        assertFalse(shouldClearPendingAction(DaoAction.Depositing(100L), emptyList()))
+        assertFalse(shouldClearPendingAction(DaoAction.Depositing(10_200_000_000L), emptyList()))
     }
 
     @Test

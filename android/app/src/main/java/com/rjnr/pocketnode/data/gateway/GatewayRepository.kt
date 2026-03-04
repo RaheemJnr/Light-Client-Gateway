@@ -1091,35 +1091,45 @@ class GatewayRepository @Inject constructor(
         )
         val searchKeyJson = json.encodeToString(searchKey)
 
-        val result = LightClientNative.nativeGetCells(searchKeyJson, "desc", 100, null)
-            ?: throw Exception("Failed to get cells")
-        val allCells = json.decodeFromString<JniPagination<JniCell>>(result)
+        // Paginate all cells by lock script
+        val allCellObjects = mutableListOf<JniCell>()
+        var cellsCursor: String? = null
+        do {
+            val pageJson = LightClientNative.nativeGetCells(searchKeyJson, "desc", 100, cellsCursor)
+                ?: break
+            val page = json.decodeFromString<JniPagination<JniCell>>(pageJson)
+            allCellObjects += page.objects
+            cellsCursor = page.lastCursor?.takeUnless { it == cellsCursor }
+        } while (cellsCursor != null)
 
         // Filter locally: only cells whose type script matches DAO code hash
-        val daoCells = allCells.objects.filter { cell ->
+        val daoCells = allCellObjects.filter { cell ->
             cell.output.type?.codeHash == DaoConstants.DAO_CODE_HASH
         }
-        Log.d(TAG, "📋 getDaoDeposits: ${daoCells.size} DAO cells out of ${allCells.objects.size} total")
+        Log.d(TAG, "📋 getDaoDeposits: ${daoCells.size} DAO cells out of ${allCellObjects.size} total")
 
-        // Also filter out spent cells (same pattern as refreshBalance)
-        val txJson = LightClientNative.nativeGetTransactions(searchKeyJson, "desc", 100, null)
+        // Paginate transactions to find spent outpoints
         val spentOutpoints = mutableSetOf<String>()
-        if (txJson != null) {
+        var txCursor: String? = null
+        do {
+            val txJson = LightClientNative.nativeGetTransactions(searchKeyJson, "desc", 100, txCursor)
+                ?: break
             val txPag = json.decodeFromString<JniPagination<JniTxWithCell>>(txJson)
             txPag.objects.forEach { txWithCell ->
                 txWithCell.transaction.inputs.forEach { input ->
                     spentOutpoints.add("${input.previousOutput.txHash}:${input.previousOutput.index}")
                 }
             }
-        }
+            txCursor = txPag.lastCursor?.takeUnless { it == txCursor }
+        } while (txCursor != null)
+
         val liveDaoCells = daoCells.filter { cell ->
             val key = "${cell.outPoint.txHash}:${cell.outPoint.index}"
             key !in spentOutpoints
         }
         Log.d(TAG, "📋 getDaoDeposits: ${liveDaoCells.size} live DAO cells")
 
-        // Wrap in same pagination structure for downstream code
-        val pagination = JniPagination(objects = liveDaoCells, lastCursor = allCells.lastCursor)
+        val pagination = JniPagination(objects = liveDaoCells, lastCursor = null)
 
         val currentEpoch = getCurrentEpoch().getOrNull()
 
@@ -1181,6 +1191,10 @@ class GatewayRepository @Inject constructor(
                     val withdrawTxJson = LightClientNative.nativeGetTransaction(cell.outPoint.txHash)
                     val withdrawTx = withdrawTxJson?.let { json.decodeFromString<JniTransactionWithStatus>(it) }
                     val origDepositBlockHash = withdrawTx?.transaction?.headerDeps?.firstOrNull()
+                    // Preserve the hash even if full header fetch fails
+                    if (origDepositBlockHash != null) {
+                        depositBlockHash = origDepositBlockHash
+                    }
                     val origDepositHeader = origDepositBlockHash?.let { h ->
                         getOrFetchHeader(h)
                     }
@@ -1338,6 +1352,10 @@ class GatewayRepository @Inject constructor(
             ?: throw Exception("Deposit not found")
 
         val privateKey = keyManager.getPrivateKey()
+
+        require(deposit.depositBlockHash.isNotBlank()) {
+            "Deposit block hash unavailable. Please retry after sync."
+        }
 
         // Build a Cell from the deposit for the transaction builder
         val depositCell = Cell(
