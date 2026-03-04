@@ -205,6 +205,30 @@ pub extern "C" fn Java_com_nervosnetwork_ckblightclient_LightClientNative_native
     let deposit_epoch = EpochNumberWithFraction::from_full_value(deposit_epoch_raw);
     let withdraw_epoch = EpochNumberWithFraction::from_full_value(withdraw_epoch_raw);
 
+    // Validate epoch fractions: length must be > 0 and index < length
+    // (length == 0 only for genesis, which can't be a DAO deposit/withdraw epoch)
+    if deposit_epoch.length() == 0 || withdraw_epoch.length() == 0 {
+        error!(
+            "Invalid epoch length: deposit_epoch length={}, withdraw_epoch length={}",
+            deposit_epoch.length(), withdraw_epoch.length()
+        );
+        return ptr::null_mut();
+    }
+    if deposit_epoch.index() >= deposit_epoch.length() {
+        error!(
+            "Invalid deposit epoch: index {} >= length {}",
+            deposit_epoch.index(), deposit_epoch.length()
+        );
+        return ptr::null_mut();
+    }
+    if withdraw_epoch.index() >= withdraw_epoch.length() {
+        error!(
+            "Invalid withdraw epoch: index {} >= length {}",
+            withdraw_epoch.index(), withdraw_epoch.length()
+        );
+        return ptr::null_mut();
+    }
+
     let deposit_number = deposit_epoch.number();
     let withdraw_number = withdraw_epoch.number();
 

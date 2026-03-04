@@ -1206,7 +1206,7 @@ class GatewayRepository @Inject constructor(
                         val maxWithdraw = LightClientNative.nativeCalculateMaxWithdraw(
                             origDepositHeader.dao, cellBlockHeader.dao, capacityShannons, 61_00000000L
                         )
-                        compensation = maxWithdraw - capacityShannons
+                        if (maxWithdraw >= 0) compensation = maxWithdraw - capacityShannons
                         val sinceHex = LightClientNative.nativeCalculateUnlockEpoch(
                             origDepositHeader.epoch, cellBlockHeader.epoch
                         )
@@ -1226,7 +1226,7 @@ class GatewayRepository @Inject constructor(
                         val maxWithdraw = LightClientNative.nativeCalculateMaxWithdraw(
                             cellBlockHeader.dao, tipHeader.dao, capacityShannons, 61_00000000L
                         )
-                        compensation = maxWithdraw - capacityShannons
+                        if (maxWithdraw >= 0) compensation = maxWithdraw - capacityShannons
                     }
                 }
             } else {
@@ -1418,6 +1418,7 @@ class GatewayRepository @Inject constructor(
             deposit.capacity,
             61_00000000L
         )
+        if (maxWithdraw < 0) throw Exception("Failed to calculate max withdraw capacity")
 
         val sinceValue = LightClientNative.nativeCalculateUnlockEpoch(
             depositHeader.epoch,
