@@ -118,6 +118,10 @@ class DaoViewModel @Inject constructor(
     fun executeDeposit(amountShannons: Long? = null) {
         val amount = amountShannons ?: pendingDepositAmount
         pendingDepositAmount = 0L
+        if (amount <= 0L) {
+            _uiState.update { it.copy(error = "Invalid deposit amount", requiresAuth = false, authMethod = null) }
+            return
+        }
         _uiState.update {
             it.copy(requiresAuth = false, authMethod = null, pendingAction = DaoAction.Depositing(amount))
         }
@@ -157,17 +161,7 @@ class DaoViewModel @Inject constructor(
     fun unlock(deposit: DaoDeposit) {
         _uiState.update { it.copy(pendingAction = DaoAction.Unlocking(deposit.outPoint)) }
         viewModelScope.launch {
-            val withdrawHash = deposit.withdrawBlockHash
-            if (withdrawHash == null) {
-                _uiState.update { it.copy(error = "No withdraw block hash", pendingAction = null) }
-                return@launch
-            }
-
-            repository.unlockDao(
-                withdrawingOutPoint = deposit.outPoint,
-                depositBlockHash = deposit.depositBlockHash,
-                withdrawBlockHash = withdrawHash
-            )
+            repository.unlockDao(withdrawingOutPoint = deposit.outPoint)
                 .onFailure { e ->
                     _uiState.update {
                         it.copy(error = e.message, pendingAction = null)

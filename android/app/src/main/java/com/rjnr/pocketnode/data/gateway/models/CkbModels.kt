@@ -71,9 +71,11 @@ data class Transaction(
 
 @Serializable
 data class Cell(
-    @SerialName("out_point") val outPoint: OutPoint,
+    @SerialName("out_point")
+    val outPoint: OutPoint,
     val capacity: String,
-    @SerialName("block_number") val blockNumber: String,
+    @SerialName("block_number")
+    val blockNumber: String,
     val lock: Script,
     val type: Script? = null,
     val data: String = "0x"

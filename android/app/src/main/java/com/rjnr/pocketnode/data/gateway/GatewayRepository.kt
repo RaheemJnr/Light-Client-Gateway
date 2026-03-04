@@ -1382,9 +1382,7 @@ class GatewayRepository @Inject constructor(
     }
 
     suspend fun unlockDao(
-        withdrawingOutPoint: OutPoint,
-        depositBlockHash: String,
-        withdrawBlockHash: String
+        withdrawingOutPoint: OutPoint
     ): Result<String> = runCatching {
         val info = _walletInfo.value ?: throw Exception("No wallet")
         val net = _network.value
@@ -1396,6 +1394,14 @@ class GatewayRepository @Inject constructor(
         require(deposit.status == DaoCellStatus.UNLOCKABLE) {
             "Cell is not unlockable yet (status: ${deposit.status})"
         }
+
+        // Use the deposit object's hashes — it is the single source of truth
+        val depositBlockHash = deposit.depositBlockHash
+        require(depositBlockHash.isNotBlank()) {
+            "Deposit block hash unavailable. Please retry after sync."
+        }
+        val withdrawBlockHash = deposit.withdrawBlockHash
+            ?: throw Exception("Withdraw block hash unavailable. Please retry after sync.")
 
         val privateKey = keyManager.getPrivateKey()
 

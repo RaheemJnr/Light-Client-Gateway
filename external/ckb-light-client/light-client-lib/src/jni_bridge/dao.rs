@@ -36,17 +36,19 @@ fn get_string(env: &mut JNIEnv, input: &JString) -> Option<String> {
 }
 
 /// Decode a hex string (with optional 0x prefix) into bytes.
+/// Uses `as_bytes()` to avoid potential panics from str slicing on non-ASCII boundaries.
 fn decode_hex(hex_str: &str) -> Option<Vec<u8>> {
     let stripped = hex_str.strip_prefix("0x").unwrap_or(hex_str);
-    if stripped.len() % 2 != 0 {
+    let raw = stripped.as_bytes();
+    if raw.len() % 2 != 0 {
         return None;
     }
-    let mut bytes = Vec::with_capacity(stripped.len() / 2);
-    for i in (0..stripped.len()).step_by(2) {
-        match u8::from_str_radix(&stripped[i..i + 2], 16) {
-            Ok(b) => bytes.push(b),
-            Err(_) => return None,
-        }
+    let mut bytes = Vec::with_capacity(raw.len() / 2);
+    for pair in raw.chunks_exact(2) {
+        // SAFETY: each byte in a valid hex char is ASCII, so from_utf8 won't fail
+        let hex_pair = std::str::from_utf8(pair).ok()?;
+        let b = u8::from_str_radix(hex_pair, 16).ok()?;
+        bytes.push(b);
     }
     Some(bytes)
 }
