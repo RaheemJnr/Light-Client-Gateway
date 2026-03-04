@@ -80,7 +80,8 @@ class DaoViewModel @Inject constructor(
                         overview = overview,
                         activeDeposits = active,
                         completedDeposits = completed,
-                        isLoading = false
+                        isLoading = false,
+                        error = null
                     )
                 }
 
