@@ -7,7 +7,7 @@ Pocket Node is a native Android CKB (Nervos Common Knowledge Base) wallet that r
 The app handles key generation, address derivation, transaction building/signing, balance tracking, and transaction history -- all locally on the device.
 
 - **Package**: `com.rjnr.pocketnode`
-- **Current version**: 1.3.0
+- **Current version**: 1.2.2
 - **Application ID**: `com.rjnr.pocketnode`
 
 > The `/server/` directory contains a legacy Rust gateway server (Axum). It is NOT used in the current JNI-based architecture.
@@ -132,34 +132,6 @@ cd android
 ./gradlew assembleRelease        # Release build (R8 minification enabled)
 ./gradlew installDebug           # Build + install on connected device/emulator
 ```
-
-### Testing
-```bash
-cd android
-./gradlew testDebugUnitTest        # Run all unit tests
-```
-
-Unit tests use JUnit 4 + Robolectric + MockK. Test files are in `android/app/src/test/java/com/rjnr/pocketnode/`:
-
-| Test File | Coverage |
-|-----------|----------|
-| `data/gateway/models/DaoModelsTest.kt` | EpochInfo parsing, cycle phase, DAO status FSM |
-| `data/gateway/DaoConstantsTest.kt` | DAO type script, cell deps, protocol constants |
-| `data/gateway/models/ApiModelsTest.kt` | Sync mode, checkpoint logic |
-| `data/gateway/models/NetworkTypeTest.kt` | Network enum properties |
-| `data/transaction/TransactionBuilderFeeTest.kt` | Fee estimation for tx sizes |
-| `data/transaction/TransactionBuilderDaoTest.kt` | DAO deposit, withdraw, unlock tx building |
-| `data/wallet/AddressUtilsTest.kt` | CKB address encode/decode |
-| `data/wallet/KeyManagerTest.kt` | Key generation, storage |
-| `data/wallet/MnemonicManagerTest.kt` | BIP39 mnemonic handling |
-| `data/wallet/WalletPreferencesTest.kt` | Preferences persistence |
-| `data/auth/AuthManagerTest.kt` | Biometric auth manager |
-| `data/auth/PinManagerTest.kt` | PIN hashing, verification |
-| `ui/screens/dao/DaoFormatTest.kt` | CKB amount formatting |
-| `ui/screens/dao/DaoViewModelTest.kt` | ViewModel state, pending action resolution |
-| `util/AmountUtilsTest.kt` | Amount sanitization |
-| `util/QrUriParserTest.kt` | QR URI parsing |
-| `util/TimeUtilsTest.kt` | Time formatting |
 
 ### Build Notes
 - Release builds use `isMinifyEnabled = true` with ProGuard
@@ -317,7 +289,7 @@ Use this MCP server when working on CKB-specific logic:
 ## Current Limitations
 - Single wallet only (no multi-wallet support)
 - Release signing uses debug keystore
-- No instrumentation tests yet (unit tests exist — see `android/app/src/test/`)
+- No unit tests or instrumentation tests yet
 - No pagination beyond initial page for cells/transactions
 - Network switch requires JNI re-initialization (nativeStop → nativeInit → nativeStart); unknown if Rust side fully supports this within a single process lifetime
 
