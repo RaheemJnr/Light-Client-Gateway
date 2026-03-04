@@ -187,6 +187,17 @@ docs/
 .plans/
 
 # ===================
+# Release / Play Store (local only)
+# ===================
+android/app/release/
+android/app/src/main/play/
+
+# ===================
+# Claude Code (local only)
+# ===================
+CLAUDE.md
+
+# ===================
 # Misc
 # ===================
 *.bak

@@ -17,10 +17,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -42,6 +41,8 @@ import com.composables.icons.lucide.ArrowUpRight
 import com.composables.icons.lucide.CircleHelp
 import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.Download
+import com.composables.icons.lucide.Eye
+import com.composables.icons.lucide.EyeOff
 import com.composables.icons.lucide.Landmark
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Send
@@ -59,6 +60,8 @@ fun WalletBalanceCard(
     fiatBalance: String?,
     address: String,
     peerCount: Int,
+    isBalanceHidden: Boolean = false,
+    onToggleVisibility: () -> Unit = {},
     onCopyAddress: () -> Unit
 ) {
     Surface(
@@ -69,28 +72,35 @@ fun WalletBalanceCard(
         Column(modifier = Modifier.padding(20.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     "Wallet Balance",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Icon(
-                    Icons.Default.Visibility,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                )
+                IconButton(
+                    onClick = onToggleVisibility,
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        if (isBalanceHidden) Lucide.EyeOff else Lucide.Eye,
+                        contentDescription = if (isBalanceHidden) "Show balance" else "Hide balance",
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = String.format(Locale.US, "%,.2f CKB", balanceCkb),
+                text = if (isBalanceHidden) "••••••" else String.format(Locale.US, "%,.2f CKB", balanceCkb),
                 color = MaterialTheme.colorScheme.primary,
                 fontSize = 32.sp,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = fiatBalance ?: "≈ — USD",
+                text = if (isBalanceHidden) "••••" else (fiatBalance ?: "≈ — USD"),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
