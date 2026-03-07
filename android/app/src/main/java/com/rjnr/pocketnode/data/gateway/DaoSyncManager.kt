@@ -40,9 +40,9 @@ class DaoSyncManager @Inject constructor(
 
     // --- DAO cell lifecycle ---
 
-    suspend fun getActiveDeposits(network: String): List<DaoCellEntity> {
+    suspend fun getActiveDeposits(network: String, walletId: String = ""): List<DaoCellEntity> {
         return try {
-            daoCellDao.getActiveByNetwork(network)
+            daoCellDao.getActiveByWalletAndNetwork(walletId, network)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -51,9 +51,9 @@ class DaoSyncManager @Inject constructor(
         }
     }
 
-    suspend fun getCompletedDeposits(network: String): List<DaoCellEntity> {
+    suspend fun getCompletedDeposits(network: String, walletId: String = ""): List<DaoCellEntity> {
         return try {
-            daoCellDao.getCompletedByNetwork(network)
+            daoCellDao.getCompletedByWalletAndNetwork(walletId, network)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -103,7 +103,7 @@ class DaoSyncManager @Inject constructor(
         }
     }
 
-    suspend fun insertPendingDeposit(txHash: String, capacity: Long, network: String, index: String = "0x0") {
+    suspend fun insertPendingDeposit(txHash: String, capacity: Long, network: String, index: String = "0x0", walletId: String = "") {
         try {
             daoCellDao.upsert(
                 DaoCellEntity(
@@ -121,7 +121,8 @@ class DaoSyncManager @Inject constructor(
                     unlockEpochHex = null,
                     depositTimestamp = System.currentTimeMillis(),
                     network = network,
-                    lastUpdatedAt = System.currentTimeMillis()
+                    lastUpdatedAt = System.currentTimeMillis(),
+                    walletId = walletId
                 )
             )
             Log.d(TAG, "Pending DAO deposit cached: $txHash")

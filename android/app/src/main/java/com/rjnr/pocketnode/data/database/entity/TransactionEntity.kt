@@ -45,7 +45,8 @@ data class TransactionEntity(
             fee: String,
             confirmations: Int,
             blockTimestampHex: String?,
-            network: String
+            network: String,
+            walletId: String = ""
         ): TransactionEntity = TransactionEntity(
             txHash = txHash,
             blockNumber = blockNumber,
@@ -59,7 +60,8 @@ data class TransactionEntity(
             network = network,
             status = if (confirmations > 0) "CONFIRMED" else "PENDING",
             isLocal = false,
-            cachedAt = System.currentTimeMillis()
+            cachedAt = System.currentTimeMillis(),
+            walletId = walletId
         )
     }
 }
