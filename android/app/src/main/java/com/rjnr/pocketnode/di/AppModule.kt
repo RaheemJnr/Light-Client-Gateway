@@ -20,6 +20,7 @@ import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.MnemonicManager
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
+import com.rjnr.pocketnode.data.migration.WalletMigrationHelper
 import com.rjnr.pocketnode.data.wallet.WalletRepository
 import dagger.Module
 import dagger.Provides
@@ -119,6 +120,15 @@ object AppModule {
         headerCacheDao: HeaderCacheDao,
         daoCellDao: DaoCellDao
     ): DaoSyncManager = DaoSyncManager(headerCacheDao, daoCellDao)
+
+    @Provides
+    @Singleton
+    fun provideWalletMigrationHelper(
+        walletDao: WalletDao,
+        keyManager: KeyManager,
+        walletPreferences: WalletPreferences,
+        database: AppDatabase
+    ): WalletMigrationHelper = WalletMigrationHelper(walletDao, keyManager, walletPreferences, database)
 
     @Provides
     @Singleton
