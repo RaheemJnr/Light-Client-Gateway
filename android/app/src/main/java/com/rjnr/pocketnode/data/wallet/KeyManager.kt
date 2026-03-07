@@ -186,6 +186,47 @@ class KeyManager @Inject constructor(
             .apply()
     }
 
+    // -- Wallet-scoped key storage (M3 multi-wallet) --
+
+    private fun getWalletPrefs(walletId: String): SharedPreferences {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .setRequestStrongBoxBacked(true)
+            .build()
+        return EncryptedSharedPreferences.create(
+            context,
+            "ckb_wallet_keys_$walletId",
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
+
+    fun storeKeysForWallet(walletId: String, privateKey: ByteArray, mnemonic: List<String>?) {
+        val prefs = getWalletPrefs(walletId)
+        prefs.edit()
+            .putString(KEY_PRIVATE_KEY, privateKey.joinToString("") { "%02x".format(it) })
+            .putString(KEY_WALLET_TYPE, if (mnemonic != null) WALLET_TYPE_MNEMONIC else WALLET_TYPE_RAW_KEY)
+            .apply()
+        if (mnemonic != null) {
+            prefs.edit().putString(KEY_MNEMONIC, mnemonic.joinToString(" ")).apply()
+        }
+    }
+
+    fun getPrivateKeyForWallet(walletId: String): ByteArray? {
+        val hex = getWalletPrefs(walletId).getString(KEY_PRIVATE_KEY, null) ?: return null
+        return hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    }
+
+    fun getMnemonicForWallet(walletId: String): List<String>? {
+        val words = getWalletPrefs(walletId).getString(KEY_MNEMONIC, null) ?: return null
+        return words.split(" ")
+    }
+
+    fun deleteKeysForWallet(walletId: String) {
+        getWalletPrefs(walletId).edit().clear().apply()
+    }
+
     companion object {
         private const val KEY_PRIVATE_KEY = "private_key"
         private const val KEY_MNEMONIC = "mnemonic_words"
