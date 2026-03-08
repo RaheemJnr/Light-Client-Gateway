@@ -1,11 +1,12 @@
 package com.rjnr.pocketnode.data.database.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import com.rjnr.pocketnode.data.gateway.models.BalanceResponse
 
 @Entity(tableName = "balance_cache", primaryKeys = ["walletId", "network"])
 data class BalanceCacheEntity(
-    val walletId: String = "",
+    @ColumnInfo(defaultValue = "") val walletId: String = "",
     val network: String,
     val address: String,
     val capacity: String,
