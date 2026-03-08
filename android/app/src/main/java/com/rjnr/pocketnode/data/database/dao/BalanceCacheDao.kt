@@ -17,4 +17,12 @@ interface BalanceCacheDao {
 
     @Query("DELETE FROM balance_cache")
     suspend fun deleteAll()
+
+    // Wallet-scoped queries (M3)
+
+    @Query("SELECT * FROM balance_cache WHERE walletId = :walletId AND network = :network")
+    suspend fun getByWalletAndNetwork(walletId: String, network: String): BalanceCacheEntity?
+
+    @Query("DELETE FROM balance_cache WHERE walletId = :walletId AND network = :network")
+    suspend fun deleteByWalletAndNetwork(walletId: String, network: String)
 }

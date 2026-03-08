@@ -2,15 +2,18 @@ package com.rjnr.pocketnode.di
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.RoomDatabase
 import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.crypto.Blake2b
 import com.rjnr.pocketnode.data.database.AppDatabase
 import com.rjnr.pocketnode.data.database.MIGRATION_1_2
+import com.rjnr.pocketnode.data.database.MIGRATION_2_3
 import com.rjnr.pocketnode.data.database.dao.BalanceCacheDao
 import com.rjnr.pocketnode.data.database.dao.DaoCellDao
 import com.rjnr.pocketnode.data.database.dao.HeaderCacheDao
 import com.rjnr.pocketnode.data.database.dao.TransactionDao
+import com.rjnr.pocketnode.data.database.dao.WalletDao
 import com.rjnr.pocketnode.data.gateway.CacheManager
 import com.rjnr.pocketnode.data.gateway.DaoSyncManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
@@ -18,6 +21,8 @@ import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.MnemonicManager
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
+import com.rjnr.pocketnode.data.migration.WalletMigrationHelper
+import com.rjnr.pocketnode.data.wallet.WalletRepository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -85,7 +90,8 @@ object AppModule {
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "pocket_node.db")
-            .addMigrations(MIGRATION_1_2)
+            .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .build()
 
     @Provides
@@ -99,6 +105,9 @@ object AppModule {
 
     @Provides
     fun provideDaoCellDao(db: AppDatabase): DaoCellDao = db.daoCellDao()
+
+    @Provides
+    fun provideWalletDao(db: AppDatabase): WalletDao = db.walletDao()
 
     @Provides
     @Singleton
@@ -116,6 +125,24 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideWalletMigrationHelper(
+        walletDao: WalletDao,
+        keyManager: KeyManager,
+        walletPreferences: WalletPreferences,
+        database: AppDatabase
+    ): WalletMigrationHelper = WalletMigrationHelper(walletDao, keyManager, walletPreferences, database)
+
+    @Provides
+    @Singleton
+    fun provideWalletRepository(
+        walletDao: WalletDao,
+        keyManager: KeyManager,
+        walletPreferences: WalletPreferences,
+        mnemonicManager: MnemonicManager
+    ): WalletRepository = WalletRepository(walletDao, keyManager, walletPreferences, mnemonicManager)
+
+    @Provides
+    @Singleton
     fun provideGatewayRepository(
         @ApplicationContext context: Context,
         keyManager: KeyManager,
@@ -123,6 +150,7 @@ object AppModule {
         json: Json,
         transactionBuilder: TransactionBuilder,
         cacheManager: CacheManager,
-        daoSyncManager: DaoSyncManager
-    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, transactionBuilder, cacheManager, daoSyncManager)
+        daoSyncManager: DaoSyncManager,
+        walletMigrationHelper: WalletMigrationHelper
+    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, transactionBuilder, cacheManager, daoSyncManager, walletMigrationHelper)
 }

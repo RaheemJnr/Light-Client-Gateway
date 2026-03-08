@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -77,7 +78,10 @@ import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
 import com.rjnr.pocketnode.data.gateway.models.displayName
+import com.composables.icons.lucide.ChevronDown
+import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.ui.components.SyncOptionsDialog
+import com.rjnr.pocketnode.ui.components.WalletSwitcherDropdown
 import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
 import com.rjnr.pocketnode.ui.theme.ErrorRed
 import com.rjnr.pocketnode.ui.theme.SuccessGreen
@@ -96,6 +100,7 @@ fun HomeScreen(
     onNavigateToSettings: () -> Unit = {},
     onNavigateToDao: () -> Unit = {},
     onNavigateToActivity: () -> Unit = {},
+    onNavigateToWalletManager: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -103,6 +108,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedTransaction by remember { mutableStateOf<TransactionRecord?>(null) }
+    var showWalletSwitcher by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     // Sync options dialog (settings path)
@@ -221,12 +227,34 @@ fun HomeScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Row(
-                        modifier = Modifier.padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text("Pocket Node", fontWeight = FontWeight.SemiBold)
+                    Box {
+                        Row(
+                            modifier = Modifier
+                                .padding(8.dp)
+                                .clickable { showWalletSwitcher = true },
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            val activeWallet = uiState.wallets.find { it.isActive }
+                            Text(
+                                text = activeWallet?.name ?: "Pocket Node",
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            if (uiState.wallets.size > 1) {
+                                Icon(
+                                    Lucide.ChevronDown,
+                                    contentDescription = "Switch Wallet",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                        WalletSwitcherDropdown(
+                            expanded = showWalletSwitcher,
+                            onDismiss = { showWalletSwitcher = false },
+                            wallets = uiState.wallets,
+                            onSwitchWallet = { viewModel.switchWallet(it) },
+                            onManageWallets = onNavigateToWalletManager
+                        )
                     }
                 },
                 actions = {
