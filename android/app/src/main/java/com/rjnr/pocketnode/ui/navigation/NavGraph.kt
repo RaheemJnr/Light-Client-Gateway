@@ -22,6 +22,9 @@ import com.rjnr.pocketnode.ui.screens.scanner.QrScannerScreen
 import com.rjnr.pocketnode.ui.screens.send.SendScreen
 import com.rjnr.pocketnode.ui.screens.settings.SecuritySettingsScreen
 import com.rjnr.pocketnode.ui.screens.settings.SecuritySettingsViewModel
+import com.rjnr.pocketnode.ui.screens.wallet.AddWalletScreen
+import com.rjnr.pocketnode.ui.screens.wallet.WalletDetailScreen
+import com.rjnr.pocketnode.ui.screens.wallet.WalletManagerScreen
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
@@ -38,6 +41,11 @@ sealed class Screen(val route: String) {
         fun createRoute(mode: String) = "pin_entry/$mode"
     }
     object SecuritySettings : Screen("security_settings")
+    object WalletManager : Screen("wallet_manager")
+    object WalletDetail : Screen("wallet_detail/{walletId}") {
+        fun createRoute(walletId: String) = "wallet_detail/$walletId"
+    }
+    object AddWallet : Screen("add_wallet")
 }
 
 sealed class BottomTab(val route: String, val label: String) {
@@ -245,6 +253,9 @@ fun CkbNavGraph(
                 onNavigateToPinVerify = {
                     navController.navigate(Screen.PinEntry.createRoute("verify"))
                 },
+                onNavigateToWalletManager = {
+                    navController.navigate(Screen.WalletManager.route)
+                },
                 daoPinVerified = daoPinVerified,
             )
         }
@@ -291,6 +302,34 @@ fun CkbNavGraph(
         composable(Screen.NodeStatus.route) {
             com.rjnr.pocketnode.ui.screens.status.NodeStatusScreen(
                 navController = navController
+            )
+        }
+
+        composable(Screen.WalletManager.route) {
+            WalletManagerScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToAddWallet = { navController.navigate(Screen.AddWallet.route) },
+                onNavigateToWalletDetail = { walletId ->
+                    navController.navigate(Screen.WalletDetail.createRoute(walletId))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.WalletDetail.route,
+            arguments = listOf(navArgument("walletId") { type = NavType.StringType })
+        ) {
+            WalletDetailScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.AddWallet.route) {
+            AddWalletScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onWalletCreated = {
+                    navController.popBackStack(Screen.Main.route, inclusive = false)
+                }
             )
         }
     }
