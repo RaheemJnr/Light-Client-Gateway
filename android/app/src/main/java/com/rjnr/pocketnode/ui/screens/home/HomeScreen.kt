@@ -79,6 +79,7 @@ import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
 import com.rjnr.pocketnode.data.gateway.models.displayName
 import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.Wallet
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.ui.components.SyncOptionsDialog
 import com.rjnr.pocketnode.ui.components.WalletSwitcherDropdown
@@ -236,6 +237,12 @@ fun HomeScreen(
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             val activeWallet = uiState.wallets.find { it.isActive }
+                            Icon(
+                                Lucide.Wallet,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
                             Text(
                                 text = activeWallet?.name ?: "Pocket Node",
                                 fontWeight = FontWeight.SemiBold

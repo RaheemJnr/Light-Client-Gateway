@@ -175,8 +175,8 @@ private fun WalletCard(
 @Composable
 private fun TypeBadge(type: String) {
     val label = when (type) {
-        "mnemonic" -> "HD"
-        "raw_key" -> "Key"
+        "mnemonic" -> "Seed Phrase"
+        "raw_key" -> "Imported"
         else -> type
     }
     Surface(

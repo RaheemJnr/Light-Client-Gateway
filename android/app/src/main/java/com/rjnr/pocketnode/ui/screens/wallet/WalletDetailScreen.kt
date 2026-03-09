@@ -154,8 +154,8 @@ fun WalletDetailScreen(
 
             // Type
             DetailCard(label = "Type", value = when (wallet.type) {
-                "mnemonic" -> if (wallet.parentWalletId != null) "HD Sub-Account" else "HD Wallet (Mnemonic)"
-                "raw_key" -> "Raw Key"
+                "mnemonic" -> if (wallet.parentWalletId != null) "Sub-Account" else "Seed Phrase Wallet"
+                "raw_key" -> "Imported Key"
                 else -> wallet.type
             })
 
