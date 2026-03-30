@@ -18,6 +18,5 @@ data class DaoCellEntity(
     val unlockEpochHex: String?,
     val depositTimestamp: Long,
     val network: String,
-    val lastUpdatedAt: Long,
-    val walletId: String = ""
+    val lastUpdatedAt: Long
 )

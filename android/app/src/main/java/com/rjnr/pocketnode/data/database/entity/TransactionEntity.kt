@@ -18,8 +18,7 @@ data class TransactionEntity(
     val network: String,
     val status: String,       // "PENDING", "CONFIRMED", "FAILED"
     val isLocal: Boolean,     // true = broadcast but not yet synced
-    val cachedAt: Long,
-    val walletId: String = ""
+    val cachedAt: Long
 ) {
     fun toTransactionRecord(): TransactionRecord = TransactionRecord(
         txHash = txHash,
@@ -45,8 +44,7 @@ data class TransactionEntity(
             fee: String,
             confirmations: Int,
             blockTimestampHex: String?,
-            network: String,
-            walletId: String = ""
+            network: String
         ): TransactionEntity = TransactionEntity(
             txHash = txHash,
             blockNumber = blockNumber,
@@ -60,8 +58,7 @@ data class TransactionEntity(
             network = network,
             status = if (confirmations > 0) "CONFIRMED" else "PENDING",
             isLocal = false,
-            cachedAt = System.currentTimeMillis(),
-            walletId = walletId
+            cachedAt = System.currentTimeMillis()
         )
     }
 }

@@ -3,18 +3,12 @@ package com.rjnr.pocketnode.ui.screens.activity
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.rjnr.pocketnode.data.database.dao.TransactionDao
-import com.rjnr.pocketnode.data.export.TransactionExporter
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
-import com.rjnr.pocketnode.data.wallet.WalletPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -33,18 +27,13 @@ data class ActivityUiState(
 
 @HiltViewModel
 class ActivityViewModel @Inject constructor(
-    private val repository: GatewayRepository,
-    private val transactionDao: TransactionDao,
-    private val walletPreferences: WalletPreferences
+    private val repository: GatewayRepository
 ) : ViewModel() {
 
     enum class Filter { ALL, RECEIVED, SENT }
 
     private val _uiState = MutableStateFlow(ActivityUiState())
     val uiState: StateFlow<ActivityUiState> = _uiState.asStateFlow()
-
-    private val _exportEvent = MutableSharedFlow<String>()
-    val exportEvent: SharedFlow<String> = _exportEvent.asSharedFlow()
 
     init {
         viewModelScope.launch {
@@ -88,22 +77,6 @@ class ActivityViewModel @Inject constructor(
             Filter.ALL -> state.transactions
             Filter.RECEIVED -> state.transactions.filter { it.isIncoming() || it.isDaoUnlock() }
             Filter.SENT -> state.transactions.filter { it.isOutgoing() || it.isDaoDeposit() || it.isDaoWithdraw() }
-        }
-    }
-
-    fun exportTransactions() {
-        viewModelScope.launch {
-            runCatching {
-                val walletId = walletPreferences.getActiveWalletId() ?: ""
-                val network = _uiState.value.currentNetwork.name
-                val entities = transactionDao.getAllByWalletAndNetwork(walletId, network)
-                TransactionExporter().exportToCsv(entities)
-            }.onSuccess { csv ->
-                _exportEvent.emit(csv)
-            }.onFailure { error ->
-                Log.e(TAG, "Export failed", error)
-                _uiState.update { it.copy(error = "Export failed: ${error.message}") }
-            }
         }
     }
 }

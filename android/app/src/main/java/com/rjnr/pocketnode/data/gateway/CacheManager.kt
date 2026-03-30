@@ -18,9 +18,9 @@ class CacheManager @Inject constructor(
 ) {
     // --- Balance cache ---
 
-    suspend fun getCachedBalance(network: String, walletId: String = ""): BalanceResponse? {
+    suspend fun getCachedBalance(network: String): BalanceResponse? {
         return try {
-            balanceCacheDao.getByWalletAndNetwork(walletId, network)?.toBalanceResponse()
+            balanceCacheDao.getByNetwork(network)?.toBalanceResponse()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -29,9 +29,9 @@ class CacheManager @Inject constructor(
         }
     }
 
-    suspend fun cacheBalance(response: BalanceResponse, network: String, walletId: String = "") {
+    suspend fun cacheBalance(response: BalanceResponse, network: String) {
         try {
-            balanceCacheDao.upsert(BalanceCacheEntity.from(response, network).copy(walletId = walletId))
+            balanceCacheDao.upsert(BalanceCacheEntity.from(response, network))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -41,7 +41,7 @@ class CacheManager @Inject constructor(
 
     // --- Transaction cache ---
 
-    suspend fun cacheTransactions(records: List<TransactionRecord>, network: String, walletId: String = "") {
+    suspend fun cacheTransactions(records: List<TransactionRecord>, network: String) {
         try {
             val entities = records.map { record ->
                 TransactionEntity.fromTransactionRecord(
@@ -54,8 +54,7 @@ class CacheManager @Inject constructor(
                     fee = record.fee,
                     confirmations = record.confirmations,
                     blockTimestampHex = record.blockTimestampHex,
-                    network = network,
-                    walletId = walletId
+                    network = network
                 )
             }
             transactionDao.insertAll(entities)
@@ -66,7 +65,7 @@ class CacheManager @Inject constructor(
         }
     }
 
-    suspend fun insertPendingTransaction(txHash: String, network: String, walletId: String = "") {
+    suspend fun insertPendingTransaction(txHash: String, network: String) {
         try {
             transactionDao.insert(
                 TransactionEntity(
@@ -82,8 +81,7 @@ class CacheManager @Inject constructor(
                     network = network,
                     status = "PENDING",
                     isLocal = true,
-                    cachedAt = System.currentTimeMillis(),
-                    walletId = walletId
+                    cachedAt = System.currentTimeMillis()
                 )
             )
             Log.d(TAG, "Pending transaction cached in Room: $txHash")
@@ -94,9 +92,9 @@ class CacheManager @Inject constructor(
         }
     }
 
-    suspend fun getPendingNotIn(network: String, excludeHashes: Set<String>, walletId: String = ""): List<TransactionRecord> {
+    suspend fun getPendingNotIn(network: String, excludeHashes: Set<String>): List<TransactionRecord> {
         return try {
-            transactionDao.getPendingByWallet(walletId, network)
+            transactionDao.getPending(network)
                 .filter { it.isLocal && it.txHash !in excludeHashes }
                 .map { it.toTransactionRecord() }
         } catch (e: CancellationException) {
