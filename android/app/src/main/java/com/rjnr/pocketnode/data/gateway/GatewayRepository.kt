@@ -236,8 +236,13 @@ class GatewayRepository @Inject constructor(
 
             walletPreferences.setSelectedNetwork(target) // uses commit() — synchronous flush
             Log.d(TAG, "Persisted ${target.name}, restarting process for clean JNI init")
+
+            // ProcessPhoenix-style restart: launch fresh activity before killing process.
+            // This ensures the app visibly restarts on all devices/launchers.
+            val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)!!
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            context.startActivity(intent)
             android.os.Process.killProcess(android.os.Process.myPid())
-            // Process is terminated above; code below is unreachable but satisfies the compiler
         } catch (e: Exception) {
             _isSwitchingNetwork.value = false
             throw e
