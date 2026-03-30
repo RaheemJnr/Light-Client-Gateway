@@ -115,12 +115,12 @@ class KeyManager @Inject constructor(
         val privateKeyBytes = mnemonicManager.mnemonicToPrivateKey(words, passphrase)
         val hex = Numeric.toHexStringNoPrefixZeroPadded(BigInteger(1, privateKeyBytes), 64)
 
-        // Single atomic write
+        // Single atomic write — mark as backed up since user already knows their mnemonic
         prefs.edit()
             .putString(KEY_PRIVATE_KEY, hex)
             .putString(KEY_WALLET_TYPE, WALLET_TYPE_MNEMONIC)
             .putString(KEY_MNEMONIC, words.joinToString(" "))
-            .putBoolean(KEY_MNEMONIC_BACKED_UP, false)
+            .putBoolean(KEY_MNEMONIC_BACKED_UP, true)
             .commit()
 
         return getWalletInfo()

@@ -70,7 +70,6 @@ import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.ExternalLink
 import com.composables.icons.lucide.FileText
 import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.Settings
 import com.composables.icons.lucide.TriangleAlert
 import com.composables.icons.lucide.X
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
@@ -93,7 +92,6 @@ fun HomeScreen(
     onNavigateToSend: () -> Unit = {},
     onNavigateToReceive: () -> Unit = {},
     onNavigateToBackup: () -> Unit = {},
-    onNavigateToSettings: () -> Unit = {},
     onNavigateToDao: () -> Unit = {},
     onNavigateToActivity: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
@@ -234,11 +232,6 @@ fun HomeScreen(
                         SyncingChip(syncedToBlock = uiState.syncedToBlock)
                     } else {
                         SyncedChip()
-                    }
-                    Spacer(Modifier.width(4.dp))
-                    // Gear icon — navigates to Settings tab via bottom nav
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(Lucide.Settings, contentDescription = "Settings")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
