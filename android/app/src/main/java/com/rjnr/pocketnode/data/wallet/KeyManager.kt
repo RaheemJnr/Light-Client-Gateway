@@ -72,10 +72,17 @@ class KeyManager @Inject constructor(
     ): Pair<WalletInfo, List<String>> {
         val words = mnemonicManager.generateMnemonic(wordCount)
         val privateKeyBytes = mnemonicManager.mnemonicToPrivateKey(words)
-        val privateKey = BigInteger(1, privateKeyBytes)
+        val hex = Numeric.toHexStringNoPrefixZeroPadded(BigInteger(1, privateKeyBytes), 64)
 
-        savePrivateKey(privateKey, WALLET_TYPE_MNEMONIC)
-        storeMnemonic(words)
+        // Single atomic write — commit() is synchronous, all-or-nothing.
+        // Prevents race where app is killed between key save and mnemonic save.
+        prefs.edit()
+            .putString(KEY_PRIVATE_KEY, hex)
+            .putString(KEY_WALLET_TYPE, WALLET_TYPE_MNEMONIC)
+            .putString(KEY_MNEMONIC, words.joinToString(" "))
+            .putBoolean(KEY_MNEMONIC_BACKED_UP, false)
+            .commit()
+
         return Pair(getWalletInfo(), words)
     }
 
@@ -86,10 +93,16 @@ class KeyManager @Inject constructor(
         require(mnemonicManager.validateMnemonic(words)) { "Invalid mnemonic" }
 
         val privateKeyBytes = mnemonicManager.mnemonicToPrivateKey(words, passphrase)
-        val privateKey = BigInteger(1, privateKeyBytes)
+        val hex = Numeric.toHexStringNoPrefixZeroPadded(BigInteger(1, privateKeyBytes), 64)
 
-        savePrivateKey(privateKey, WALLET_TYPE_MNEMONIC)
-        storeMnemonic(words)
+        // Single atomic write
+        prefs.edit()
+            .putString(KEY_PRIVATE_KEY, hex)
+            .putString(KEY_WALLET_TYPE, WALLET_TYPE_MNEMONIC)
+            .putString(KEY_MNEMONIC, words.joinToString(" "))
+            .putBoolean(KEY_MNEMONIC_BACKED_UP, false)
+            .commit()
+
         return getWalletInfo()
     }
 
@@ -179,12 +192,6 @@ class KeyManager @Inject constructor(
             .apply()
     }
 
-    private fun storeMnemonic(words: List<String>) {
-        prefs.edit()
-            .putString(KEY_MNEMONIC, words.joinToString(" "))
-            .putBoolean(KEY_MNEMONIC_BACKED_UP, false)
-            .apply()
-    }
 
     companion object {
         private const val KEY_PRIVATE_KEY = "private_key"
