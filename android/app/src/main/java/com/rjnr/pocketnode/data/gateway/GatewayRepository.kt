@@ -236,8 +236,13 @@ class GatewayRepository @Inject constructor(
 
             walletPreferences.setSelectedNetwork(target) // uses commit() — synchronous flush
             Log.d(TAG, "Persisted ${target.name}, restarting process for clean JNI init")
+
+            // ProcessPhoenix-style restart: launch fresh activity before killing process.
+            // This ensures the app visibly restarts on all devices/launchers.
+            val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)!!
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            context.startActivity(intent)
             android.os.Process.killProcess(android.os.Process.myPid())
-            // Process is terminated above; code below is unreachable but satisfies the compiler
         } catch (e: Exception) {
             _isSwitchingNetwork.value = false
             throw e
@@ -262,6 +267,17 @@ class GatewayRepository @Inject constructor(
      * Checks if a wallet is already configured
      */
     fun hasWallet(): Boolean = keyManager.hasWallet()
+
+    /**
+     * Returns true if the current wallet is a mnemonic wallet that hasn't completed backup verification.
+     * Used by MainActivity to gate access to the dashboard until backup is done.
+     */
+    fun needsMnemonicBackup(): Boolean {
+        return keyManager.getWalletType() == KeyManager.WALLET_TYPE_MNEMONIC
+            && !keyManager.hasMnemonicBackup()
+    }
+
+    fun wasResetDueToCorruption(): Boolean = keyManager.wasResetDueToCorruption()
 
     /**
      * Create a brand new wallet and register with optimized sync

@@ -1,6 +1,7 @@
 package com.rjnr.pocketnode.ui.screens.onboarding
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import com.composables.icons.lucide.*
@@ -78,6 +79,24 @@ fun OnboardingScreen(
             )
 
             Spacer(modifier = Modifier.height(48.dp))
+
+            if (uiState.wasCorrupted) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        "Your previous wallet data was corrupted during an app update and had to be reset. " +
+                            "If you have a backup, please import it using your recovery phrase.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
             // Options
             OnboardingOption(

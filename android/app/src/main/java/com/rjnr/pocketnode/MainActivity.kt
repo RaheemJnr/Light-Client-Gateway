@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.fragment.app.FragmentActivity
@@ -15,6 +17,7 @@ import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.ui.navigation.CkbNavGraph
 import com.rjnr.pocketnode.ui.navigation.Screen
+import com.rjnr.pocketnode.data.wallet.WalletPreferences
 import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -27,6 +30,9 @@ class MainActivity : FragmentActivity() {
     @Inject
     lateinit var pinManager: PinManager
 
+    @Inject
+    lateinit var walletPreferences: WalletPreferences
+
     private val _requireReauth = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,12 +41,15 @@ class MainActivity : FragmentActivity() {
 
         val startDestination = when {
             !repository.hasWallet() -> Screen.Onboarding.route
+            repository.needsMnemonicBackup() -> Screen.MnemonicBackup.route
             pinManager.hasPin() -> Screen.Auth.route
             else -> Screen.Main.route
         }
 
         setContent {
-            CkbWalletTheme {
+            val themeMode by walletPreferences.themeModeFlow.collectAsState()
+
+            CkbWalletTheme(themeMode = themeMode) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background

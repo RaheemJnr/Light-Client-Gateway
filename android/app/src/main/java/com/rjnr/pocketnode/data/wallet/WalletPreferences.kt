@@ -6,8 +6,13 @@ import android.util.Log
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
+
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 /**
  * Manages wallet preferences for persisting user settings like sync mode.
@@ -21,6 +26,25 @@ class WalletPreferences @Inject constructor(
         PREFS_NAME,
         Context.MODE_PRIVATE
     )
+
+    private val _themeMode = MutableStateFlow(readThemeMode())
+    val themeModeFlow: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    private fun readThemeMode(): ThemeMode {
+        val name = prefs.getString(KEY_THEME_MODE, ThemeMode.SYSTEM.name)
+        return try {
+            ThemeMode.valueOf(name ?: ThemeMode.SYSTEM.name)
+        } catch (e: IllegalArgumentException) {
+            ThemeMode.SYSTEM
+        }
+    }
+
+    fun getThemeMode(): ThemeMode = _themeMode.value
+
+    fun setThemeMode(mode: ThemeMode) {
+        prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
+        _themeMode.value = mode
+    }
 
     init {
         migrateIfNeeded()
@@ -162,5 +186,6 @@ class WalletPreferences @Inject constructor(
         private const val KEY_CUSTOM_BLOCK_HEIGHT = "custom_block_height"
         private const val KEY_INITIAL_SYNC_COMPLETED = "initial_sync_completed"
         private const val KEY_LAST_SYNCED_BLOCK = "last_synced_block"
+        private const val KEY_THEME_MODE = "theme_mode"
     }
 }
