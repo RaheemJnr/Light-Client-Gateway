@@ -52,6 +52,7 @@ import com.composables.icons.lucide.Download
 import com.composables.icons.lucide.Github
 import com.composables.icons.lucide.Info
 import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Moon
 import com.composables.icons.lucide.Network
 import com.composables.icons.lucide.RefreshCw
 import com.composables.icons.lucide.Shield
@@ -62,6 +63,7 @@ import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.displayName
 import com.rjnr.pocketnode.ui.components.SyncOptionsDialog
+import com.rjnr.pocketnode.data.wallet.ThemeMode
 import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
 import com.rjnr.pocketnode.ui.theme.PendingAmber
 
@@ -117,6 +119,41 @@ fun SettingsScreen(
         )
     }
 
+    // Theme selection dialog
+    if (uiState.showThemeDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.hideThemeDialog() },
+            title = { Text("Theme") },
+            text = {
+                androidx.compose.foundation.layout.Column {
+                    ThemeMode.entries.forEach { mode ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.setThemeMode(mode) }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            androidx.compose.material3.RadioButton(
+                                selected = uiState.themeMode == mode,
+                                onClick = { viewModel.setThemeMode(mode) }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                when (mode) {
+                                    ThemeMode.SYSTEM -> "System Default"
+                                    ThemeMode.LIGHT -> "Light"
+                                    ThemeMode.DARK -> "Dark"
+                                }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
             snackbarHostState.showSnackbar(error)
@@ -135,7 +172,8 @@ fun SettingsScreen(
         showSyncDialog = { viewModel.showSyncDialog() },
         requestNetworkSwitch = {
             viewModel.requestNetworkSwitch(it)
-        }
+        },
+        showThemeDialog = { viewModel.showThemeDialog() }
     )
 }
 
@@ -150,8 +188,8 @@ private fun SettingsScreenUI(
     onNavigateToNodeStatus: () -> Unit,
     context: Context,
     showSyncDialog: () -> Unit,
-    requestNetworkSwitch: (NetworkType) -> Unit
-
+    requestNetworkSwitch: (NetworkType) -> Unit,
+    showThemeDialog: () -> Unit
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -210,6 +248,23 @@ private fun SettingsScreenUI(
                     title = "Sync Options",
                     badgeText = syncModeLabel(uiState.syncMode),
                     onClick = { showSyncDialog() }
+                )
+            }
+
+            // ── APPEARANCE ────────────────────────────────────────────────
+            item { SectionHeader("APPEARANCE") }
+
+            item {
+                val themeLabel = when (uiState.themeMode) {
+                    ThemeMode.SYSTEM -> "System"
+                    ThemeMode.LIGHT -> "Light"
+                    ThemeMode.DARK -> "Dark"
+                }
+                SettingsValueRow(
+                    icon = Lucide.Moon,
+                    title = "Theme",
+                    value = themeLabel,
+                    onClick = { showThemeDialog() }
                 )
             }
 
@@ -483,12 +538,14 @@ private fun SettingsScreenUIPreview() {
             uiState = SettingsViewModel.UiState(
                 isPinEnabled = true,
                 syncMode = SyncMode.RECENT,
-                currentNetwork = NetworkType.MAINNET
+                currentNetwork = NetworkType.MAINNET,
+                themeMode = ThemeMode.SYSTEM
             ),
             onNavigateToNodeStatus = {},
             context = LocalContext.current,
             showSyncDialog = {},
-            requestNetworkSwitch = {}
+            requestNetworkSwitch = {},
+            showThemeDialog = {}
         )
     }
 }
