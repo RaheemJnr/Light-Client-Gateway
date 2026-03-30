@@ -35,6 +35,7 @@ class MainActivity : FragmentActivity() {
 
         val startDestination = when {
             !repository.hasWallet() -> Screen.Onboarding.route
+            repository.needsMnemonicBackup() -> Screen.MnemonicBackup.route
             pinManager.hasPin() -> Screen.Auth.route
             else -> Screen.Main.route
         }

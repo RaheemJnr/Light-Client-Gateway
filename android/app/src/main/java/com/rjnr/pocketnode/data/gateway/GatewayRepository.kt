@@ -264,6 +264,17 @@ class GatewayRepository @Inject constructor(
     fun hasWallet(): Boolean = keyManager.hasWallet()
 
     /**
+     * Returns true if the current wallet is a mnemonic wallet that hasn't completed backup verification.
+     * Used by MainActivity to gate access to the dashboard until backup is done.
+     */
+    fun needsMnemonicBackup(): Boolean {
+        return keyManager.getWalletType() == KeyManager.WALLET_TYPE_MNEMONIC
+            && !keyManager.hasMnemonicBackup()
+    }
+
+    fun wasResetDueToCorruption(): Boolean = keyManager.wasResetDueToCorruption()
+
+    /**
      * Create a brand new wallet and register with optimized sync
      */
     suspend fun createNewWallet(): Result<WalletInfo> = runCatching {
