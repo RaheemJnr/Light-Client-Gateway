@@ -2,6 +2,7 @@ package com.rjnr.pocketnode.data.wallet
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
@@ -25,16 +26,35 @@ class KeyManager @Inject constructor(
     @VisibleForTesting
     internal var testPrefs: SharedPreferences? = null
 
+    private var walletResetDueToCorruption = false
+
+    fun wasResetDueToCorruption(): Boolean = walletResetDueToCorruption
+
     private val prefs: SharedPreferences
         get() = testPrefs ?: encryptedPrefs
 
     private val encryptedPrefs: SharedPreferences by lazy {
+        try {
+            createEncryptedPrefs(useStrongBox = true)
+        } catch (e: Exception) {
+            Log.e("KeyManager", "EncryptedSharedPreferences corrupted, resetting", e)
+            context.deleteSharedPreferences("ckb_wallet_keys")
+            walletResetDueToCorruption = true
+            try {
+                createEncryptedPrefs(useStrongBox = false)
+            } catch (e2: Exception) {
+                createEncryptedPrefs(useStrongBox = true)
+            }
+        }
+    }
+
+    private fun createEncryptedPrefs(useStrongBox: Boolean = true): SharedPreferences {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .setRequestStrongBoxBacked(true)
+            .setRequestStrongBoxBacked(useStrongBox)
             .build()
 
-        EncryptedSharedPreferences.create(
+        return EncryptedSharedPreferences.create(
             context,
             "ckb_wallet_keys",
             masterKey,
