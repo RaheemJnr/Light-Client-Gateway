@@ -1,5 +1,6 @@
 package com.rjnr.pocketnode.data.database.dao
 
+import androidx.paging.PagingSource
 import androidx.room.*
 import com.rjnr.pocketnode.data.database.entity.TransactionEntity
 
@@ -29,4 +30,21 @@ interface TransactionDao {
 
     @Query("DELETE FROM transactions")
     suspend fun deleteAll()
+
+    // -- Wallet-scoped queries --
+
+    @Query("SELECT * FROM transactions WHERE walletId = :walletId AND network = :network ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, timestamp DESC LIMIT :limit")
+    suspend fun getByWalletAndNetwork(walletId: String, network: String, limit: Int = 50): List<TransactionEntity>
+
+    @Query("SELECT * FROM transactions WHERE walletId = :walletId AND network = :network ORDER BY timestamp DESC")
+    suspend fun getAllByWalletAndNetwork(walletId: String, network: String): List<TransactionEntity>
+
+    @Query("SELECT * FROM transactions WHERE walletId = :walletId AND network = :network AND status = 'pending'")
+    suspend fun getPendingByWallet(walletId: String, network: String): List<TransactionEntity>
+
+    @Query("DELETE FROM transactions WHERE walletId = :walletId AND network = :network")
+    suspend fun deleteByWalletAndNetwork(walletId: String, network: String)
+
+    @Query("SELECT * FROM transactions WHERE walletId = :walletId AND network = :network ORDER BY timestamp DESC")
+    fun getTransactionsPaged(walletId: String, network: String): PagingSource<Int, TransactionEntity>
 }

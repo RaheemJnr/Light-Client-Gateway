@@ -29,4 +29,15 @@ interface DaoCellDao {
 
     @Query("DELETE FROM dao_cells")
     suspend fun deleteAll()
+
+    // -- Wallet-scoped queries --
+
+    @Query("SELECT * FROM dao_cells WHERE walletId = :walletId AND network = :network AND status IN ('pending_deposit', 'active')")
+    suspend fun getActiveByWalletAndNetwork(walletId: String, network: String): List<DaoCellEntity>
+
+    @Query("SELECT * FROM dao_cells WHERE walletId = :walletId AND network = :network AND status = 'withdrawn'")
+    suspend fun getCompletedByWalletAndNetwork(walletId: String, network: String): List<DaoCellEntity>
+
+    @Query("DELETE FROM dao_cells WHERE walletId = :walletId AND network = :network")
+    suspend fun deleteByWalletAndNetwork(walletId: String, network: String)
 }
