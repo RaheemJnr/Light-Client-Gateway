@@ -14,7 +14,8 @@ import javax.inject.Inject
 data class OnboardingUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
-    val isWalletCreated: Boolean = false
+    val isWalletCreated: Boolean = false,
+    val wasCorrupted: Boolean = false
 )
 
 @HiltViewModel
@@ -24,6 +25,10 @@ class OnboardingViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(OnboardingUiState())
     val uiState: StateFlow<OnboardingUiState> = _uiState.asStateFlow()
+
+    init {
+        _uiState.update { it.copy(wasCorrupted = repository.wasResetDueToCorruption()) }
+    }
 
     fun createNewWallet() {
         viewModelScope.launch {

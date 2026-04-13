@@ -6,6 +6,7 @@ import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
+import com.rjnr.pocketnode.data.wallet.ThemeMode
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,8 +27,10 @@ class SettingsViewModel @Inject constructor(
         val isPinEnabled: Boolean = false,
         val syncMode: SyncMode = SyncMode.RECENT,
         val currentNetwork: NetworkType = NetworkType.MAINNET,
+        val themeMode: ThemeMode = ThemeMode.SYSTEM,
         val showSyncDialog: Boolean = false,
         val showNetworkSwitchDialog: Boolean = false,
+        val showThemeDialog: Boolean = false,
         val pendingNetworkSwitch: NetworkType? = null,
         val error: String? = null
     )
@@ -51,7 +54,8 @@ class SettingsViewModel @Inject constructor(
             it.copy(
                 isPinEnabled = pinManager.hasPin(),
                 syncMode = walletPrefs.getSyncMode(),
-                currentNetwork = repository.currentNetwork
+                currentNetwork = repository.currentNetwork,
+                themeMode = walletPrefs.getThemeMode()
             )
         }
     }
@@ -95,6 +99,19 @@ class SettingsViewModel @Inject constructor(
                     _uiState.update { it.copy(error = "Network switch failed: ${e.message}") }
                 }
         }
+    }
+
+    fun showThemeDialog() {
+        _uiState.update { it.copy(showThemeDialog = true) }
+    }
+
+    fun hideThemeDialog() {
+        _uiState.update { it.copy(showThemeDialog = false) }
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        walletPrefs.setThemeMode(mode)
+        _uiState.update { it.copy(themeMode = mode, showThemeDialog = false) }
     }
 
     fun clearError() {

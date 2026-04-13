@@ -2,6 +2,7 @@ package com.rjnr.pocketnode.data.wallet
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
@@ -25,16 +26,35 @@ class KeyManager @Inject constructor(
     @VisibleForTesting
     internal var testPrefs: SharedPreferences? = null
 
+    private var walletResetDueToCorruption = false
+
+    fun wasResetDueToCorruption(): Boolean = walletResetDueToCorruption
+
     private val prefs: SharedPreferences
         get() = testPrefs ?: encryptedPrefs
 
     private val encryptedPrefs: SharedPreferences by lazy {
+        try {
+            createEncryptedPrefs(useStrongBox = true)
+        } catch (e: Exception) {
+            Log.e("KeyManager", "EncryptedSharedPreferences corrupted, resetting", e)
+            context.deleteSharedPreferences("ckb_wallet_keys")
+            walletResetDueToCorruption = true
+            try {
+                createEncryptedPrefs(useStrongBox = false)
+            } catch (e2: Exception) {
+                createEncryptedPrefs(useStrongBox = true)
+            }
+        }
+    }
+
+    private fun createEncryptedPrefs(useStrongBox: Boolean = true): SharedPreferences {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .setRequestStrongBoxBacked(true)
+            .setRequestStrongBoxBacked(useStrongBox)
             .build()
 
-        EncryptedSharedPreferences.create(
+        return EncryptedSharedPreferences.create(
             context,
             "ckb_wallet_keys",
             masterKey,
@@ -72,10 +92,17 @@ class KeyManager @Inject constructor(
     ): Pair<WalletInfo, List<String>> {
         val words = mnemonicManager.generateMnemonic(wordCount)
         val privateKeyBytes = mnemonicManager.mnemonicToPrivateKey(words)
-        val privateKey = BigInteger(1, privateKeyBytes)
+        val hex = Numeric.toHexStringNoPrefixZeroPadded(BigInteger(1, privateKeyBytes), 64)
 
-        savePrivateKey(privateKey, WALLET_TYPE_MNEMONIC)
-        storeMnemonic(words)
+        // Single atomic write — commit() is synchronous, all-or-nothing.
+        // Prevents race where app is killed between key save and mnemonic save.
+        prefs.edit()
+            .putString(KEY_PRIVATE_KEY, hex)
+            .putString(KEY_WALLET_TYPE, WALLET_TYPE_MNEMONIC)
+            .putString(KEY_MNEMONIC, words.joinToString(" "))
+            .putBoolean(KEY_MNEMONIC_BACKED_UP, false)
+            .commit()
+
         return Pair(getWalletInfo(), words)
     }
 
@@ -86,10 +113,16 @@ class KeyManager @Inject constructor(
         require(mnemonicManager.validateMnemonic(words)) { "Invalid mnemonic" }
 
         val privateKeyBytes = mnemonicManager.mnemonicToPrivateKey(words, passphrase)
-        val privateKey = BigInteger(1, privateKeyBytes)
+        val hex = Numeric.toHexStringNoPrefixZeroPadded(BigInteger(1, privateKeyBytes), 64)
 
-        savePrivateKey(privateKey, WALLET_TYPE_MNEMONIC)
-        storeMnemonic(words)
+        // Single atomic write — mark as backed up since user already knows their mnemonic
+        prefs.edit()
+            .putString(KEY_PRIVATE_KEY, hex)
+            .putString(KEY_WALLET_TYPE, WALLET_TYPE_MNEMONIC)
+            .putString(KEY_MNEMONIC, words.joinToString(" "))
+            .putBoolean(KEY_MNEMONIC_BACKED_UP, true)
+            .commit()
+
         return getWalletInfo()
     }
 
@@ -179,53 +212,6 @@ class KeyManager @Inject constructor(
             .apply()
     }
 
-    private fun storeMnemonic(words: List<String>) {
-        prefs.edit()
-            .putString(KEY_MNEMONIC, words.joinToString(" "))
-            .putBoolean(KEY_MNEMONIC_BACKED_UP, false)
-            .apply()
-    }
-
-    // -- Wallet-scoped key storage (M3 multi-wallet) --
-
-    private fun getWalletPrefs(walletId: String): SharedPreferences {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .setRequestStrongBoxBacked(true)
-            .build()
-        return EncryptedSharedPreferences.create(
-            context,
-            "ckb_wallet_keys_$walletId",
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    }
-
-    fun storeKeysForWallet(walletId: String, privateKey: ByteArray, mnemonic: List<String>?) {
-        val prefs = getWalletPrefs(walletId)
-        prefs.edit()
-            .putString(KEY_PRIVATE_KEY, privateKey.joinToString("") { "%02x".format(it) })
-            .putString(KEY_WALLET_TYPE, if (mnemonic != null) WALLET_TYPE_MNEMONIC else WALLET_TYPE_RAW_KEY)
-            .apply()
-        if (mnemonic != null) {
-            prefs.edit().putString(KEY_MNEMONIC, mnemonic.joinToString(" ")).apply()
-        }
-    }
-
-    fun getPrivateKeyForWallet(walletId: String): ByteArray? {
-        val hex = getWalletPrefs(walletId).getString(KEY_PRIVATE_KEY, null) ?: return null
-        return hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
-    }
-
-    fun getMnemonicForWallet(walletId: String): List<String>? {
-        val words = getWalletPrefs(walletId).getString(KEY_MNEMONIC, null) ?: return null
-        return words.split(" ")
-    }
-
-    fun deleteKeysForWallet(walletId: String) {
-        getWalletPrefs(walletId).edit().clear().apply()
-    }
 
     companion object {
         private const val KEY_PRIVATE_KEY = "private_key"

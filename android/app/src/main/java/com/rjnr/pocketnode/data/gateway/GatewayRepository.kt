@@ -2,9 +2,7 @@ package com.rjnr.pocketnode.data.gateway
 
 import android.content.Context
 import android.util.Log
-import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.gateway.models.*
-import com.rjnr.pocketnode.data.migration.WalletMigrationHelper
 import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.WalletInfo
@@ -36,8 +34,7 @@ class GatewayRepository @Inject constructor(
     private val json: Json,
     private val transactionBuilder: TransactionBuilder,
     private val cacheManager: CacheManager,
-    private val daoSyncManager: DaoSyncManager,
-    private val walletMigrationHelper: WalletMigrationHelper
+    private val daoSyncManager: DaoSyncManager
 ) {
     private val _walletInfo = MutableStateFlow<WalletInfo?>(null)
     val walletInfo: StateFlow<WalletInfo?> = _walletInfo.asStateFlow()
@@ -60,7 +57,6 @@ class GatewayRepository @Inject constructor(
 
     private val scope = CoroutineScope(Dispatchers.IO)
     private val _nodeReady = MutableStateFlow<Boolean?>(null)
-    private var activeWalletId: String = walletPreferences.getActiveWalletId() ?: ""
 
     init {
         // Migrate old flat data/ directory to data/mainnet/ on first run
@@ -68,27 +64,8 @@ class GatewayRepository @Inject constructor(
 
         // Initialize the embedded node for the persisted network
         scope.launch {
-            // Migrate single-wallet to multi-wallet schema if needed
-            walletMigrationHelper.migrateIfNeeded()
-            activeWalletId = walletPreferences.getActiveWalletId() ?: ""
-
             initializeNode(currentNetwork)
         }
-    }
-
-    /**
-     * Called when the user switches wallets. Updates internal state and re-registers
-     * the new wallet's lock script with the light client.
-     */
-    suspend fun onActiveWalletChanged(wallet: WalletEntity) {
-        activeWalletId = wallet.walletId
-        val info = keyManager.getWalletInfo()
-        _walletInfo.value = info
-        _isRegistered.value = false
-        registerAccount(
-            syncMode = walletPreferences.getSyncMode(walletId = wallet.walletId),
-            savePreference = false
-        )
     }
 
     /**
@@ -259,8 +236,13 @@ class GatewayRepository @Inject constructor(
 
             walletPreferences.setSelectedNetwork(target) // uses commit() — synchronous flush
             Log.d(TAG, "Persisted ${target.name}, restarting process for clean JNI init")
+
+            // ProcessPhoenix-style restart: launch fresh activity before killing process.
+            // This ensures the app visibly restarts on all devices/launchers.
+            val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)!!
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            context.startActivity(intent)
             android.os.Process.killProcess(android.os.Process.myPid())
-            // Process is terminated above; code below is unreachable but satisfies the compiler
         } catch (e: Exception) {
             _isSwitchingNetwork.value = false
             throw e
@@ -285,6 +267,17 @@ class GatewayRepository @Inject constructor(
      * Checks if a wallet is already configured
      */
     fun hasWallet(): Boolean = keyManager.hasWallet()
+
+    /**
+     * Returns true if the current wallet is a mnemonic wallet that hasn't completed backup verification.
+     * Used by MainActivity to gate access to the dashboard until backup is done.
+     */
+    fun needsMnemonicBackup(): Boolean {
+        return keyManager.getWalletType() == KeyManager.WALLET_TYPE_MNEMONIC
+            && !keyManager.hasMnemonicBackup()
+    }
+
+    fun wasResetDueToCorruption(): Boolean = keyManager.wasResetDueToCorruption()
 
     /**
      * Create a brand new wallet and register with optimized sync
@@ -457,7 +450,7 @@ class GatewayRepository @Inject constructor(
         val info = _walletInfo.value ?: throw Exception("No wallet")
 
         // --- Cache-first: emit cached balance immediately ---
-        cacheManager.getCachedBalance(currentNetwork.name, walletId = activeWalletId)?.let {
+        cacheManager.getCachedBalance(currentNetwork.name)?.let {
             _balance.value = it
         }
 
@@ -578,7 +571,7 @@ class GatewayRepository @Inject constructor(
         _balance.value = resp
 
         // --- Cache write ---
-        cacheManager.cacheBalance(resp, currentNetwork.name, walletId = activeWalletId)
+        cacheManager.cacheBalance(resp, currentNetwork.name)
 
         resp
     }
@@ -727,7 +720,7 @@ class GatewayRepository @Inject constructor(
         Log.d(TAG, "✅ sendTransaction: Success! txHash=$txHash (raw: $rawResult)")
 
         // Cache pending transaction in Room
-        cacheManager.insertPendingTransaction(txHash, currentNetwork.name, walletId = activeWalletId)
+        cacheManager.insertPendingTransaction(txHash, currentNetwork.name)
 
         // After sending, nudge the light client to rescan from a few blocks back
         // so it picks up the new change output when the tx confirms.
@@ -891,11 +884,11 @@ class GatewayRepository @Inject constructor(
         }
 
         // --- Cache write: upsert JNI results into Room ---
-        cacheManager.cacheTransactions(items, currentNetwork.name, walletId = activeWalletId)
+        cacheManager.cacheTransactions(items, currentNetwork.name)
 
         // Merge: include pending local txs not yet returned by JNI
         val jniTxHashes = items.map { it.txHash }.toSet()
-        val pendingLocal = cacheManager.getPendingNotIn(currentNetwork.name, jniTxHashes, walletId = activeWalletId)
+        val pendingLocal = cacheManager.getPendingNotIn(currentNetwork.name, jniTxHashes)
         val mergedItems = pendingLocal + items
 
         TransactionsResponse(mergedItems, pag.lastCursor)
@@ -1360,7 +1353,7 @@ class GatewayRepository @Inject constructor(
         Log.d(TAG, "DAO deposit sent: $txHash")
 
         // Track pending deposit in Room so UI shows it before JNI confirms
-        daoSyncManager.insertPendingDeposit(txHash, amountShannons, net.name, walletId = activeWalletId)
+        daoSyncManager.insertPendingDeposit(txHash, amountShannons, net.name)
 
         txHash
     }

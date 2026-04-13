@@ -4,7 +4,6 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,7 +70,6 @@ import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.ExternalLink
 import com.composables.icons.lucide.FileText
 import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.Settings
 import com.composables.icons.lucide.TriangleAlert
 import com.composables.icons.lucide.X
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
@@ -82,7 +80,6 @@ import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.Wallet
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.ui.components.SyncOptionsDialog
-import com.rjnr.pocketnode.ui.components.WalletSwitcherDropdown
 import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
 import com.rjnr.pocketnode.ui.theme.ErrorRed
 import com.rjnr.pocketnode.ui.theme.SuccessGreen
@@ -98,10 +95,8 @@ fun HomeScreen(
     onNavigateToSend: () -> Unit = {},
     onNavigateToReceive: () -> Unit = {},
     onNavigateToBackup: () -> Unit = {},
-    onNavigateToSettings: () -> Unit = {},
     onNavigateToDao: () -> Unit = {},
     onNavigateToActivity: () -> Unit = {},
-    onNavigateToWalletManager: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -109,7 +104,6 @@ fun HomeScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedTransaction by remember { mutableStateOf<TransactionRecord?>(null) }
-    var showWalletSwitcher by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     // Sync options dialog (settings path)
@@ -269,11 +263,6 @@ fun HomeScreen(
                         SyncingChip(syncedToBlock = uiState.syncedToBlock)
                     } else {
                         SyncedChip()
-                    }
-                    Spacer(Modifier.width(4.dp))
-                    // Gear icon — navigates to Settings tab via bottom nav
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(Lucide.Settings, contentDescription = "Settings")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
