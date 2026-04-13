@@ -348,7 +348,7 @@ class HomeViewModel @Inject constructor(
         _uiState.update { it.copy(walletType = type, showBackupReminder = needsBackup) }
     }
 
-    private fun refreshSecurityState() {
+    fun refreshSecurityState() {
         val hasPin = pinManager.hasPin()
         val hasBiometrics = authManager.isBiometricEnabled()
         val hasMnemonicBackup = repository.hasMnemonicBackup()
