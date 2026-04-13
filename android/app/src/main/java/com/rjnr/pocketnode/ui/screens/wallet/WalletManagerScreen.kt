@@ -1,13 +1,14 @@
 package com.rjnr.pocketnode.ui.screens.wallet
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,8 +25,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -35,16 +36,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.composables.icons.lucide.ArrowLeft
-import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Plus
-import com.rjnr.pocketnode.data.database.entity.WalletEntity
+import com.rjnr.pocketnode.ui.components.WalletAvatar
+import com.rjnr.pocketnode.ui.components.WalletGroup
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,11 +93,11 @@ fun WalletManagerScreen(
         ) {
             item { Spacer(Modifier.height(8.dp)) }
 
-            items(uiState.wallets, key = { it.walletId }) { wallet ->
-                WalletCard(
-                    wallet = wallet,
-                    onTap = { viewModel.switchWallet(wallet.walletId) },
-                    onDetail = { onNavigateToWalletDetail(wallet.walletId) }
+            items(uiState.walletGroups, key = { it.wallet.walletId }) { group ->
+                WalletGroupCard(
+                    group = group,
+                    onAddSubAccount = { viewModel.switchWallet(group.wallet.walletId) },
+                    onOpenSettings = { onNavigateToWalletDetail(group.wallet.walletId) }
                 )
             }
 
@@ -108,63 +107,68 @@ fun WalletManagerScreen(
 }
 
 @Composable
-private fun WalletCard(
-    wallet: WalletEntity,
-    onTap: () -> Unit,
-    onDetail: () -> Unit
+private fun WalletGroupCard(
+    group: WalletGroup,
+    onAddSubAccount: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
+    val totalAccounts = 1 + group.subAccounts.size
+    val accountLabel = if (totalAccounts == 1) "1 account" else "$totalAccounts accounts"
+
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onTap),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (wallet.isActive)
-                MaterialTheme.colorScheme.primaryContainer
-            else
-                MaterialTheme.colorScheme.surfaceVariant
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Parent wallet avatar
+            WalletAvatar(
+                name = group.wallet.name,
+                colorIndex = group.wallet.colorIndex,
+                size = 44.dp
+            )
+
+            Spacer(Modifier.width(12.dp))
+
+            // Name + account count + sub-account dots
             Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = group.wallet.name,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = wallet.name,
-                        style = MaterialTheme.typography.titleMedium
+                        text = accountLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(Modifier.width(8.dp))
-                    TypeBadge(wallet.type)
+                    if (group.subAccounts.isNotEmpty()) {
+                        Spacer(Modifier.width(8.dp))
+                        SubAccountDots(group)
+                    }
                 }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = wallet.mainnetAddress,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
 
-            if (wallet.isActive) {
-                Icon(
-                    Lucide.Check,
-                    contentDescription = "Active",
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.width(8.dp))
+            // "Add" button — only for mnemonic (HD) wallets
+            if (group.wallet.type == "mnemonic") {
+                TextButton(onClick = onAddSubAccount) {
+                    Text("Add", style = MaterialTheme.typography.labelMedium)
+                }
             }
 
-            IconButton(onClick = onDetail) {
+            // Chevron to wallet settings
+            IconButton(onClick = onOpenSettings) {
                 Icon(
                     Lucide.ChevronRight,
-                    contentDescription = "Details",
+                    contentDescription = "Settings",
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -172,22 +176,26 @@ private fun WalletCard(
     }
 }
 
+/** Renders up to 3 small overlapping avatar dots for sub-accounts. */
 @Composable
-private fun TypeBadge(type: String) {
-    val label = when (type) {
-        "mnemonic" -> "Seed Phrase"
-        "raw_key" -> "Imported"
-        else -> type
-    }
-    Surface(
-        shape = RoundedCornerShape(4.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            color = MaterialTheme.colorScheme.onSecondaryContainer
+private fun SubAccountDots(group: WalletGroup) {
+    val visible = group.subAccounts.take(3)
+    val dotSize = 18.dp
+    val overlap = 6.dp
+
+    Box {
+        visible.forEachIndexed { index, subAccount ->
+            Box(modifier = Modifier.offset(x = (index * (dotSize - overlap).value).dp)) {
+                WalletAvatar(
+                    name = subAccount.name,
+                    colorIndex = subAccount.colorIndex,
+                    size = dotSize
+                )
+            }
+        }
+        // Invisible spacer to size the Box correctly
+        Spacer(
+            Modifier.width(dotSize + (visible.size - 1).coerceAtLeast(0) * (dotSize - overlap))
         )
     }
 }
