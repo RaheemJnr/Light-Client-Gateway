@@ -31,6 +31,8 @@ import io.ktor.client.engine.android.Android
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
+import com.rjnr.pocketnode.data.wallet.KeyBackupManager
+import java.io.File
 import javax.inject.Singleton
 
 @Module
@@ -47,6 +49,12 @@ object AppModule {
         @ApplicationContext context: Context,
         mnemonicManager: MnemonicManager
     ): KeyManager = KeyManager(context, mnemonicManager)
+
+    @Provides
+    @Singleton
+    fun provideKeyBackupManager(
+        @ApplicationContext context: Context
+    ): KeyBackupManager = KeyBackupManager(File(context.filesDir, "key_backups"))
 
     @Provides
     @Singleton
