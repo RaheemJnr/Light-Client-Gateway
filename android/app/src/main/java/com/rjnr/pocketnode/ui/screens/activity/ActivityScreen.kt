@@ -2,6 +2,8 @@ package com.rjnr.pocketnode.ui.screens.activity
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +39,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -78,6 +81,25 @@ fun ActivityScreen(
     var selectedTransaction by remember { mutableStateOf<TransactionRecord?>(null) }
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
+    var pendingCsvContent by remember { mutableStateOf<String?>(null) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null && pendingCsvContent != null) {
+            context.contentResolver.openOutputStream(uri)?.use { stream ->
+                stream.write(pendingCsvContent!!.toByteArray())
+            }
+            pendingCsvContent = null
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.exportEvent.collect { csv ->
+            pendingCsvContent = csv
+            exportLauncher.launch("transactions.csv")
+        }
+    }
 
     val filtered = remember(uiState.transactions, uiState.filter) {
         viewModel.filteredTransactions(uiState)
@@ -98,6 +120,12 @@ fun ActivityScreen(
                     )
                 },
                 actions = {
+                    IconButton(onClick = { viewModel.exportTransactions() }) {
+                        Icon(
+                            imageVector = Lucide.Download,
+                            contentDescription = "Export CSV"
+                        )
+                    }
                     IconButton(onClick = { viewModel.loadTransactions() }) {
                         Icon(
                             imageVector = Lucide.RefreshCw,
