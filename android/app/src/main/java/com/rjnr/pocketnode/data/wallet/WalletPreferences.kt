@@ -125,6 +125,16 @@ class WalletPreferences @Inject constructor(
         prefs.edit().putLong(networkKey(KEY_LAST_SYNCED_BLOCK, network), blockNumber).apply()
     }
 
+    // --- Background sync (global, not per-network) ---
+
+    fun isBackgroundSyncEnabled(): Boolean {
+        return prefs.getBoolean(KEY_BACKGROUND_SYNC, true)
+    }
+
+    fun setBackgroundSyncEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_BACKGROUND_SYNC, enabled).commit()
+    }
+
     // --- Utilities ---
 
     // Clearing prefs removes KEY_SELECTED_NETWORK, so migrateIfNeeded() re-runs on next startup.
@@ -187,5 +197,6 @@ class WalletPreferences @Inject constructor(
         private const val KEY_INITIAL_SYNC_COMPLETED = "initial_sync_completed"
         private const val KEY_LAST_SYNCED_BLOCK = "last_synced_block"
         private const val KEY_THEME_MODE = "theme_mode"
+        private const val KEY_BACKGROUND_SYNC = "background_sync_enabled"
     }
 }
