@@ -50,6 +50,10 @@ class KeyManager @Inject constructor(
 
     fun wasResetDueToCorruption(): Boolean = walletResetDueToCorruption
 
+    fun resetCorruptionFlag() {
+        walletResetDueToCorruption = false
+    }
+
     private val prefs: SharedPreferences
         get() = testPrefs ?: encryptedPrefs
 

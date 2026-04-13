@@ -155,6 +155,42 @@ class PinManager @Inject constructor(
             .apply()
     }
 
+    fun setPinFromChars(pin: CharArray) {
+        require(pin.size == PIN_LENGTH && pin.all { it.isDigit() }) {
+            "PIN must be exactly $PIN_LENGTH digits"
+        }
+        val hash = hashPinFromChars(pin)
+        prefs.edit()
+            .putString(KEY_PIN_HASH, hash)
+            .putInt(KEY_FAILED_ATTEMPTS, 0)
+            .remove(KEY_LOCKOUT_UNTIL)
+            .apply()
+    }
+
+    fun verifyPinFromChars(pin: CharArray): Boolean {
+        if (isLockedOut()) return false
+        if (!hasPin()) return false
+
+        val storedHash = prefs.getString(KEY_PIN_HASH, null) ?: return false
+        val inputHash = hashPinFromChars(pin)
+
+        return if (inputHash == storedHash) {
+            resetFailedAttempts()
+            true
+        } else {
+            recordFailedAttempt()
+            false
+        }
+    }
+
+    private fun hashPinFromChars(pin: CharArray): String {
+        val salt = getOrCreateSalt()
+        val pinBytes = String(pin).toByteArray(Charsets.UTF_8)
+        val input = salt + pinBytes
+        val hash = blake2b.hash(input)
+        return hash.joinToString("") { "%02x".format(it) }
+    }
+
     private fun hashPin(pin: String): String {
         val salt = getOrCreateSalt()
         val input = salt + pin.toByteArray(Charsets.UTF_8)

@@ -248,4 +248,25 @@ class PinManagerTest {
         pinManager.removePin()
         assertFalse(pinManager.hasPin())
     }
+
+    // -- CharArray overloads --
+
+    @Test
+    fun `setPinFromChars and verifyPinFromChars work correctly`() {
+        pinManager.setPinFromChars("123456".toCharArray())
+        assertTrue(pinManager.verifyPinFromChars("123456".toCharArray()))
+        assertFalse(pinManager.verifyPinFromChars("654321".toCharArray()))
+    }
+
+    @Test
+    fun `setPinFromChars is compatible with verifyPin String`() {
+        pinManager.setPinFromChars("123456".toCharArray())
+        assertTrue(pinManager.verifyPin("123456"))
+    }
+
+    @Test
+    fun `setPin String is compatible with verifyPinFromChars`() {
+        pinManager.setPin("123456")
+        assertTrue(pinManager.verifyPinFromChars("123456".toCharArray()))
+    }
 }
