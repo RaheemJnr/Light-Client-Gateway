@@ -27,6 +27,7 @@ import androidx.compose.runtime.collectAsState
 import com.rjnr.pocketnode.ui.screens.security.SecurityChecklistScreen
 import com.rjnr.pocketnode.ui.screens.security.SecurityChecklistViewModel
 import com.rjnr.pocketnode.ui.screens.security.MnemonicVerifyScreen
+import com.rjnr.pocketnode.ui.screens.wallet.WalletManagerScreen
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
@@ -46,6 +47,7 @@ sealed class Screen(val route: String) {
     object Recovery : Screen("recovery")
     object SecurityChecklist : Screen("security_checklist")
     object MnemonicVerify : Screen("mnemonic_verify")
+    object WalletManager : Screen("wallet_manager")
 }
 
 sealed class BottomTab(val route: String, val label: String) {
@@ -256,6 +258,9 @@ fun CkbNavGraph(
                 onNavigateToSecurityChecklist = {
                     navController.navigate(Screen.SecurityChecklist.route)
                 },
+                onNavigateToWalletManager = {
+                    navController.navigate(Screen.WalletManager.route)
+                },
                 daoPinVerified = daoPinVerified,
             )
         }
@@ -357,6 +362,14 @@ fun CkbNavGraph(
                     navController.popBackStack()
                 },
                 onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.WalletManager.route) {
+            WalletManagerScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToAddWallet = { /* TODO: wire AddWalletScreen route */ },
+                onNavigateToWalletDetail = { walletId -> /* TODO: wire WalletDetailScreen route */ }
             )
         }
     }
