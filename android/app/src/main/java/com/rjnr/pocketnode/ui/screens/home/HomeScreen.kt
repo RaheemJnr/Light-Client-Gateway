@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +27,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -76,6 +79,7 @@ import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
 import com.rjnr.pocketnode.data.gateway.models.displayName
+import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.Wallet
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
@@ -97,6 +101,7 @@ fun HomeScreen(
     onNavigateToBackup: () -> Unit = {},
     onNavigateToDao: () -> Unit = {},
     onNavigateToActivity: () -> Unit = {},
+    onNavigateToWalletManager: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -104,6 +109,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedTransaction by remember { mutableStateOf<TransactionRecord?>(null) }
+    var showWalletSwitcher by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     // Sync options dialog (settings path)
@@ -974,6 +980,49 @@ private fun NetworkBadge(network: NetworkType) {
                 color = textColor
             )
         }
+    }
+}
+
+@Composable
+fun WalletSwitcherDropdown(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    wallets: List<WalletEntity>,
+    onSwitchWallet: (String) -> Unit,
+    onManageWallets: () -> Unit
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        wallets.forEach { wallet ->
+            DropdownMenuItem(
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(wallet.name, modifier = Modifier.weight(1f))
+                        if (wallet.isActive) {
+                            Icon(
+                                Lucide.Check,
+                                contentDescription = "Active",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                },
+                onClick = {
+                    onDismiss()
+                    onSwitchWallet(wallet.walletId)
+                }
+            )
+        }
+        if (wallets.isNotEmpty()) {
+            HorizontalDivider()
+        }
+        DropdownMenuItem(
+            text = { Text("Manage Wallets") },
+            onClick = {
+                onDismiss()
+                onManageWallets()
+            }
+        )
     }
 }
 

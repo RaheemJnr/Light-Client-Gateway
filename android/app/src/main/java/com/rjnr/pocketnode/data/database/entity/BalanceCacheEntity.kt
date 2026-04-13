@@ -8,7 +8,7 @@ import com.rjnr.pocketnode.data.gateway.models.BalanceResponse
 @Entity(tableName = "balance_cache")
 data class BalanceCacheEntity(
     @ColumnInfo(defaultValue = "") val walletId: String = "",
-    val network: String,
+    @PrimaryKey val network: String,
     val address: String,
     val capacity: String,
     val capacityCkb: String,

@@ -48,3 +48,28 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         )
     }
 }
+
+/**
+ * v2 -> v3: Add wallets table for multi-wallet support (M3).
+ */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `wallets` (
+                `walletId` TEXT NOT NULL,
+                `name` TEXT NOT NULL,
+                `type` TEXT NOT NULL,
+                `derivationPath` TEXT,
+                `parentWalletId` TEXT,
+                `accountIndex` INTEGER NOT NULL DEFAULT 0,
+                `mainnetAddress` TEXT NOT NULL DEFAULT '',
+                `testnetAddress` TEXT NOT NULL DEFAULT '',
+                `isActive` INTEGER NOT NULL DEFAULT 0,
+                `createdAt` INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(`walletId`)
+            )
+            """.trimIndent()
+        )
+    }
+}

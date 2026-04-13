@@ -3,6 +3,7 @@ package com.rjnr.pocketnode.ui.screens.home
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
@@ -10,6 +11,7 @@ import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
 import com.rjnr.pocketnode.data.price.PriceRepository
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.WalletInfo
+import com.rjnr.pocketnode.data.wallet.WalletRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -25,7 +27,8 @@ private const val TAG = "HomeViewModel"
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val repository: GatewayRepository,
-    private val priceRepository: PriceRepository
+    private val priceRepository: PriceRepository,
+    private val walletRepository: WalletRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -77,6 +80,12 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             repository.isSwitchingNetwork.collect { switching ->
                 _uiState.update { it.copy(isSwitchingNetwork = switching) }
+            }
+        }
+
+        viewModelScope.launch {
+            walletRepository.walletsFlow.collect { wallets ->
+                _uiState.update { it.copy(wallets = wallets) }
             }
         }
     }
@@ -429,6 +438,19 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    fun switchWallet(walletId: String) {
+        viewModelScope.launch {
+            try {
+                walletRepository.switchWallet(walletId)
+                // Re-initialize with the newly active wallet
+                initializeWallet()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to switch wallet", e)
+                _uiState.update { it.copy(error = "Failed to switch wallet: ${e.message}") }
+            }
+        }
+    }
+
     fun requestNetworkSwitch(target: NetworkType) {
         _uiState.update { it.copy(showNetworkSwitchDialog = true, pendingNetworkSwitch = target) }
     }
@@ -516,5 +538,6 @@ data class HomeUiState(
     val isSwitchingNetwork: Boolean = false,
     val showNetworkSwitchDialog: Boolean = false,
     val pendingNetworkSwitch: NetworkType? = null,
-    val isBalanceHidden: Boolean = false
+    val isBalanceHidden: Boolean = false,
+    val wallets: List<WalletEntity> = emptyList()
 )

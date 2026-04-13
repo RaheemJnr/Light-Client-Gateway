@@ -140,7 +140,7 @@ class KeyManager @Inject constructor(
     }
 
     fun setMnemonicBackedUp(backedUp: Boolean) {
-        prefs.edit().putBoolean(KEY_MNEMONIC_BACKED_UP, backedUp).apply()
+        prefs.edit().putBoolean(KEY_MNEMONIC_BACKED_UP, backedUp).commit()
     }
 
     // -- Shared methods --
@@ -209,9 +209,54 @@ class KeyManager @Inject constructor(
         prefs.edit()
             .putString(KEY_PRIVATE_KEY, hex)
             .putString(KEY_WALLET_TYPE, walletType)
-            .apply()
+            .commit()
     }
 
+    // -- Wallet-scoped key storage (multi-wallet support) --
+
+    fun storeKeysForWallet(walletId: String, privateKey: ByteArray, mnemonic: List<String>?) {
+        val walletPrefs = getWalletPrefs(walletId)
+        walletPrefs.edit().apply {
+            putString(KEY_PRIVATE_KEY, privateKey.joinToString("") { "%02x".format(it) })
+            putString(KEY_WALLET_TYPE, if (mnemonic != null) WALLET_TYPE_MNEMONIC else WALLET_TYPE_RAW_KEY)
+            if (mnemonic != null) {
+                putString(KEY_MNEMONIC, mnemonic.joinToString(" "))
+            }
+        }.commit()
+    }
+
+    private fun getWalletPrefs(walletId: String): SharedPreferences {
+        val fileName = "ckb_wallet_keys_$walletId"
+        return context.getSharedPreferences(fileName, Context.MODE_PRIVATE)
+    }
+
+    fun getMnemonicForWallet(walletId: String): List<String>? {
+        val joined = getWalletPrefs(walletId).getString(KEY_MNEMONIC, null) ?: return null
+        return joined.split(" ")
+    }
+
+    fun getPrivateKeyForWallet(walletId: String): ByteArray {
+        val hex = getWalletPrefs(walletId).getString(KEY_PRIVATE_KEY, null)
+            ?: throw IllegalStateException("No wallet found for $walletId")
+        return Numeric.hexStringToByteArray(hex)
+    }
+
+    fun setMnemonicBackedUpForWallet(walletId: String, backedUp: Boolean) {
+        getWalletPrefs(walletId).edit().putBoolean(KEY_MNEMONIC_BACKED_UP, backedUp).commit()
+    }
+
+    fun hasMnemonicBackupForWallet(walletId: String): Boolean {
+        return getWalletPrefs(walletId).getBoolean(KEY_MNEMONIC_BACKED_UP, false)
+    }
+
+    fun deleteWalletKeys(walletId: String) {
+        getWalletPrefs(walletId).edit()
+            .remove(KEY_PRIVATE_KEY)
+            .remove(KEY_MNEMONIC)
+            .remove(KEY_MNEMONIC_BACKED_UP)
+            .remove(KEY_WALLET_TYPE)
+            .commit()
+    }
 
     companion object {
         private const val KEY_PRIVATE_KEY = "private_key"
