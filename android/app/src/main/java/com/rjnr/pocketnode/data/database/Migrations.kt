@@ -94,5 +94,10 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS `idx_dao_wallet_network` ON `dao_cells` (`walletId`, `network`)"
         )
+
+        // 5. Add index to header_cache (entity annotation added in M3 but never created in v1→v2)
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `idx_header_network_number` ON `header_cache` (`network`, `number`)"
+        )
     }
 }
