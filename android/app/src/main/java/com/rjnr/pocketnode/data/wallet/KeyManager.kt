@@ -37,12 +37,17 @@ class KeyManager @Inject constructor(
         try {
             createEncryptedPrefs(useStrongBox = true)
         } catch (e: Exception) {
-            Log.e("KeyManager", "EncryptedSharedPreferences corrupted, resetting", e)
-            context.deleteSharedPreferences("ckb_wallet_keys")
-            walletResetDueToCorruption = true
+            Log.w(TAG, "StrongBox-backed prefs failed, trying without StrongBox", e)
+            // NEVER delete the prefs file — it may contain the user's only copy of
+            // their private key and mnemonic. Try without StrongBox instead.
             try {
                 createEncryptedPrefs(useStrongBox = false)
             } catch (e2: Exception) {
+                // Both attempts failed — the keystore or prefs file is genuinely corrupted.
+                // Surface the error so the user sees a warning. Do NOT delete the file.
+                Log.e(TAG, "EncryptedSharedPreferences completely unreadable", e2)
+                walletResetDueToCorruption = true
+                // Last resort: try StrongBox one more time (sometimes transient)
                 createEncryptedPrefs(useStrongBox = true)
             }
         }
@@ -230,11 +235,12 @@ class KeyManager @Inject constructor(
         return try {
             createEncryptedPrefsForWallet(fileName, useStrongBox = true)
         } catch (e: Exception) {
-            Log.e(TAG, "Wallet prefs ($walletId) corrupted, resetting", e)
-            context.deleteSharedPreferences(fileName)
+            Log.w(TAG, "Wallet prefs ($walletId) StrongBox failed, trying without", e)
+            // NEVER delete — may contain user's only key material
             try {
                 createEncryptedPrefsForWallet(fileName, useStrongBox = false)
             } catch (e2: Exception) {
+                Log.e(TAG, "Wallet prefs ($walletId) completely unreadable", e2)
                 createEncryptedPrefsForWallet(fileName, useStrongBox = true)
             }
         }
