@@ -78,15 +78,14 @@ import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
 import com.rjnr.pocketnode.data.gateway.models.displayName
-import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.ChevronDown
-import com.composables.icons.lucide.Wallet
-import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.ui.components.SecurityBanner
 import com.rjnr.pocketnode.ui.components.SecurityBannerState
 import com.rjnr.pocketnode.ui.components.SyncOptionsDialog
 import com.rjnr.pocketnode.ui.components.UpdateDialog
-import com.rjnr.pocketnode.ui.components.WalletSwitcherDropdown
+import com.rjnr.pocketnode.ui.components.AccountSelectorSheet
+import com.rjnr.pocketnode.ui.components.WalletAvatar
+import androidx.compose.material3.rememberModalBottomSheetState
 import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
 import com.rjnr.pocketnode.ui.theme.ErrorRed
 import com.rjnr.pocketnode.ui.theme.SuccessGreen
@@ -113,7 +112,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedTransaction by remember { mutableStateOf<TransactionRecord?>(null) }
-    var showWalletSwitcher by remember { mutableStateOf(false) }
+    var showAccountSelector by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
@@ -273,44 +272,51 @@ fun HomeScreen(
         )
     }
 
+    // Account selector bottom sheet
+    if (showAccountSelector) {
+        AccountSelectorSheet(
+            sheetState = rememberModalBottomSheetState(),
+            walletGroups = uiState.walletGroups,
+            activeWalletId = uiState.wallets.find { it.isActive }?.walletId ?: "",
+            onSelectAccount = { viewModel.switchWallet(it) },
+            onManageWallets = onNavigateToWalletManager,
+            onDismiss = { showAccountSelector = false }
+        )
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
                 title = {
-                    Box {
-                        Row(
-                            modifier = Modifier
-                                .padding(8.dp)
-                                .clickable { showWalletSwitcher = true },
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            val activeWallet = uiState.wallets.find { it.isActive }
-                            Icon(
-                                Lucide.Wallet,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.primary
+                    val activeWallet = uiState.wallets.find { it.isActive }
+                    Row(
+                        modifier = Modifier
+                            .padding(8.dp)
+                            .clickable { showAccountSelector = true },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        WalletAvatar(
+                            name = activeWallet?.name ?: "P",
+                            colorIndex = activeWallet?.colorIndex ?: 0,
+                            size = 32.dp
+                        )
+                        Column {
+                            Text(
+                                text = "wallet",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
                                 text = activeWallet?.name ?: "Pocket Node",
                                 fontWeight = FontWeight.SemiBold
                             )
-                            if (uiState.wallets.size > 1) {
-                                Icon(
-                                    Lucide.ChevronDown,
-                                    contentDescription = "Switch Wallet",
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
                         }
-                        WalletSwitcherDropdown(
-                            expanded = showWalletSwitcher,
-                            onDismiss = { showWalletSwitcher = false },
-                            wallets = uiState.wallets,
-                            onSwitchWallet = { viewModel.switchWallet(it) },
-                            onManageWallets = onNavigateToWalletManager
+                        Icon(
+                            Lucide.ChevronDown,
+                            contentDescription = "Switch",
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 },

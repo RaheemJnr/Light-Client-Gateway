@@ -19,6 +19,7 @@ import com.rjnr.pocketnode.data.update.UpdateRepository
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.WalletInfo
 import com.rjnr.pocketnode.data.wallet.WalletRepository
+import com.rjnr.pocketnode.ui.components.WalletGroup
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -104,7 +105,14 @@ class HomeViewModel @Inject constructor(
 
         viewModelScope.launch {
             walletRepository.walletsFlow.collect { wallets ->
-                _uiState.update { it.copy(wallets = wallets) }
+                val parentWallets = wallets.filter { it.parentWalletId == null }
+                val groups = parentWallets.map { parent ->
+                    WalletGroup(
+                        wallet = parent,
+                        subAccounts = wallets.filter { it.parentWalletId == parent.walletId }
+                    )
+                }
+                _uiState.update { it.copy(wallets = wallets, walletGroups = groups) }
             }
         }
     }
@@ -567,6 +575,7 @@ data class HomeUiState(
     val pendingNetworkSwitch: NetworkType? = null,
     val isBalanceHidden: Boolean = false,
     val wallets: List<WalletEntity> = emptyList(),
+    val walletGroups: List<WalletGroup> = emptyList(),
     val updateInfo: UpdateInfo? = null,
     val showUpdateDialog: Boolean = false,
     val showInstallPermissionNeeded: Boolean = false,
