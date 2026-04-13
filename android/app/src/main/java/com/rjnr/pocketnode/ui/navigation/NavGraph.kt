@@ -162,10 +162,10 @@ fun CkbNavGraph(
                             navController.navigate(Screen.PinEntry.createRoute("confirm"))
                         }
                         PinMode.CONFIRM -> {
-                            navController.popBackStack(
-                                Screen.SecuritySettings.route,
-                                inclusive = false
-                            )
+                            // Pop back past both PinEntry screens (confirm + setup)
+                            // to wherever the user came from (SecuritySettings or SecurityChecklist)
+                            navController.popBackStack() // pop confirm
+                            navController.popBackStack() // pop setup
                         }
                         PinMode.VERIFY -> {
                             val previousRoute = navController.previousBackStackEntry
