@@ -434,7 +434,7 @@ class HomeViewModel @Inject constructor(
     fun switchWallet(walletId: String) {
         viewModelScope.launch {
             try {
-                walletRepository.switchWallet(walletId)
+                walletRepository.switchActiveWallet(walletId)
                 // Re-initialize with the newly active wallet
                 initializeWallet()
             } catch (e: Exception) {

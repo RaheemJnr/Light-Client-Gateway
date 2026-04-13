@@ -14,9 +14,18 @@ private const val TAG = "WalletRepository"
 @Singleton
 class WalletRepository @Inject constructor(
     private val walletDao: WalletDao,
-    private val keyManager: KeyManager
+    private val keyManager: KeyManager,
+    private val walletPreferences: WalletPreferences,
+    private val mnemonicManager: MnemonicManager
 ) {
     val walletsFlow: Flow<List<WalletEntity>> = walletDao.getAllFlow()
+
+    fun getActiveWallet(): Flow<WalletEntity?> = walletDao.getActiveWallet()
+
+    fun getAllWallets(): Flow<List<WalletEntity>> = walletDao.getAllWallets()
+
+    fun getSubAccounts(parentWalletId: String): Flow<List<WalletEntity>> =
+        walletDao.getSubAccounts(parentWalletId)
 
     suspend fun getAll(): List<WalletEntity> = walletDao.getAll()
 
@@ -33,6 +42,8 @@ class WalletRepository @Inject constructor(
     ): Pair<WalletEntity, List<String>> {
         val (info, words) = keyManager.generateWalletWithMnemonic(wordCount)
         val walletId = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        val colorIndex = walletDao.count() % 8
 
         // Store keys in wallet-scoped prefs
         keyManager.storeKeysForWallet(walletId, keyManager.getPrivateKey(), words)
@@ -47,11 +58,14 @@ class WalletRepository @Inject constructor(
             mainnetAddress = info.mainnetAddress,
             testnetAddress = info.testnetAddress,
             isActive = true,
-            createdAt = System.currentTimeMillis()
+            createdAt = now,
+            lastActiveAt = now,
+            colorIndex = colorIndex
         )
 
         walletDao.deactivateAll()
         walletDao.insert(entity)
+        walletPreferences.setActiveWalletId(walletId)
         Log.d(TAG, "Created wallet: ${entity.walletId} (${entity.name})")
         return Pair(entity, words)
     }
@@ -66,6 +80,8 @@ class WalletRepository @Inject constructor(
     ): WalletEntity {
         val info = keyManager.importWalletFromMnemonic(words, passphrase)
         val walletId = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        val colorIndex = walletDao.count() % 8
 
         keyManager.storeKeysForWallet(walletId, keyManager.getPrivateKey(), words)
         keyManager.setMnemonicBackedUpForWallet(walletId, true)
@@ -80,11 +96,14 @@ class WalletRepository @Inject constructor(
             mainnetAddress = info.mainnetAddress,
             testnetAddress = info.testnetAddress,
             isActive = true,
-            createdAt = System.currentTimeMillis()
+            createdAt = now,
+            lastActiveAt = now,
+            colorIndex = colorIndex
         )
 
         walletDao.deactivateAll()
         walletDao.insert(entity)
+        walletPreferences.setActiveWalletId(walletId)
         Log.d(TAG, "Imported wallet: ${entity.walletId} (${entity.name})")
         return entity
     }
@@ -98,6 +117,8 @@ class WalletRepository @Inject constructor(
     ): WalletEntity {
         val info = keyManager.importWallet(privateKeyHex)
         val walletId = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        val colorIndex = walletDao.count() % 8
 
         keyManager.storeKeysForWallet(walletId, keyManager.getPrivateKey(), null)
         keyManager.setMnemonicBackedUpForWallet(walletId, true)
@@ -112,21 +133,80 @@ class WalletRepository @Inject constructor(
             mainnetAddress = info.mainnetAddress,
             testnetAddress = info.testnetAddress,
             isActive = true,
-            createdAt = System.currentTimeMillis()
+            createdAt = now,
+            lastActiveAt = now,
+            colorIndex = colorIndex
         )
 
         walletDao.deactivateAll()
         walletDao.insert(entity)
+        walletPreferences.setActiveWalletId(walletId)
         Log.d(TAG, "Imported raw key wallet: ${entity.walletId} (${entity.name})")
         return entity
     }
 
     /**
-     * Switch active wallet.
+     * Create a sub-account derived from a parent mnemonic wallet.
+     * Derives a new key at the next account index from the parent's mnemonic.
      */
-    suspend fun switchWallet(walletId: String) {
+    suspend fun createSubAccount(parentWalletId: String, name: String): WalletEntity {
+        val parent = walletDao.getById(parentWalletId)
+            ?: throw IllegalArgumentException("Parent wallet not found")
+        require(parent.type == KeyManager.WALLET_TYPE_MNEMONIC) {
+            "Sub-accounts require a mnemonic wallet"
+        }
+
+        val parentMnemonic = keyManager.getMnemonicForWallet(parentWalletId)
+            ?: throw IllegalStateException("Parent mnemonic not found")
+
+        val nextIndex = walletDao.count() // simple incrementing index
+        val seed = mnemonicManager.mnemonicToSeed(parentMnemonic)
+        val privateKey = mnemonicManager.derivePrivateKey(seed, accountIndex = nextIndex)
+        val publicKey = keyManager.derivePublicKey(privateKey)
+        val lockScript = keyManager.deriveLockScript(publicKey)
+        val mainnetAddress = AddressUtils.encode(lockScript, NetworkType.MAINNET)
+        val testnetAddress = AddressUtils.encode(lockScript, NetworkType.TESTNET)
+
+        val walletId = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        val colorIndex = walletDao.count() % 8
+
+        // Sub-accounts don't store mnemonic — only the parent holds it
+        keyManager.storeKeysForWallet(walletId, privateKey, null)
+
+        val entity = WalletEntity(
+            walletId = walletId,
+            name = name,
+            type = KeyManager.WALLET_TYPE_MNEMONIC,
+            derivationPath = "m/44'/309'/$nextIndex'/0/0",
+            parentWalletId = parentWalletId,
+            accountIndex = nextIndex,
+            mainnetAddress = mainnetAddress,
+            testnetAddress = testnetAddress,
+            isActive = true,
+            createdAt = now,
+            lastActiveAt = now,
+            colorIndex = colorIndex
+        )
+
+        walletDao.deactivateAll()
+        walletDao.insert(entity)
+        walletPreferences.setActiveWalletId(walletId)
+        Log.d(TAG, "Created sub-account: $walletId (parent: $parentWalletId, index: $nextIndex)")
+
+        return entity
+    }
+
+    /**
+     * Switch active wallet. Updates Room, preferences, and last-active timestamp.
+     */
+    suspend fun switchActiveWallet(walletId: String) {
+        val wallet = walletDao.getById(walletId)
+            ?: throw IllegalArgumentException("Wallet not found: $walletId")
         walletDao.deactivateAll()
         walletDao.activate(walletId)
+        walletDao.updateLastActiveAt(walletId, System.currentTimeMillis())
+        walletPreferences.setActiveWalletId(walletId)
         Log.d(TAG, "Switched to wallet: $walletId")
     }
 

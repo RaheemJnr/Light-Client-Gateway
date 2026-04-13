@@ -34,7 +34,7 @@ class WalletManagerViewModel @Inject constructor(
     fun switchWallet(walletId: String) {
         viewModelScope.launch {
             try {
-                walletRepository.switchWallet(walletId)
+                walletRepository.switchActiveWallet(walletId)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to switch wallet", e)
                 _uiState.update { it.copy(error = "Failed to switch wallet: ${e.message}") }

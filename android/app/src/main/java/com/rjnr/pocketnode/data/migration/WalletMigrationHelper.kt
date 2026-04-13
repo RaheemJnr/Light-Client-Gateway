@@ -1,9 +1,11 @@
 package com.rjnr.pocketnode.data.migration
 
 import android.util.Log
+import com.rjnr.pocketnode.data.database.AppDatabase
 import com.rjnr.pocketnode.data.database.dao.WalletDao
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.wallet.KeyManager
+import com.rjnr.pocketnode.data.wallet.WalletPreferences
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -15,12 +17,15 @@ private const val TAG = "WalletMigrationHelper"
  * to multi-wallet (Room + wallet-scoped prefs).
  *
  * Runs once at startup. If the wallets table is empty but the legacy KeyManager
- * has a private key, it creates a WalletEntity and copies the keys to wallet-scoped prefs.
+ * has a private key, it creates a WalletEntity, copies keys to wallet-scoped prefs,
+ * and backfills walletId in existing cached data.
  */
 @Singleton
 class WalletMigrationHelper @Inject constructor(
     private val walletDao: WalletDao,
-    private val keyManager: KeyManager
+    private val keyManager: KeyManager,
+    private val walletPreferences: WalletPreferences,
+    private val database: AppDatabase
 ) {
     /**
      * Migrate the legacy single-wallet to the multi-wallet Room table.
@@ -61,7 +66,17 @@ class WalletMigrationHelper @Inject constructor(
             )
 
             walletDao.insert(entity)
-            Log.d(TAG, "Migration complete: created wallet ${entity.walletId}")
+
+            // Backfill walletId in existing cached data
+            val db = database.openHelper.writableDatabase
+            db.execSQL("UPDATE transactions SET walletId = ? WHERE walletId = ''", arrayOf(walletId))
+            db.execSQL("UPDATE balance_cache SET walletId = ? WHERE walletId = ''", arrayOf(walletId))
+            db.execSQL("UPDATE dao_cells SET walletId = ? WHERE walletId = ''", arrayOf(walletId))
+
+            // Set active wallet ID in preferences
+            walletPreferences.setActiveWalletId(walletId)
+
+            Log.d(TAG, "Migration complete: created wallet $walletId")
         } catch (e: Exception) {
             Log.e(TAG, "Migration failed — legacy wallet intact, will retry next launch", e)
         }
