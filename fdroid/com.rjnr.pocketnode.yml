@@ -35,24 +35,24 @@ RepoType: git
 Repo: https://github.com/RaheemJnr/pocket-node
 
 Builds:
-  - versionName: '1.1.0'
-    versionCode: 3
-    commit: v1.1.0
+  - versionName: '1.3.0'
+    versionCode: 4
+    commit: e0eb56afba5ba10db325617e6bd0ca9fe8803d92
     subdir: android/app
-    submodules: true
     sudo:
       - apt-get update
       - apt-get install -y build-essential
       - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-      - source $HOME/.cargo/env
-      - rustup target add aarch64-linux-android armv7-linux-androideabi
+      - source $HOME/.cargo/env && rustup target add aarch64-linux-android armv7-linux-androideabi
+      - ln -sf $HOME/.cargo/bin/* /usr/local/bin/
     gradle:
       - yes
     ndk: 29.0.13846066
-    prebuild:
-      - cd ../../external/ckb-light-client && ANDROID_NDK_HOME=$$NDK$$ ./build-android-jni.sh
+    build:
+      - cd ../../external/ckb-light-client
+      - ANDROID_NDK_HOME=$$NDK$$ ./build-android-jni.sh
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: '1.1.0'
-CurrentVersionCode: 3
+CurrentVersion: '1.3.0'
+CurrentVersionCode: 4
