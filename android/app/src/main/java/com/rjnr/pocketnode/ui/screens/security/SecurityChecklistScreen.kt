@@ -1,0 +1,114 @@
+package com.rjnr.pocketnode.ui.screens.security
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.Circle
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SecurityChecklistScreen(
+    hasPinOrBiometrics: Boolean,
+    hasMnemonicBackup: Boolean,
+    onSetupPin: () -> Unit,
+    onBackupMnemonic: () -> Unit,
+    onBack: () -> Unit
+) {
+    val completedCount = listOf(hasPinOrBiometrics, hasMnemonicBackup).count { it }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Security Setup") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = "$completedCount of 2 complete",
+                style = MaterialTheme.typography.titleMedium,
+                color = if (completedCount == 2) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            LinearProgressIndicator(
+                progress = { completedCount / 2f },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            SecurityChecklistItem(
+                title = "PIN or biometrics",
+                description = "Protects your wallet and enables encrypted backups",
+                isComplete = hasPinOrBiometrics,
+                onAction = onSetupPin,
+                actionLabel = if (hasPinOrBiometrics) "Done" else "Set up"
+            )
+
+            SecurityChecklistItem(
+                title = "Recovery phrase",
+                description = "Write down your 12 words so you can restore your wallet if this device is lost",
+                isComplete = hasMnemonicBackup,
+                onAction = onBackupMnemonic,
+                actionLabel = if (hasMnemonicBackup) "Done" else "Back up"
+            )
+        }
+    }
+}
+
+@Composable
+private fun SecurityChecklistItem(
+    title: String,
+    description: String,
+    isComplete: Boolean,
+    onAction: () -> Unit,
+    actionLabel: String
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = if (isComplete) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
+                contentDescription = null,
+                tint = if (isComplete) MaterialTheme.colorScheme.primary
+                       else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = title, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (!isComplete) {
+                FilledTonalButton(onClick = onAction) {
+                    Text(actionLabel)
+                }
+            }
+        }
+    }
+}
