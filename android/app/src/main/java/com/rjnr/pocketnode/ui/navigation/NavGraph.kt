@@ -22,6 +22,9 @@ import com.rjnr.pocketnode.ui.screens.scanner.QrScannerScreen
 import com.rjnr.pocketnode.ui.screens.send.SendScreen
 import com.rjnr.pocketnode.ui.screens.settings.SecuritySettingsScreen
 import com.rjnr.pocketnode.ui.screens.settings.SecuritySettingsViewModel
+import com.rjnr.pocketnode.ui.screens.recovery.RecoveryScreen
+import com.rjnr.pocketnode.ui.screens.security.SecurityChecklistScreen
+import com.rjnr.pocketnode.ui.screens.security.MnemonicVerifyScreen
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
@@ -38,6 +41,9 @@ sealed class Screen(val route: String) {
         fun createRoute(mode: String) = "pin_entry/$mode"
     }
     object SecuritySettings : Screen("security_settings")
+    object Recovery : Screen("recovery")
+    object SecurityChecklist : Screen("security_checklist")
+    object MnemonicVerify : Screen("mnemonic_verify")
 }
 
 sealed class BottomTab(val route: String, val label: String) {
@@ -245,6 +251,9 @@ fun CkbNavGraph(
                 onNavigateToPinVerify = {
                     navController.navigate(Screen.PinEntry.createRoute("verify"))
                 },
+                onNavigateToSecurityChecklist = {
+                    navController.navigate(Screen.SecurityChecklist.route)
+                },
                 daoPinVerified = daoPinVerified,
             )
         }
@@ -291,6 +300,45 @@ fun CkbNavGraph(
         composable(Screen.NodeStatus.route) {
             com.rjnr.pocketnode.ui.screens.status.NodeStatusScreen(
                 navController = navController
+            )
+        }
+
+        composable(Screen.Recovery.route) {
+            RecoveryScreen(
+                onRecoveryComplete = { recoveredWallets ->
+                    navController.navigate(Screen.Main.route) {
+                        popUpTo(Screen.Recovery.route) { inclusive = true }
+                    }
+                },
+                onMnemonicRestore = {
+                    navController.navigate(Screen.Onboarding.route) {
+                        popUpTo(Screen.Recovery.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        composable(Screen.SecurityChecklist.route) {
+            SecurityChecklistScreen(
+                hasPinOrBiometrics = false, // TODO: wire from parent ViewModel
+                hasMnemonicBackup = false,  // TODO: wire from parent ViewModel
+                onSetupPin = {
+                    navController.navigate(Screen.PinEntry.createRoute("setup"))
+                },
+                onBackupMnemonic = {
+                    navController.navigate(Screen.MnemonicBackup.route)
+                },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.MnemonicVerify.route) {
+            MnemonicVerifyScreen(
+                mnemonicWords = emptyList(), // TODO: wire from KeyManager via ViewModel
+                onVerified = {
+                    navController.popBackStack()
+                },
+                onBack = { navController.popBackStack() }
             )
         }
     }
