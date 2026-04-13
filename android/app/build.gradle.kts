@@ -131,6 +131,11 @@ dependencies {
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
+    implementation(libs.room.paging)
+
+    // Paging 3
+    implementation(libs.androidx.paging.runtime)
+    implementation(libs.androidx.paging.compose)
 
     // CameraX for camera preview (ZXing decodes frames — no ML Kit native libs)
     implementation(libs.camerax.core)
