@@ -3,6 +3,7 @@ package com.rjnr.pocketnode.data.gateway
 import android.content.Context
 import android.util.Log
 import com.rjnr.pocketnode.data.gateway.models.*
+import com.rjnr.pocketnode.data.sync.SyncProgressTracker
 import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.WalletInfo
@@ -11,6 +12,7 @@ import com.nervosnetwork.ckblightclient.LightClientNative
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +27,15 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+
+data class SyncProgress(
+    val isSyncing: Boolean = false,
+    val syncedToBlock: Long = 0L,
+    val tipBlockNumber: Long = 0L,
+    val percentage: Double = 0.0,
+    val etaDisplay: String = "",
+    val justReachedTip: Boolean = false
+)
 
 @Singleton
 class GatewayRepository @Inject constructor(
@@ -57,6 +68,13 @@ class GatewayRepository @Inject constructor(
 
     private val scope = CoroutineScope(Dispatchers.IO)
     private val _nodeReady = MutableStateFlow<Boolean?>(null)
+
+    // --- Sync progress tracking ---
+    private val syncProgressTracker = SyncProgressTracker()
+    private var syncPollingJob: Job? = null
+    private var wasSyncing = false
+    private val _syncProgress = MutableStateFlow(SyncProgress())
+    val syncProgress: StateFlow<SyncProgress> = _syncProgress.asStateFlow()
 
     init {
         // Migrate old flat data/ directory to data/mainnet/ on first run
@@ -188,6 +206,7 @@ class GatewayRepository @Inject constructor(
                 if (startResult) {
                     Log.d(TAG, "Node started successfully on ${targetNetwork.name} (attempt $attempt)")
                     _nodeReady.value = true
+                    startSyncPolling()
                     return
                 }
 
@@ -1477,6 +1496,61 @@ class GatewayRepository @Inject constructor(
             blockNumber = blockNumberHex
         )
         return json.encodeToString(listOf(lockStatus))
+    }
+
+    // ========================================
+    // Sync Progress Polling
+    // ========================================
+
+    /**
+     * Start centralized sync polling. Idempotent — does nothing if already running.
+     * Polls getAccountStatus(), records samples, calculates progress, and emits to syncProgress flow.
+     */
+    fun startSyncPolling() {
+        if (syncPollingJob?.isActive == true) return
+
+        syncPollingJob = scope.launch {
+            Log.d(TAG, "Starting centralized sync polling")
+            while (true) {
+                getAccountStatus()
+                    .onSuccess { status ->
+                        val syncedBlock = status.syncedToBlock.toLongOrNull() ?: 0L
+                        val tipBlock = status.tipNumber.toLongOrNull() ?: 0L
+
+                        syncProgressTracker.recordSample(syncedBlock, System.currentTimeMillis())
+                        val info = syncProgressTracker.calculate(tipBlock)
+
+                        val justReachedTip = wasSyncing && info.isSynced
+                        wasSyncing = !info.isSynced
+
+                        _syncProgress.value = SyncProgress(
+                            isSyncing = !info.isSynced,
+                            syncedToBlock = syncedBlock,
+                            tipBlockNumber = tipBlock,
+                            percentage = info.percentage,
+                            etaDisplay = info.etaDisplay,
+                            justReachedTip = justReachedTip
+                        )
+                    }
+                    .onFailure { e ->
+                        Log.e(TAG, "Sync polling: failed to get account status", e)
+                    }
+
+                val delayMs = if (_syncProgress.value.isSyncing) 5_000L else 30_000L
+                delay(delayMs)
+            }
+        }
+    }
+
+    /**
+     * Stop centralized sync polling. Resets tracker state.
+     */
+    fun stopSyncPolling() {
+        syncPollingJob?.cancel()
+        syncPollingJob = null
+        syncProgressTracker.reset()
+        wasSyncing = false
+        Log.d(TAG, "Stopped centralized sync polling")
     }
 
     companion object {
