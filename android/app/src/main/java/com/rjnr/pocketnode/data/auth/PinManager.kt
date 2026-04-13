@@ -7,6 +7,7 @@ import androidx.annotation.VisibleForTesting
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.rjnr.pocketnode.data.crypto.Blake2b
+import com.rjnr.pocketnode.data.wallet.KeyBackupManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.security.SecureRandom
 import javax.inject.Inject
@@ -19,6 +20,18 @@ class PinManager @Inject constructor(
 ) {
     @VisibleForTesting
     internal var testPrefs: SharedPreferences? = null
+
+    private var backupChecker: (() -> Boolean)? = null
+
+    @VisibleForTesting
+    fun setBackupChecker(checker: () -> Boolean) {
+        backupChecker = checker
+    }
+
+    @Inject
+    fun setBackupCheckerFromDI(keyBackupManager: KeyBackupManager) {
+        backupChecker = { keyBackupManager.hasAnyBackups() }
+    }
 
     private val prefs: SharedPreferences
         get() = testPrefs ?: encryptedPrefs
@@ -85,7 +98,13 @@ class PinManager @Inject constructor(
 
     fun hasPin(): Boolean = prefs.contains(KEY_PIN_HASH)
 
-    fun removePin() {
+    fun removePin(force: Boolean = false) {
+        if (!force && backupChecker?.invoke() == true) {
+            throw IllegalStateException(
+                "Cannot remove PIN while encrypted backup files exist. " +
+                "Use force=true to delete backups and remove PIN."
+            )
+        }
         prefs.edit()
             .remove(KEY_PIN_HASH)
             .remove(KEY_SALT)

@@ -26,6 +26,26 @@ class KeyManager @Inject constructor(
     @VisibleForTesting
     internal var testPrefs: SharedPreferences? = null
 
+    @VisibleForTesting
+    internal var keyBackupManager: KeyBackupManager? = null
+
+    private var sessionPin: CharArray? = null
+
+    fun setSessionPin(pin: CharArray) {
+        sessionPin?.let { java.util.Arrays.fill(it, '\u0000') }
+        sessionPin = pin.copyOf()
+    }
+
+    fun clearSessionPin() {
+        sessionPin?.let { java.util.Arrays.fill(it, '\u0000') }
+        sessionPin = null
+    }
+
+    @Inject
+    fun setBackupManager(backupManager: KeyBackupManager) {
+        this.keyBackupManager = backupManager
+    }
+
     private var walletResetDueToCorruption = false
 
     fun wasResetDueToCorruption(): Boolean = walletResetDueToCorruption
@@ -108,6 +128,15 @@ class KeyManager @Inject constructor(
             .putBoolean(KEY_MNEMONIC_BACKED_UP, false)
             .commit()
 
+        writeBackupIfPinAvailable("default") {
+            KeyMaterial(
+                privateKey = hex,
+                mnemonic = words.joinToString(" "),
+                walletType = WALLET_TYPE_MNEMONIC,
+                mnemonicBackedUp = false
+            )
+        }
+
         return Pair(getWalletInfo(), words)
     }
 
@@ -128,6 +157,15 @@ class KeyManager @Inject constructor(
             .putBoolean(KEY_MNEMONIC_BACKED_UP, true)
             .commit()
 
+        writeBackupIfPinAvailable("default") {
+            KeyMaterial(
+                privateKey = hex,
+                mnemonic = words.joinToString(" "),
+                walletType = WALLET_TYPE_MNEMONIC,
+                mnemonicBackedUp = true
+            )
+        }
+
         return getWalletInfo()
     }
 
@@ -146,6 +184,16 @@ class KeyManager @Inject constructor(
 
     fun setMnemonicBackedUp(backedUp: Boolean) {
         prefs.edit().putBoolean(KEY_MNEMONIC_BACKED_UP, backedUp).commit()
+
+        val pk = prefs.getString(KEY_PRIVATE_KEY, null) ?: return
+        writeBackupIfPinAvailable("default") {
+            KeyMaterial(
+                privateKey = pk,
+                mnemonic = prefs.getString(KEY_MNEMONIC, null),
+                walletType = getWalletType(),
+                mnemonicBackedUp = backedUp
+            )
+        }
     }
 
     // -- Shared methods --
@@ -201,6 +249,7 @@ class KeyManager @Inject constructor(
     }
 
     fun deleteWallet() {
+        keyBackupManager?.deleteBackup("default")
         prefs.edit()
             .remove(KEY_PRIVATE_KEY)
             .remove(KEY_MNEMONIC)
@@ -215,6 +264,15 @@ class KeyManager @Inject constructor(
             .putString(KEY_PRIVATE_KEY, hex)
             .putString(KEY_WALLET_TYPE, walletType)
             .commit()
+
+        writeBackupIfPinAvailable("default") {
+            KeyMaterial(
+                privateKey = hex,
+                mnemonic = null,
+                walletType = walletType,
+                mnemonicBackedUp = false
+            )
+        }
     }
 
     // -- Wallet-scoped key storage (multi-wallet support) --
@@ -228,6 +286,15 @@ class KeyManager @Inject constructor(
                 putString(KEY_MNEMONIC, mnemonic.joinToString(" "))
             }
         }.commit()
+
+        writeBackupIfPinAvailable(walletId) {
+            KeyMaterial(
+                privateKey = privateKey.joinToString("") { "%02x".format(it) },
+                mnemonic = mnemonic?.joinToString(" "),
+                walletType = if (mnemonic != null) WALLET_TYPE_MNEMONIC else WALLET_TYPE_RAW_KEY,
+                mnemonicBackedUp = false
+            )
+        }
     }
 
     private fun getWalletPrefs(walletId: String): SharedPreferences {
@@ -271,6 +338,16 @@ class KeyManager @Inject constructor(
 
     fun setMnemonicBackedUpForWallet(walletId: String, backedUp: Boolean) {
         getWalletPrefs(walletId).edit().putBoolean(KEY_MNEMONIC_BACKED_UP, backedUp).commit()
+
+        writeBackupIfPinAvailable(walletId) {
+            val walletPrefs = getWalletPrefs(walletId)
+            KeyMaterial(
+                privateKey = walletPrefs.getString(KEY_PRIVATE_KEY, null) ?: "",
+                mnemonic = walletPrefs.getString(KEY_MNEMONIC, null),
+                walletType = walletPrefs.getString(KEY_WALLET_TYPE, WALLET_TYPE_RAW_KEY) ?: WALLET_TYPE_RAW_KEY,
+                mnemonicBackedUp = backedUp
+            )
+        }
     }
 
     fun hasMnemonicBackupForWallet(walletId: String): Boolean {
@@ -278,12 +355,23 @@ class KeyManager @Inject constructor(
     }
 
     fun deleteWalletKeys(walletId: String) {
+        keyBackupManager?.deleteBackup(walletId)
         getWalletPrefs(walletId).edit()
             .remove(KEY_PRIVATE_KEY)
             .remove(KEY_MNEMONIC)
             .remove(KEY_MNEMONIC_BACKED_UP)
             .remove(KEY_WALLET_TYPE)
             .commit()
+    }
+
+    private fun writeBackupIfPinAvailable(walletId: String, buildMaterial: () -> KeyMaterial) {
+        val pin = sessionPin ?: return
+        val manager = keyBackupManager ?: return
+        try {
+            manager.writeBackup(walletId, buildMaterial(), pin)
+        } catch (e: Exception) {
+            Log.w(TAG, "Backup write failed for $walletId", e)
+        }
     }
 
     companion object {

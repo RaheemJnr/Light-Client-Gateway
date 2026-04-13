@@ -8,6 +8,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE)
@@ -15,6 +16,7 @@ class KeyManagerTest {
 
     private lateinit var keyManager: KeyManager
     private lateinit var mnemonicManager: MnemonicManager
+    private lateinit var backupManager: KeyBackupManager
 
     private val testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
         .split(" ")
@@ -26,6 +28,11 @@ class KeyManagerTest {
         keyManager = KeyManager(context, mnemonicManager)
         // Use plain SharedPreferences for testing (EncryptedSharedPreferences needs real KeyStore)
         keyManager.testPrefs = context.getSharedPreferences("test_keys", Context.MODE_PRIVATE)
+        val backupDir = File(context.cacheDir, "test_key_backups")
+        backupDir.deleteRecursively()
+        backupManager = KeyBackupManager(backupDir)
+        backupManager.kdfIterations = 1000
+        keyManager.keyBackupManager = backupManager
         keyManager.deleteWallet()
     }
 
@@ -148,5 +155,29 @@ class KeyManagerTest {
         assertTrue(keyManager.hasWallet())
         assertNotNull(info.publicKey)
         assertEquals(KeyManager.WALLET_TYPE_RAW_KEY, keyManager.getWalletType())
+    }
+
+    // -- Backup dual-write --
+
+    @Test
+    fun `generateWalletWithMnemonic writes backup when session PIN available`() {
+        keyManager.setSessionPin("123456".toCharArray())
+        keyManager.generateWalletWithMnemonic()
+        assertTrue(backupManager.hasAnyBackups())
+    }
+
+    @Test
+    fun `generateWalletWithMnemonic skips backup when no session PIN`() {
+        keyManager.generateWalletWithMnemonic()
+        assertFalse(backupManager.hasAnyBackups())
+    }
+
+    @Test
+    fun `deleteWallet removes backup`() {
+        keyManager.setSessionPin("123456".toCharArray())
+        keyManager.generateWalletWithMnemonic()
+        assertTrue(backupManager.hasBackup("default"))
+        keyManager.deleteWallet()
+        assertFalse(backupManager.hasBackup("default"))
     }
 }

@@ -207,4 +207,45 @@ class PinManagerTest {
 
         assertTrue(newPinManager.isLockedOut())
     }
+
+    // -- removePin backup guard --
+
+    @Test
+    fun `removePin throws if backups exist and force is false`() {
+        pinManager.setPin("123456")
+        pinManager.setBackupChecker { true }
+
+        try {
+            pinManager.removePin(force = false)
+            fail("Should have thrown")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message!!.contains("backup"))
+        }
+    }
+
+    @Test
+    fun `removePin succeeds if no backups exist`() {
+        pinManager.setPin("123456")
+        pinManager.setBackupChecker { false }
+
+        pinManager.removePin(force = false)
+        assertFalse(pinManager.hasPin())
+    }
+
+    @Test
+    fun `removePin with force bypasses backup check`() {
+        pinManager.setPin("123456")
+        pinManager.setBackupChecker { true }
+
+        pinManager.removePin(force = true)
+        assertFalse(pinManager.hasPin())
+    }
+
+    @Test
+    fun `removePin without backup checker works normally`() {
+        pinManager.setPin("123456")
+        // No backup checker set — backupChecker is null
+        pinManager.removePin()
+        assertFalse(pinManager.hasPin())
+    }
 }
