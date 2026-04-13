@@ -28,8 +28,8 @@ import com.rjnr.pocketnode.ui.screens.security.SecurityChecklistScreen
 import com.rjnr.pocketnode.ui.screens.security.SecurityChecklistViewModel
 import com.rjnr.pocketnode.ui.screens.security.MnemonicVerifyScreen
 import com.rjnr.pocketnode.ui.screens.wallet.AddWalletScreen
-import com.rjnr.pocketnode.ui.screens.wallet.WalletDetailScreen
 import com.rjnr.pocketnode.ui.screens.wallet.WalletManagerScreen
+import com.rjnr.pocketnode.ui.screens.wallet.WalletSettingsScreen
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
@@ -385,7 +385,7 @@ fun CkbNavGraph(
             route = Screen.WalletDetail.route,
             arguments = listOf(navArgument("walletId") { type = NavType.StringType })
         ) {
-            WalletDetailScreen(
+            WalletSettingsScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }
