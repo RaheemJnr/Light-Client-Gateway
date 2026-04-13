@@ -227,7 +227,29 @@ class KeyManager @Inject constructor(
 
     private fun getWalletPrefs(walletId: String): SharedPreferences {
         val fileName = "ckb_wallet_keys_$walletId"
-        return context.getSharedPreferences(fileName, Context.MODE_PRIVATE)
+        return try {
+            createEncryptedPrefsForWallet(fileName, useStrongBox = true)
+        } catch (e: Exception) {
+            Log.e(TAG, "Wallet prefs ($walletId) corrupted, resetting", e)
+            context.deleteSharedPreferences(fileName)
+            try {
+                createEncryptedPrefsForWallet(fileName, useStrongBox = false)
+            } catch (e2: Exception) {
+                createEncryptedPrefsForWallet(fileName, useStrongBox = true)
+            }
+        }
+    }
+
+    private fun createEncryptedPrefsForWallet(fileName: String, useStrongBox: Boolean): SharedPreferences {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .apply { if (useStrongBox) setRequestStrongBoxBacked(true) }
+            .build()
+        return EncryptedSharedPreferences.create(
+            context, fileName, masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
     }
 
     fun getMnemonicForWallet(walletId: String): List<String>? {
@@ -259,6 +281,7 @@ class KeyManager @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "KeyManager"
         private const val KEY_PRIVATE_KEY = "private_key"
         private const val KEY_MNEMONIC = "mnemonic_words"
         private const val KEY_MNEMONIC_BACKED_UP = "mnemonic_backed_up"
