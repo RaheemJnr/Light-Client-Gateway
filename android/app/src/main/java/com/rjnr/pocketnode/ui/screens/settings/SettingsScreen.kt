@@ -1,8 +1,13 @@
 package com.rjnr.pocketnode.ui.screens.settings
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +33,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -46,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.Download
@@ -83,6 +90,14 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Permission launcher for POST_NOTIFICATIONS (API 33+)
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        // Enable background sync regardless — notification will just be silent if denied
+        viewModel.toggleBackgroundSync(true)
+    }
 
     // Sync options dialog
     if (uiState.showSyncDialog) {
@@ -173,7 +188,19 @@ fun SettingsScreen(
         requestNetworkSwitch = {
             viewModel.requestNetworkSwitch(it)
         },
-        showThemeDialog = { viewModel.showThemeDialog() }
+        showThemeDialog = { viewModel.showThemeDialog() },
+        onToggleBackgroundSync = { enabled ->
+            if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val hasPermission = ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+                if (!hasPermission) {
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    return@SettingsScreenUI
+                }
+            }
+            viewModel.toggleBackgroundSync(enabled)
+        }
     )
 }
 
@@ -189,7 +216,8 @@ private fun SettingsScreenUI(
     context: Context,
     showSyncDialog: () -> Unit,
     requestNetworkSwitch: (NetworkType) -> Unit,
-    showThemeDialog: () -> Unit
+    showThemeDialog: () -> Unit,
+    onToggleBackgroundSync: (Boolean) -> Unit = {}
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -248,6 +276,15 @@ private fun SettingsScreenUI(
                     title = "Sync Options",
                     badgeText = syncModeLabel(uiState.syncMode),
                     onClick = { showSyncDialog() }
+                )
+            }
+
+            item {
+                SettingsSwitchRow(
+                    icon = Lucide.RefreshCw,
+                    title = "Background Sync",
+                    checked = uiState.isBackgroundSyncEnabled,
+                    onCheckedChange = onToggleBackgroundSync
                 )
             }
 
@@ -469,6 +506,42 @@ fun SettingsValueRow(
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium
         )
+    }
+    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = 1.dp)
+}
+
+@Composable
+fun SettingsSwitchRow(
+    icon: ImageVector,
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                icon,
+                null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                title,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = 1.dp)
 }

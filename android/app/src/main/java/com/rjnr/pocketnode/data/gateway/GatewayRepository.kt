@@ -3,6 +3,7 @@ package com.rjnr.pocketnode.data.gateway
 import android.content.Context
 import android.util.Log
 import com.rjnr.pocketnode.data.gateway.models.*
+import com.rjnr.pocketnode.data.sync.SyncForegroundService
 import com.rjnr.pocketnode.data.sync.SyncProgressTracker
 import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
@@ -207,6 +208,7 @@ class GatewayRepository @Inject constructor(
                     Log.d(TAG, "Node started successfully on ${targetNetwork.name} (attempt $attempt)")
                     _nodeReady.value = true
                     startSyncPolling()
+                    startBackgroundSync()
                     return
                 }
 
@@ -1551,6 +1553,30 @@ class GatewayRepository @Inject constructor(
         syncProgressTracker.reset()
         wasSyncing = false
         Log.d(TAG, "Stopped centralized sync polling")
+    }
+
+    // ========================================
+    // Background Sync Service
+    // ========================================
+
+    /**
+     * Start the foreground sync service if background sync is enabled.
+     */
+    fun startBackgroundSync() {
+        if (!walletPreferences.isBackgroundSyncEnabled()) {
+            Log.d(TAG, "Background sync disabled, not starting service")
+            return
+        }
+        Log.d(TAG, "Starting background sync service")
+        SyncForegroundService.start(context)
+    }
+
+    /**
+     * Stop the foreground sync service.
+     */
+    fun stopBackgroundSync() {
+        Log.d(TAG, "Stopping background sync service")
+        SyncForegroundService.stop(context)
     }
 
     companion object {

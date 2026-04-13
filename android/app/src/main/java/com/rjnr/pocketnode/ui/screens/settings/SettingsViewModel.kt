@@ -28,6 +28,7 @@ class SettingsViewModel @Inject constructor(
         val syncMode: SyncMode = SyncMode.RECENT,
         val currentNetwork: NetworkType = NetworkType.MAINNET,
         val themeMode: ThemeMode = ThemeMode.SYSTEM,
+        val isBackgroundSyncEnabled: Boolean = true,
         val showSyncDialog: Boolean = false,
         val showNetworkSwitchDialog: Boolean = false,
         val showThemeDialog: Boolean = false,
@@ -55,7 +56,8 @@ class SettingsViewModel @Inject constructor(
                 isPinEnabled = pinManager.hasPin(),
                 syncMode = walletPrefs.getSyncMode(),
                 currentNetwork = repository.currentNetwork,
-                themeMode = walletPrefs.getThemeMode()
+                themeMode = walletPrefs.getThemeMode(),
+                isBackgroundSyncEnabled = walletPrefs.isBackgroundSyncEnabled()
             )
         }
     }
@@ -112,6 +114,16 @@ class SettingsViewModel @Inject constructor(
     fun setThemeMode(mode: ThemeMode) {
         walletPrefs.setThemeMode(mode)
         _uiState.update { it.copy(themeMode = mode, showThemeDialog = false) }
+    }
+
+    fun toggleBackgroundSync(enabled: Boolean) {
+        walletPrefs.setBackgroundSyncEnabled(enabled)
+        _uiState.update { it.copy(isBackgroundSyncEnabled = enabled) }
+        if (enabled) {
+            repository.startBackgroundSync()
+        } else {
+            repository.stopBackgroundSync()
+        }
     }
 
     fun clearError() {
