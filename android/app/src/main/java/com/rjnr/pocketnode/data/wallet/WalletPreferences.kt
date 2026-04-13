@@ -13,6 +13,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
+enum class SyncStrategy { ACTIVE_ONLY, ALL_WALLETS, BALANCED }
 
 /**
  * Manages wallet preferences for persisting user settings like sync mode.
@@ -74,10 +75,16 @@ class WalletPreferences @Inject constructor(
         return "${net.name.lowercase()}_$key"
     }
 
+    private fun walletNetworkKey(walletId: String, network: String, key: String): String =
+        "${walletId}_${network.lowercase()}_$key"
+
     // --- Sync mode ---
 
-    fun getSyncMode(network: NetworkType? = null): SyncMode {
-        val modeName = prefs.getString(networkKey(KEY_SYNC_MODE, network), SyncMode.RECENT.name)
+    fun getSyncMode(network: NetworkType? = null, walletId: String? = null): SyncMode {
+        val net = network ?: getSelectedNetwork()
+        val key = if (walletId != null) walletNetworkKey(walletId, net.name, KEY_SYNC_MODE)
+                  else networkKey(KEY_SYNC_MODE, net)
+        val modeName = prefs.getString(key, SyncMode.RECENT.name)
         return try {
             SyncMode.valueOf(modeName ?: SyncMode.RECENT.name)
         } catch (e: IllegalArgumentException) {
@@ -86,43 +93,64 @@ class WalletPreferences @Inject constructor(
         }
     }
 
-    fun setSyncMode(mode: SyncMode, network: NetworkType? = null) {
-        prefs.edit().putString(networkKey(KEY_SYNC_MODE, network), mode.name).apply()
+    fun setSyncMode(mode: SyncMode, network: NetworkType? = null, walletId: String? = null) {
+        val net = network ?: getSelectedNetwork()
+        val key = if (walletId != null) walletNetworkKey(walletId, net.name, KEY_SYNC_MODE)
+                  else networkKey(KEY_SYNC_MODE, net)
+        prefs.edit().putString(key, mode.name).apply()
     }
 
     // --- Custom block height ---
 
-    fun getCustomBlockHeight(network: NetworkType? = null): Long? {
-        val height = prefs.getLong(networkKey(KEY_CUSTOM_BLOCK_HEIGHT, network), -1L)
+    fun getCustomBlockHeight(network: NetworkType? = null, walletId: String? = null): Long? {
+        val net = network ?: getSelectedNetwork()
+        val key = if (walletId != null) walletNetworkKey(walletId, net.name, KEY_CUSTOM_BLOCK_HEIGHT)
+                  else networkKey(KEY_CUSTOM_BLOCK_HEIGHT, net)
+        val height = prefs.getLong(key, -1L)
         return if (height >= 0) height else null
     }
 
-    fun setCustomBlockHeight(height: Long?, network: NetworkType? = null) {
+    fun setCustomBlockHeight(height: Long?, network: NetworkType? = null, walletId: String? = null) {
+        val net = network ?: getSelectedNetwork()
+        val key = if (walletId != null) walletNetworkKey(walletId, net.name, KEY_CUSTOM_BLOCK_HEIGHT)
+                  else networkKey(KEY_CUSTOM_BLOCK_HEIGHT, net)
         if (height != null) {
-            prefs.edit().putLong(networkKey(KEY_CUSTOM_BLOCK_HEIGHT, network), height).apply()
+            prefs.edit().putLong(key, height).apply()
         } else {
-            prefs.edit().remove(networkKey(KEY_CUSTOM_BLOCK_HEIGHT, network)).apply()
+            prefs.edit().remove(key).apply()
         }
     }
 
     // --- Initial sync ---
 
-    fun hasCompletedInitialSync(network: NetworkType? = null): Boolean {
-        return prefs.getBoolean(networkKey(KEY_INITIAL_SYNC_COMPLETED, network), false)
+    fun hasCompletedInitialSync(network: NetworkType? = null, walletId: String? = null): Boolean {
+        val net = network ?: getSelectedNetwork()
+        val key = if (walletId != null) walletNetworkKey(walletId, net.name, KEY_INITIAL_SYNC_COMPLETED)
+                  else networkKey(KEY_INITIAL_SYNC_COMPLETED, net)
+        return prefs.getBoolean(key, false)
     }
 
-    fun setInitialSyncCompleted(completed: Boolean, network: NetworkType? = null) {
-        prefs.edit().putBoolean(networkKey(KEY_INITIAL_SYNC_COMPLETED, network), completed).apply()
+    fun setInitialSyncCompleted(completed: Boolean, network: NetworkType? = null, walletId: String? = null) {
+        val net = network ?: getSelectedNetwork()
+        val key = if (walletId != null) walletNetworkKey(walletId, net.name, KEY_INITIAL_SYNC_COMPLETED)
+                  else networkKey(KEY_INITIAL_SYNC_COMPLETED, net)
+        prefs.edit().putBoolean(key, completed).apply()
     }
 
     // --- Last synced block ---
 
-    fun getLastSyncedBlock(network: NetworkType? = null): Long {
-        return prefs.getLong(networkKey(KEY_LAST_SYNCED_BLOCK, network), 0L)
+    fun getLastSyncedBlock(network: NetworkType? = null, walletId: String? = null): Long {
+        val net = network ?: getSelectedNetwork()
+        val key = if (walletId != null) walletNetworkKey(walletId, net.name, KEY_LAST_SYNCED_BLOCK)
+                  else networkKey(KEY_LAST_SYNCED_BLOCK, net)
+        return prefs.getLong(key, 0L)
     }
 
-    fun setLastSyncedBlock(blockNumber: Long, network: NetworkType? = null) {
-        prefs.edit().putLong(networkKey(KEY_LAST_SYNCED_BLOCK, network), blockNumber).apply()
+    fun setLastSyncedBlock(blockNumber: Long, network: NetworkType? = null, walletId: String? = null) {
+        val net = network ?: getSelectedNetwork()
+        val key = if (walletId != null) walletNetworkKey(walletId, net.name, KEY_LAST_SYNCED_BLOCK)
+                  else networkKey(KEY_LAST_SYNCED_BLOCK, net)
+        prefs.edit().putLong(key, blockNumber).apply()
     }
 
     // --- Background sync (global, not per-network) ---
@@ -133,6 +161,29 @@ class WalletPreferences @Inject constructor(
 
     fun setBackgroundSyncEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_BACKGROUND_SYNC, enabled).commit()
+    }
+
+    // --- Active wallet (M3 multi-wallet) ---
+
+    fun getActiveWalletId(): String? = prefs.getString(KEY_ACTIVE_WALLET_ID, null)
+
+    fun setActiveWalletId(walletId: String) {
+        prefs.edit().putString(KEY_ACTIVE_WALLET_ID, walletId).apply()
+    }
+
+    // --- Sync strategy (M3 multi-wallet) ---
+
+    fun getSyncStrategy(): SyncStrategy {
+        val name = prefs.getString(KEY_SYNC_STRATEGY, SyncStrategy.ALL_WALLETS.name)
+        return try {
+            SyncStrategy.valueOf(name ?: SyncStrategy.ALL_WALLETS.name)
+        } catch (_: Exception) {
+            SyncStrategy.ALL_WALLETS
+        }
+    }
+
+    fun setSyncStrategy(strategy: SyncStrategy) {
+        prefs.edit().putString(KEY_SYNC_STRATEGY, strategy.name).apply()
     }
 
     // --- Utilities ---
@@ -196,6 +247,8 @@ class WalletPreferences @Inject constructor(
         private const val KEY_CUSTOM_BLOCK_HEIGHT = "custom_block_height"
         private const val KEY_INITIAL_SYNC_COMPLETED = "initial_sync_completed"
         private const val KEY_LAST_SYNCED_BLOCK = "last_synced_block"
+        private const val KEY_ACTIVE_WALLET_ID = "active_wallet_id"
+        private const val KEY_SYNC_STRATEGY = "sync_strategy"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_BACKGROUND_SYNC = "background_sync_enabled"
     }
