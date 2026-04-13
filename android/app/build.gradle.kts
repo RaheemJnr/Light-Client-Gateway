@@ -5,8 +5,6 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.google.services)
-    alias(libs.plugins.firebase.appdistribution)
 }
 
 android {
@@ -62,12 +60,6 @@ android {
                 "proguard-rules.pro"
             )
             signingConfig = signingConfigs.getByName("release")
-            // Firebase App Distribution
-            firebaseAppDistribution {
-                artifactType = "APK"
-                testers = "neon@nervos.community"
-                releaseNotes = "v1.1.0: Mainnet hardening — network validation, retry logic, log stripping, backup disabled."
-            }
         }
     }
 
@@ -154,8 +146,6 @@ dependencies {
     implementation(libs.ktor.client.android)
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
-
-    // Firebase App Distribution (Gradle plugin only — no analytics SDK in the app)
 
     // Testing
     testImplementation("junit:junit:4.13.2")
