@@ -36,6 +36,7 @@ class BalanceCacheDaoTest {
     @Test
     fun `upsert and getByNetwork returns cached balance`() = runTest {
         val entity = BalanceCacheEntity(
+            walletId = "wallet-1",
             network = "MAINNET",
             address = "ckb1qz...",
             capacity = "0x174876e800",
@@ -52,8 +53,8 @@ class BalanceCacheDaoTest {
 
     @Test
     fun `upsert overwrites existing entry`() = runTest {
-        dao.upsert(BalanceCacheEntity(network = "MAINNET", address = "addr", capacity = "0x1", capacityCkb = "1.0", blockNumber = "0x0", cachedAt = 100L))
-        dao.upsert(BalanceCacheEntity(network = "MAINNET", address = "addr", capacity = "0x2", capacityCkb = "2.0", blockNumber = "0x1", cachedAt = 200L))
+        dao.upsert(BalanceCacheEntity(walletId = "wallet-1", network = "MAINNET", address = "addr", capacity = "0x1", capacityCkb = "1.0", blockNumber = "0x0", cachedAt = 100L))
+        dao.upsert(BalanceCacheEntity(walletId = "wallet-1", network = "MAINNET", address = "addr", capacity = "0x2", capacityCkb = "2.0", blockNumber = "0x1", cachedAt = 200L))
 
         val result = dao.getByNetwork("MAINNET")
         assertEquals("0x2", result!!.capacity)
@@ -66,8 +67,8 @@ class BalanceCacheDaoTest {
 
     @Test
     fun `deleteByNetwork only removes matching network`() = runTest {
-        dao.upsert(BalanceCacheEntity(network = "MAINNET", address = "a", capacity = "0x1", capacityCkb = "1", blockNumber = "0x0", cachedAt = 0L))
-        dao.upsert(BalanceCacheEntity(network = "TESTNET", address = "b", capacity = "0x2", capacityCkb = "2", blockNumber = "0x0", cachedAt = 0L))
+        dao.upsert(BalanceCacheEntity(walletId = "wallet-1", network = "MAINNET", address = "a", capacity = "0x1", capacityCkb = "1", blockNumber = "0x0", cachedAt = 0L))
+        dao.upsert(BalanceCacheEntity(walletId = "wallet-1", network = "TESTNET", address = "b", capacity = "0x2", capacityCkb = "2", blockNumber = "0x0", cachedAt = 0L))
 
         dao.deleteByNetwork("MAINNET")
 
@@ -77,8 +78,8 @@ class BalanceCacheDaoTest {
 
     @Test
     fun `deleteAll removes everything`() = runTest {
-        dao.upsert(BalanceCacheEntity(network = "MAINNET", address = "a", capacity = "0x1", capacityCkb = "1", blockNumber = "0x0", cachedAt = 0L))
-        dao.upsert(BalanceCacheEntity(network = "TESTNET", address = "b", capacity = "0x2", capacityCkb = "2", blockNumber = "0x0", cachedAt = 0L))
+        dao.upsert(BalanceCacheEntity(walletId = "wallet-1", network = "MAINNET", address = "a", capacity = "0x1", capacityCkb = "1", blockNumber = "0x0", cachedAt = 0L))
+        dao.upsert(BalanceCacheEntity(walletId = "wallet-1", network = "TESTNET", address = "b", capacity = "0x2", capacityCkb = "2", blockNumber = "0x0", cachedAt = 0L))
 
         dao.deleteAll()
 

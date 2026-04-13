@@ -8,6 +8,7 @@ class BalanceCacheEntityTest {
     @Test
     fun `toBalanceResponse maps fields correctly`() {
         val entity = BalanceCacheEntity(
+            walletId = "wallet-1",
             network = "MAINNET",
             address = "ckb1qz...",
             capacity = "0x174876e800",
@@ -27,6 +28,7 @@ class BalanceCacheEntityTest {
     @Test
     fun `isFresh returns true within TTL`() {
         val entity = BalanceCacheEntity(
+            walletId = "wallet-1",
             network = "MAINNET",
             address = "ckb1qz...",
             capacity = "0x0",
@@ -40,6 +42,7 @@ class BalanceCacheEntityTest {
     @Test
     fun `isFresh returns false after TTL`() {
         val entity = BalanceCacheEntity(
+            walletId = "wallet-1",
             network = "MAINNET",
             address = "ckb1qz...",
             capacity = "0x0",
