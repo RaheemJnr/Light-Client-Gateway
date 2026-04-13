@@ -1,6 +1,8 @@
 package com.rjnr.pocketnode.data.wallet
 
 import android.util.Log
+import com.rjnr.pocketnode.data.database.AppDatabase
+import com.rjnr.pocketnode.data.database.DatabaseMaintenanceUtil
 import com.rjnr.pocketnode.data.database.dao.WalletDao
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
@@ -16,7 +18,8 @@ class WalletRepository @Inject constructor(
     private val walletDao: WalletDao,
     private val keyManager: KeyManager,
     private val walletPreferences: WalletPreferences,
-    private val mnemonicManager: MnemonicManager
+    private val mnemonicManager: MnemonicManager,
+    private val appDatabase: AppDatabase
 ) {
     val walletsFlow: Flow<List<WalletEntity>> = walletDao.getAllFlow()
 
@@ -218,11 +221,12 @@ class WalletRepository @Inject constructor(
     }
 
     /**
-     * Delete a wallet and its keys.
+     * Delete a wallet and its keys. Runs VACUUM afterward to reclaim freed pages.
      */
     suspend fun deleteWallet(walletId: String) {
         keyManager.deleteWalletKeys(walletId)
         walletDao.delete(walletId)
+        DatabaseMaintenanceUtil.vacuum(appDatabase)
         Log.d(TAG, "Deleted wallet: $walletId")
     }
 
