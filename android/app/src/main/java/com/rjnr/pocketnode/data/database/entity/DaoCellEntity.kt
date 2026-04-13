@@ -1,6 +1,5 @@
 package com.rjnr.pocketnode.data.database.entity
 
-import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 
@@ -30,5 +29,5 @@ data class DaoCellEntity(
     val depositTimestamp: Long,
     val network: String,
     val lastUpdatedAt: Long,
-    @ColumnInfo(defaultValue = "") val walletId: String = ""
+    val walletId: String = ""
 )

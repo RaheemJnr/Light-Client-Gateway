@@ -1,6 +1,5 @@
 package com.rjnr.pocketnode.data.database.entity
 
-import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -30,7 +29,7 @@ data class TransactionEntity(
     val status: String,       // "PENDING", "CONFIRMED", "FAILED"
     val isLocal: Boolean,     // true = broadcast but not yet synced
     val cachedAt: Long,
-    @ColumnInfo(defaultValue = "") val walletId: String = ""
+    val walletId: String = ""
 ) {
     fun toTransactionRecord(): TransactionRecord = TransactionRecord(
         txHash = txHash,
@@ -56,7 +55,8 @@ data class TransactionEntity(
             fee: String,
             confirmations: Int,
             blockTimestampHex: String?,
-            network: String
+            network: String,
+            walletId: String = ""
         ): TransactionEntity = TransactionEntity(
             txHash = txHash,
             blockNumber = blockNumber,
@@ -70,7 +70,8 @@ data class TransactionEntity(
             network = network,
             status = if (confirmations > 0) "CONFIRMED" else "PENDING",
             isLocal = false,
-            cachedAt = System.currentTimeMillis()
+            cachedAt = System.currentTimeMillis(),
+            walletId = walletId
         )
     }
 }
