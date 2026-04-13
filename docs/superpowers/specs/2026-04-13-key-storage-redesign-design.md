@@ -51,8 +51,10 @@ Surveyed 6 open-source wallets (BlueWallet, Mycelium, Unstoppable, Schildbach, B
 One file per wallet at `context.filesDir/key_backups/{walletId}.enc`:
 
 ```
-[16-byte salt][12-byte IV][AES-256-GCM encrypted payload][16-byte GCM auth tag]
+[4-byte magic "PNBK"][1-byte format version][16-byte salt][12-byte IV][AES-256-GCM encrypted payload][16-byte GCM auth tag]
 ```
+
+The 5-byte header (`PNBK` + version byte) enables format detection and future migration without attempting decryption.
 
 Decrypted payload (JSON):
 
@@ -62,10 +64,14 @@ Decrypted payload (JSON):
   "mnemonic": "word1 word2 ... word12",
   "walletType": "mnemonic",
   "mnemonicBackedUp": false,
-  "createdAt": "2026-04-13T...",
+  "createdAt": "2026-04-13T00:00:00Z",
   "version": 1
 }
 ```
+
+- `createdAt` is always UTC (ISO-8601 with `Z` suffix)
+- `mnemonic` is `null` for raw-key wallets (no BIP39 phrase)
+- `walletType` is `"mnemonic"` or `"raw_key"`
 
 ### Key Derivation
 
@@ -96,11 +102,34 @@ Every method that writes to ESP also calls `KeyBackupManager.writeBackup()`:
 - `setMnemonicBackedUp()` / `setMnemonicBackedUpForWallet()`
 - `deleteWallet()` / `deleteWalletKeys()` → calls `deleteBackup()`
 
+### Write Ordering
+
+1. ESP write first (primary)
+2. Backup file write second (secondary)
+3. If ESP write succeeds but backup write fails → log warning, continue (user has keys in ESP)
+4. If ESP write fails → do not attempt backup write, propagate error
+
 ### Failure Handling
 
 - Backup write failure: log warning, do not fail the primary ESP write
-- Backup read wrong PIN: allow 3 attempts, then fall through to mnemonic recovery
+- Backup read wrong PIN: allow 3 attempts, then fall through to mnemonic/private-key recovery
 - No PIN set: `KeyBackupManager` is a no-op (backup cannot be created without a PIN)
+
+### No-PIN Existing Users
+
+Users who created wallets before setting a PIN will have NO backup file. This is an accepted gap:
+- Soft-gate warnings actively nudge PIN setup (Tier 1 banner + Tier 3 post-deposit reminder)
+- If Keystore invalidation occurs for a no-PIN user, they go straight to Tier 2 recovery (mnemonic or raw key import)
+- Users with no PIN AND no mnemonic backup have zero recovery path — this is explicitly called out in the SecurityChecklistScreen as the highest-urgency state
+
+### reEncryptAll Atomicity
+
+PIN change triggers `reEncryptAll(oldPin, newPin)`. This is a multi-file operation that must be crash-safe:
+
+1. For each `*.enc` file: decrypt with old PIN, re-encrypt with new PIN, write to `*.enc.tmp`
+2. Only after ALL `.tmp` files are written successfully, rename each `.tmp` → `.enc` (atomic per-file)
+3. If interrupted before all `.tmp` files exist: on next app launch, detect orphaned `.tmp` files and delete them — the original `.enc` files are intact with the old PIN
+4. If interrupted during renames: some files are new-PIN, some old-PIN. On next PIN entry, try new PIN first; if decryption fails, try old PIN (PIN change may have partially completed). The `PinManager` stores a `previousPinHash` during PIN change to enable this fallback.
 
 ## Phase 1: Recovery Flow
 
@@ -117,17 +146,22 @@ Every method that writes to ESP also calls `KeyBackupManager.writeBackup()`:
 5. Success: re-initialize ESP with fresh Keystore key, write recovered key material, re-write backup with new salt
 6. Failure: allow 3 attempts total
 
-### Tier 2 — Mnemonic Fallback
+**Important: PIN validation during recovery uses backup file decryption, NOT `PinManager.verifyPin()`.** When Keystore is invalidated, `PinManager`'s own ESP is equally corrupted. A successful `readBackup()` decryption proves the PIN is correct — no need to consult `PinManager`. After recovery, `PinManager` is re-initialized with the verified PIN hash.
+
+### Tier 2 — Mnemonic/Key Fallback
 
 After 3 PIN failures or if no backup file exists:
 
-1. Show: "Enter your 12-word recovery phrase to restore your wallet."
-2. Functionally equivalent to `importWalletFromMnemonic()` — creates fresh ESP, writes new backup
-3. Transaction/balance cache in Room survives (tied to address, not Keystore)
+1. For mnemonic wallets: Show "Enter your 12-word recovery phrase to restore your wallet."
+2. For raw-key wallets: Show "Enter the private key for this wallet."
+3. Functionally equivalent to `importWalletFromMnemonic()` or `importWallet()` — creates fresh ESP, writes new backup
+4. Transaction/balance cache in Room survives (tied to address, not Keystore)
 
 ### Multi-Wallet Recovery
 
-Iterate over all `key_backups/*.enc` files. Same PIN unlocks all (different salts). If any wallet fails to decrypt, skip it and surface at end: "1 of 3 wallets could not be recovered with this PIN. Enter its mnemonic to restore it."
+Iterate over all `key_backups/*.enc` files. Same PIN unlocks all (different salts). If any wallet fails to decrypt, skip it and surface at end:
+- For mnemonic wallets: "Enter the recovery phrase for wallet X."
+- For raw-key wallets: "Enter the private key for wallet X."
 
 ## Phase 1: Soft-Gate Warning System
 
@@ -167,7 +201,28 @@ Progress indicator: "2 of 2 complete" with checkmarks.
 3. All correct → `setMnemonicBackedUp(true)`
 4. Wrong → allow retry, no lockout
 
+## Phase 1: PinManager Fixes (prerequisite)
+
+### PinManager StrongBox Fallback (pre-existing bug)
+
+`PinManager` currently uses `setRequestStrongBoxBacked(true)` with NO fallback to software-backed keys (unlike `KeyManager` which has try/catch fallback). This means `PinManager` can crash on StrongBox-incompatible devices. As a prerequisite for this spec, `PinManager.encryptedPrefs` must be updated to match `KeyManager`'s StrongBox-first-then-software pattern.
+
+### PIN Removal Protection
+
+`PinManager.removePin()` is now dangerous: removing the PIN orphans all backup files (encrypted with the PIN that's being deleted). Phase 1 must:
+- Block PIN removal if any backup files exist
+- Or require re-entry of PIN and delete all backup files before removing PIN, then show warning: "Removing your PIN will delete your encrypted backup. Make sure you have your recovery phrase written down."
+- `SecuritySettingsViewModel.removePin()` must check `KeyBackupManager.hasAnyBackups()` first
+
 ## Phase 1: PinManager Integration
+
+### PIN Creation Hook
+
+When `PinManager.setPin()` is called for the first time, the backup system must write backups for all existing wallets. To avoid circular dependencies (`PinManager` → `KeyBackupManager` → needs PIN → `PinManager`), this is coordinated at the ViewModel level:
+
+1. `SecuritySettingsViewModel` calls `PinManager.setPin(pin)`
+2. On success, calls `KeyBackupManager.writeBackupForAllWallets(pin)` (which reads key material from `KeyManager` for each wallet in `WalletDao`)
+3. `KeyBackupManager` has no dependency on `PinManager`
 
 ### PIN Availability Windows
 
@@ -189,11 +244,13 @@ The raw PIN is only available during:
 
 ### Session PIN Caching
 
-`AuthManager` holds `private var sessionPin: String?`:
+`AuthManager` holds `private var sessionPin: CharArray?`:
+- Stored as `CharArray` (not `String`) so it can be explicitly zeroed (`Arrays.fill(pin, '\0')`) when cleared — JVM `String` is immutable and persists in the heap until GC
 - Set on successful PIN verification
 - Set on biometric unlock (retrieves Keystore-encrypted PIN copy)
-- Cleared on app background (`ProcessLifecycleOwner` callback)
+- Cleared (zeroed) on app background (`ProcessLifecycleOwner` callback)
 - Never written to disk, never logged
+- Accepted residual risk: a rooted device with heap dump access could capture the PIN during the active session window. This is acceptable because a rooted device already has access to the app's file sandbox.
 
 ### Biometrics
 
@@ -218,6 +275,8 @@ data class KeyMaterialEntity(
     val updatedAt: Long
 )
 ```
+
+**Implementation note:** `KeyMaterialEntity` contains `ByteArray` fields. Kotlin data class `equals()`/`hashCode()` use reference equality for arrays. Override both methods using `contentEquals()`/`contentHashCode()`, or avoid using the entity in sets/maps.
 
 ### KeystoreEncryptionManager (new class)
 
@@ -260,7 +319,8 @@ data class KeyMaterialEntity(
 |------|-------|---------|
 | `data/wallet/KeyManager.kt` | 1 | Dual-write to ESP + KeyBackupManager on every mutation |
 | `data/auth/AuthManager.kt` | 1 | Session PIN caching, clear on background |
-| `data/auth/PinManager.kt` | 1 | Expose PIN availability for backup writes |
+| `data/auth/PinManager.kt` | 1 | Add StrongBox fallback, expose PIN availability for backup writes |
+| `ui/screens/settings/SecuritySettingsViewModel.kt` | 1 | Coordinate PIN creation → backup write, block PIN removal if backups exist |
 | `ui/screens/home/HomeScreen.kt` | 1 | Persistent security banner |
 | `ui/screens/receive/ReceiveScreen.kt` | 1 | Modal warning if not backed up |
 | `ui/navigation/NavGraph.kt` | 1 | Recovery and SecurityChecklist routes |
