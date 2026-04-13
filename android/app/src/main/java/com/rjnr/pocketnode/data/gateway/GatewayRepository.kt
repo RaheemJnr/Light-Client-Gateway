@@ -2,6 +2,8 @@ package com.rjnr.pocketnode.data.gateway
 
 import android.content.Context
 import android.util.Log
+import com.rjnr.pocketnode.data.database.dao.WalletDao
+import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.gateway.models.*
 import com.rjnr.pocketnode.data.sync.SyncForegroundService
 import com.rjnr.pocketnode.data.sync.SyncProgressTracker
@@ -10,6 +12,7 @@ import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.WalletInfo
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
+import com.rjnr.pocketnode.data.wallet.SyncStrategy
 import com.nervosnetwork.ckblightclient.LightClientNative
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -48,7 +51,8 @@ class GatewayRepository @Inject constructor(
     private val transactionBuilder: TransactionBuilder,
     private val cacheManager: CacheManager,
     private val daoSyncManager: DaoSyncManager,
-    private val walletMigrationHelper: WalletMigrationHelper
+    private val walletMigrationHelper: WalletMigrationHelper,
+    private val walletDao: WalletDao
 ) {
     private val _walletInfo = MutableStateFlow<WalletInfo?>(null)
     val walletInfo: StateFlow<WalletInfo?> = _walletInfo.asStateFlow()
@@ -71,6 +75,7 @@ class GatewayRepository @Inject constructor(
 
     private val scope = CoroutineScope(Dispatchers.IO)
     private val _nodeReady = MutableStateFlow<Boolean?>(null)
+    private var activeWalletId: String = walletPreferences.getActiveWalletId() ?: ""
 
     // --- Sync progress tracking ---
     private val syncProgressTracker = SyncProgressTracker()
@@ -87,8 +92,42 @@ class GatewayRepository @Inject constructor(
         scope.launch {
             // Migrate single-wallet to multi-wallet schema (idempotent, no-op if already done)
             walletMigrationHelper.migrateIfNeeded()
+            activeWalletId = walletPreferences.getActiveWalletId() ?: ""
 
             initializeNode(currentNetwork)
+        }
+    }
+
+    /**
+     * Called when the user switches wallets. Updates internal state, derives the new
+     * wallet's lock script, and re-registers with the light client according to
+     * the configured sync strategy.
+     */
+    suspend fun onActiveWalletChanged(wallet: WalletEntity) {
+        activeWalletId = wallet.walletId
+        val privateKey = keyManager.getPrivateKeyForWallet(wallet.walletId)
+            ?: throw Exception("No key for wallet ${wallet.walletId}")
+        val info = keyManager.deriveWalletInfo(privateKey)
+        _walletInfo.value = info
+        _isRegistered.value = false
+
+        when (walletPreferences.getSyncStrategy()) {
+            SyncStrategy.ALL_WALLETS -> registerAllWalletScripts()
+            SyncStrategy.ACTIVE_ONLY -> registerAccount(
+                syncMode = walletPreferences.getSyncMode(walletId = wallet.walletId),
+                savePreference = false
+            )
+            SyncStrategy.BALANCED -> {
+                registerAccount(
+                    syncMode = walletPreferences.getSyncMode(walletId = wallet.walletId),
+                    savePreference = false
+                )
+            }
+        }
+
+        // Emit cached data immediately
+        cacheManager.getCachedBalance(currentNetwork.name, walletId = activeWalletId)?.let {
+            _balance.value = it
         }
     }
 
@@ -476,7 +515,7 @@ class GatewayRepository @Inject constructor(
         val info = _walletInfo.value ?: throw Exception("No wallet")
 
         // --- Cache-first: emit cached balance immediately ---
-        cacheManager.getCachedBalance(currentNetwork.name)?.let {
+        cacheManager.getCachedBalance(currentNetwork.name, walletId = activeWalletId)?.let {
             _balance.value = it
         }
 
@@ -597,7 +636,7 @@ class GatewayRepository @Inject constructor(
         _balance.value = resp
 
         // --- Cache write ---
-        cacheManager.cacheBalance(resp, currentNetwork.name)
+        cacheManager.cacheBalance(resp, currentNetwork.name, walletId = activeWalletId)
 
         resp
     }
@@ -746,7 +785,7 @@ class GatewayRepository @Inject constructor(
         Log.d(TAG, "✅ sendTransaction: Success! txHash=$txHash (raw: $rawResult)")
 
         // Cache pending transaction in Room
-        cacheManager.insertPendingTransaction(txHash, currentNetwork.name)
+        cacheManager.insertPendingTransaction(txHash, currentNetwork.name, walletId = activeWalletId)
 
         // After sending, nudge the light client to rescan from a few blocks back
         // so it picks up the new change output when the tx confirms.
@@ -910,11 +949,11 @@ class GatewayRepository @Inject constructor(
         }
 
         // --- Cache write: upsert JNI results into Room ---
-        cacheManager.cacheTransactions(items, currentNetwork.name)
+        cacheManager.cacheTransactions(items, currentNetwork.name, walletId = activeWalletId)
 
         // Merge: include pending local txs not yet returned by JNI
         val jniTxHashes = items.map { it.txHash }.toSet()
-        val pendingLocal = cacheManager.getPendingNotIn(currentNetwork.name, jniTxHashes)
+        val pendingLocal = cacheManager.getPendingNotIn(currentNetwork.name, jniTxHashes, walletId = activeWalletId)
         val mergedItems = pendingLocal + items
 
         TransactionsResponse(mergedItems, pag.lastCursor)
@@ -1379,7 +1418,7 @@ class GatewayRepository @Inject constructor(
         Log.d(TAG, "DAO deposit sent: $txHash")
 
         // Track pending deposit in Room so UI shows it before JNI confirms
-        daoSyncManager.insertPendingDeposit(txHash, amountShannons, net.name)
+        daoSyncManager.insertPendingDeposit(txHash, amountShannons, net.name, walletId = activeWalletId)
 
         txHash
     }
@@ -1503,6 +1542,60 @@ class GatewayRepository @Inject constructor(
             blockNumber = blockNumberHex
         )
         return json.encodeToString(listOf(lockStatus))
+    }
+
+    /**
+     * Register lock scripts for ALL wallets with the light client simultaneously.
+     * Used when SyncStrategy is ALL_WALLETS — enables balance/transaction tracking
+     * across every wallet without requiring a wallet switch.
+     *
+     * Capped at the 3 most-recently-active wallets to bound resource usage.
+     */
+    private suspend fun registerAllWalletScripts() {
+        if (!awaitNodeReady()) {
+            throw Exception("Node initialization failed")
+        }
+
+        val wallets = walletDao.getAll()
+            .sortedByDescending { it.lastActiveAt }
+            .take(3) // sync cap
+
+        val tipStr = LightClientNative.nativeGetTipHeader()
+        val tipHeight = if (tipStr != null) {
+            val tip = json.decodeFromString<JniHeaderView>(tipStr)
+            tip.number.removePrefix("0x").toLong(16)
+        } else 0L
+
+        val scriptStatuses = wallets.mapNotNull { wallet ->
+            val privateKey = keyManager.getPrivateKeyForWallet(wallet.walletId) ?: run {
+                Log.w(TAG, "No key for wallet ${wallet.walletId}, skipping script registration")
+                return@mapNotNull null
+            }
+            val publicKey = keyManager.derivePublicKey(privateKey)
+            val lockScript = keyManager.deriveLockScript(publicKey)
+
+            val syncMode = walletPreferences.getSyncMode(walletId = wallet.walletId)
+            val blockNum = syncMode.toFromBlock(null, tipHeight, currentNetwork)
+            val blockNumberHex = "0x${blockNum.toLongOrNull()?.toString(16) ?: "0"}"
+
+            JniScriptStatus(
+                script = lockScript,
+                scriptType = "lock",
+                blockNumber = blockNumberHex
+            )
+        }
+
+        if (scriptStatuses.isEmpty()) {
+            Log.w(TAG, "registerAllWalletScripts: no scripts to register")
+            return
+        }
+
+        val jsonStr = json.encodeToString(scriptStatuses)
+        Log.d(TAG, "Registering ${scriptStatuses.size} wallet scripts with light client")
+        val result = LightClientNative.nativeSetScripts(jsonStr, LightClientNative.CMD_SET_SCRIPTS_ALL)
+        if (!result) throw Exception("Failed to set scripts for all wallets")
+
+        _isRegistered.value = true
     }
 
     // ========================================

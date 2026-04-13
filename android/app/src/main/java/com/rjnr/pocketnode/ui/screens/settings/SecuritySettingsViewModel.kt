@@ -128,7 +128,7 @@ class SecuritySettingsViewModel @Inject constructor(
             try {
                 val wallets = walletDao.getAll()
                 for (wallet in wallets) {
-                    val privateKey = keyManager.getPrivateKeyForWallet(wallet.walletId)
+                    val privateKey = keyManager.getPrivateKeyForWallet(wallet.walletId) ?: continue
                     val mnemonic = keyManager.getMnemonicForWallet(wallet.walletId)
                     val material = KeyMaterial(
                         privateKey = privateKey.joinToString("") { "%02x".format(it) },

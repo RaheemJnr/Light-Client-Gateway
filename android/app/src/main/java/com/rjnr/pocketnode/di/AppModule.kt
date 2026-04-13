@@ -141,6 +141,7 @@ object AppModule {
         transactionBuilder: TransactionBuilder,
         cacheManager: CacheManager,
         daoSyncManager: DaoSyncManager,
-        walletMigrationHelper: WalletMigrationHelper
-    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, transactionBuilder, cacheManager, daoSyncManager, walletMigrationHelper)
+        walletMigrationHelper: WalletMigrationHelper,
+        walletDao: WalletDao
+    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, transactionBuilder, cacheManager, daoSyncManager, walletMigrationHelper, walletDao)
 }

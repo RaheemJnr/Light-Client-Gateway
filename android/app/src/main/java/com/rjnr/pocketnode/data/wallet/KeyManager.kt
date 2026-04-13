@@ -334,10 +334,30 @@ class KeyManager @Inject constructor(
         return joined.split(" ")
     }
 
-    fun getPrivateKeyForWallet(walletId: String): ByteArray {
-        val hex = getWalletPrefs(walletId).getString(KEY_PRIVATE_KEY, null)
-            ?: throw IllegalStateException("No wallet found for $walletId")
+    fun getPrivateKeyForWallet(walletId: String): ByteArray? {
+        val hex = getWalletPrefs(walletId).getString(KEY_PRIVATE_KEY, null) ?: return null
         return Numeric.hexStringToByteArray(hex)
+    }
+
+    /**
+     * Derive WalletInfo (public key, lock script, addresses) from a raw private key.
+     * Used when switching wallets — the active wallet's private key is loaded from
+     * its per-wallet EncryptedSharedPreferences and info is derived without touching
+     * the legacy "default" prefs.
+     */
+    fun deriveWalletInfo(privateKey: ByteArray): WalletInfo {
+        val keyPair = ECKeyPair.create(BigInteger(1, privateKey))
+        val publicKey = keyPair.getEncodedPublicKey(true)
+        val script = deriveLockScript(publicKey)
+        val testnetAddress = AddressUtils.encode(script, NetworkType.TESTNET)
+        val mainnetAddress = AddressUtils.encode(script, NetworkType.MAINNET)
+
+        return WalletInfo(
+            publicKey = Numeric.toHexString(publicKey),
+            script = script,
+            testnetAddress = testnetAddress,
+            mainnetAddress = mainnetAddress
+        )
     }
 
     fun setMnemonicBackedUpForWallet(walletId: String, backedUp: Boolean) {
