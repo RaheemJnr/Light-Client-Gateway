@@ -2,13 +2,19 @@ package com.rjnr.pocketnode.ui.screens.settings
 
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.auth.PinManager
+import com.rjnr.pocketnode.data.database.dao.WalletDao
+import com.rjnr.pocketnode.data.wallet.KeyBackupManager
+import com.rjnr.pocketnode.data.wallet.KeyManager
+import com.rjnr.pocketnode.data.wallet.KeyMaterial
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 enum class PendingSecurityAction {
@@ -30,7 +36,10 @@ data class SecuritySettingsUiState(
 class SecuritySettingsViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val authManager: AuthManager,
-    private val pinManager: PinManager
+    private val pinManager: PinManager,
+    private val keyBackupManager: KeyBackupManager,
+    private val keyManager: KeyManager,
+    private val walletDao: WalletDao
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SecuritySettingsUiState())
@@ -99,11 +108,39 @@ class SecuritySettingsViewModel @Inject constructor(
     }
 
     private fun removePin() {
+        if (keyBackupManager.hasAnyBackups()) {
+            _uiState.update {
+                it.copy(error = "Cannot remove PIN while encrypted wallet backups exist. Back up your recovery phrase first, then you can remove the PIN.")
+            }
+            return
+        }
         pinManager.removePin()
         authManager.setBiometricEnabled(false)
         authManager.setAuthBeforeSendEnabled(false)
         _uiState.update {
             it.copy(hasPin = false, isBiometricEnabled = false, isAuthBeforeSendEnabled = false, error = null)
+        }
+    }
+
+    fun onPinCreated(pin: String) {
+        authManager.setSessionPin(pin.toCharArray())
+        viewModelScope.launch {
+            try {
+                val wallets = walletDao.getAll()
+                for (wallet in wallets) {
+                    val privateKey = keyManager.getPrivateKeyForWallet(wallet.walletId)
+                    val mnemonic = keyManager.getMnemonicForWallet(wallet.walletId)
+                    val material = KeyMaterial(
+                        privateKey = privateKey.joinToString("") { "%02x".format(it) },
+                        mnemonic = mnemonic?.joinToString(" "),
+                        walletType = if (mnemonic != null) KeyManager.WALLET_TYPE_MNEMONIC else KeyManager.WALLET_TYPE_RAW_KEY,
+                        mnemonicBackedUp = keyManager.hasMnemonicBackupForWallet(wallet.walletId)
+                    )
+                    keyBackupManager.writeBackup(wallet.walletId, material, pin.toCharArray())
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("SecuritySettingsVM", "Failed to write backups on PIN creation", e)
+            }
         }
     }
 
