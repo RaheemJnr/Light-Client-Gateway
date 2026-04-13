@@ -15,6 +15,8 @@ import androidx.fragment.app.FragmentActivity
 import androidx.navigation.compose.rememberNavController
 import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
+import com.rjnr.pocketnode.data.wallet.KeyBackupManager
+import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.ui.navigation.CkbNavGraph
 import com.rjnr.pocketnode.ui.navigation.Screen
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
@@ -33,13 +35,23 @@ class MainActivity : FragmentActivity() {
     @Inject
     lateinit var walletPreferences: WalletPreferences
 
+    @Inject
+    lateinit var keyManager: KeyManager
+
+    @Inject
+    lateinit var keyBackupManager: KeyBackupManager
+
     private val _requireReauth = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Clean up any orphaned .tmp files from interrupted PIN re-encryption
+        keyBackupManager.cleanupOrphanedTmpFiles()
+
         val startDestination = when {
+            keyManager.wasResetDueToCorruption() -> Screen.Recovery.route
             !repository.hasWallet() -> Screen.Onboarding.route
             repository.needsMnemonicBackup() -> Screen.MnemonicBackup.route
             pinManager.hasPin() -> Screen.Auth.route
