@@ -1,0 +1,253 @@
+package com.rjnr.pocketnode.ui.screens.wallet
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.composables.icons.lucide.ArrowLeft
+import com.composables.icons.lucide.Key
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Plus
+import com.composables.icons.lucide.Users
+import com.composables.icons.lucide.Wallet
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddWalletScreen(
+    onNavigateBack: () -> Unit = {},
+    onWalletCreated: () -> Unit = {},
+    viewModel: AddWalletViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    // 0 = menu, 1 = new wallet, 2 = import mnemonic, 3 = import key, 4 = sub-account
+    var selectedMode by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(uiState.createdWallet) {
+        if (uiState.createdWallet != null) onWalletCreated()
+    }
+
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearError()
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(if (selectedMode == 0) "Add Wallet" else "New Wallet") },
+                navigationIcon = {
+                    IconButton(onClick = {
+                        if (selectedMode == 0) onNavigateBack() else selectedMode = 0
+                    }) {
+                        Icon(Lucide.ArrowLeft, contentDescription = "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Spacer(Modifier.height(8.dp))
+
+            when (selectedMode) {
+                0 -> {
+                    OptionCard(
+                        title = "New Wallet",
+                        description = "Generate a new mnemonic seed phrase",
+                        icon = { Icon(Lucide.Plus, contentDescription = null, modifier = Modifier.size(24.dp)) },
+                        onClick = { selectedMode = 1 }
+                    )
+                    OptionCard(
+                        title = "Import Mnemonic",
+                        description = "Restore from a 12/24-word seed phrase",
+                        icon = { Icon(Lucide.Wallet, contentDescription = null, modifier = Modifier.size(24.dp)) },
+                        onClick = { selectedMode = 2 }
+                    )
+                    OptionCard(
+                        title = "Import Private Key",
+                        description = "Import a raw private key (hex)",
+                        icon = { Icon(Lucide.Key, contentDescription = null, modifier = Modifier.size(24.dp)) },
+                        onClick = { selectedMode = 3 }
+                    )
+                }
+
+                1 -> NewWalletForm(uiState, viewModel)
+                2 -> ImportMnemonicForm(uiState, viewModel)
+                3 -> ImportKeyForm(uiState, viewModel)
+            }
+        }
+    }
+}
+
+@Composable
+private fun OptionCard(
+    title: String,
+    description: String,
+    icon: @Composable () -> Unit,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            icon()
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = title, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NewWalletForm(uiState: AddWalletUiState, viewModel: AddWalletViewModel) {
+    OutlinedTextField(
+        value = uiState.name,
+        onValueChange = { viewModel.updateName(it) },
+        label = { Text("Wallet Name") },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true
+    )
+    Spacer(Modifier.height(16.dp))
+    Button(
+        onClick = { viewModel.createNewWallet() },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !uiState.isLoading
+    ) {
+        if (uiState.isLoading) {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+        } else {
+            Text("Create Wallet")
+        }
+    }
+}
+
+@Composable
+private fun ImportMnemonicForm(uiState: AddWalletUiState, viewModel: AddWalletViewModel) {
+    OutlinedTextField(
+        value = uiState.name,
+        onValueChange = { viewModel.updateName(it) },
+        label = { Text("Wallet Name") },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = uiState.importMnemonic,
+        onValueChange = { viewModel.updateImportMnemonic(it) },
+        label = { Text("Seed Phrase") },
+        modifier = Modifier.fillMaxWidth(),
+        minLines = 3,
+        placeholder = { Text("Enter your 12 or 24 word seed phrase") }
+    )
+    Spacer(Modifier.height(16.dp))
+    Button(
+        onClick = { viewModel.importMnemonic() },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !uiState.isLoading
+    ) {
+        if (uiState.isLoading) {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+        } else {
+            Text("Import Wallet")
+        }
+    }
+}
+
+@Composable
+private fun ImportKeyForm(uiState: AddWalletUiState, viewModel: AddWalletViewModel) {
+    OutlinedTextField(
+        value = uiState.name,
+        onValueChange = { viewModel.updateName(it) },
+        label = { Text("Wallet Name") },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = uiState.importPrivateKey,
+        onValueChange = { viewModel.updateImportPrivateKey(it) },
+        label = { Text("Private Key (hex)") },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        placeholder = { Text("0x...") }
+    )
+    Spacer(Modifier.height(16.dp))
+    Button(
+        onClick = { viewModel.importRawKey() },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !uiState.isLoading
+    ) {
+        if (uiState.isLoading) {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+        } else {
+            Text("Import Key")
+        }
+    }
+}
+

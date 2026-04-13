@@ -27,6 +27,8 @@ import androidx.compose.runtime.collectAsState
 import com.rjnr.pocketnode.ui.screens.security.SecurityChecklistScreen
 import com.rjnr.pocketnode.ui.screens.security.SecurityChecklistViewModel
 import com.rjnr.pocketnode.ui.screens.security.MnemonicVerifyScreen
+import com.rjnr.pocketnode.ui.screens.wallet.AddWalletScreen
+import com.rjnr.pocketnode.ui.screens.wallet.WalletDetailScreen
 import com.rjnr.pocketnode.ui.screens.wallet.WalletManagerScreen
 
 sealed class Screen(val route: String) {
@@ -48,6 +50,10 @@ sealed class Screen(val route: String) {
     object SecurityChecklist : Screen("security_checklist")
     object MnemonicVerify : Screen("mnemonic_verify")
     object WalletManager : Screen("wallet_manager")
+    object WalletDetail : Screen("wallet_detail/{walletId}") {
+        fun createRoute(walletId: String) = "wallet_detail/$walletId"
+    }
+    object AddWallet : Screen("add_wallet")
 }
 
 sealed class BottomTab(val route: String, val label: String) {
@@ -368,8 +374,28 @@ fun CkbNavGraph(
         composable(Screen.WalletManager.route) {
             WalletManagerScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onNavigateToAddWallet = { /* TODO: wire AddWalletScreen route */ },
-                onNavigateToWalletDetail = { walletId -> /* TODO: wire WalletDetailScreen route */ }
+                onNavigateToAddWallet = { navController.navigate(Screen.AddWallet.route) },
+                onNavigateToWalletDetail = { walletId ->
+                    navController.navigate(Screen.WalletDetail.createRoute(walletId))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.WalletDetail.route,
+            arguments = listOf(navArgument("walletId") { type = NavType.StringType })
+        ) {
+            WalletDetailScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.AddWallet.route) {
+            AddWalletScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onWalletCreated = {
+                    navController.popBackStack(Screen.Main.route, inclusive = false)
+                }
             )
         }
     }
