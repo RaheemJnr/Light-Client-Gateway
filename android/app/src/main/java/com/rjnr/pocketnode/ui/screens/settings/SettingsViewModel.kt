@@ -6,6 +6,7 @@ import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
+import com.rjnr.pocketnode.data.wallet.SyncStrategy
 import com.rjnr.pocketnode.data.wallet.ThemeMode
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -26,10 +27,12 @@ class SettingsViewModel @Inject constructor(
     data class UiState(
         val isPinEnabled: Boolean = false,
         val syncMode: SyncMode = SyncMode.RECENT,
+        val syncStrategy: SyncStrategy = SyncStrategy.ALL_WALLETS,
         val currentNetwork: NetworkType = NetworkType.MAINNET,
         val themeMode: ThemeMode = ThemeMode.SYSTEM,
         val isBackgroundSyncEnabled: Boolean = true,
         val showSyncDialog: Boolean = false,
+        val showSyncStrategyDialog: Boolean = false,
         val showNetworkSwitchDialog: Boolean = false,
         val showThemeDialog: Boolean = false,
         val pendingNetworkSwitch: NetworkType? = null,
@@ -55,6 +58,7 @@ class SettingsViewModel @Inject constructor(
             it.copy(
                 isPinEnabled = pinManager.hasPin(),
                 syncMode = walletPrefs.getSyncMode(),
+                syncStrategy = walletPrefs.getSyncStrategy(),
                 currentNetwork = repository.currentNetwork,
                 themeMode = walletPrefs.getThemeMode(),
                 isBackgroundSyncEnabled = walletPrefs.isBackgroundSyncEnabled()
@@ -68,6 +72,19 @@ class SettingsViewModel @Inject constructor(
 
     fun hideSyncDialog() {
         _uiState.update { it.copy(showSyncDialog = false) }
+    }
+
+    fun showSyncStrategyDialog() {
+        _uiState.update { it.copy(showSyncStrategyDialog = true) }
+    }
+
+    fun hideSyncStrategyDialog() {
+        _uiState.update { it.copy(showSyncStrategyDialog = false) }
+    }
+
+    fun setSyncStrategy(strategy: SyncStrategy) {
+        walletPrefs.setSyncStrategy(strategy)
+        _uiState.update { it.copy(syncStrategy = strategy, showSyncStrategyDialog = false) }
     }
 
     fun setSyncMode(mode: SyncMode, customBlockHeight: Long? = null) {

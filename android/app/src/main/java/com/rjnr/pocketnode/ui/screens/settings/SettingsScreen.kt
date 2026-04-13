@@ -72,6 +72,7 @@ import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.displayName
 import com.rjnr.pocketnode.ui.components.SyncOptionsDialog
+import com.rjnr.pocketnode.data.wallet.SyncStrategy
 import com.rjnr.pocketnode.data.wallet.ThemeMode
 import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
 import com.rjnr.pocketnode.ui.theme.PendingAmber
@@ -171,6 +172,45 @@ fun SettingsScreen(
         )
     }
 
+    // Sync strategy selection dialog
+    if (uiState.showSyncStrategyDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.hideSyncStrategyDialog() },
+            title = { Text("Wallet Sync Strategy") },
+            text = {
+                androidx.compose.foundation.layout.Column {
+                    SyncStrategy.entries.forEach { strategy ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.setSyncStrategy(strategy) }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            androidx.compose.material3.RadioButton(
+                                selected = uiState.syncStrategy == strategy,
+                                onClick = { viewModel.setSyncStrategy(strategy) }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            androidx.compose.foundation.layout.Column {
+                                Text(
+                                    syncStrategyLabel(strategy),
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    syncStrategyDescription(strategy),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
     // Theme selection dialog
     if (uiState.showThemeDialog) {
         AlertDialog(
@@ -222,6 +262,7 @@ fun SettingsScreen(
         onNavigateToNodeStatus,
         context,
         showSyncDialog = { viewModel.showSyncDialog() },
+        showSyncStrategyDialog = { viewModel.showSyncStrategyDialog() },
         requestNetworkSwitch = {
             viewModel.requestNetworkSwitch(it)
         },
@@ -252,6 +293,7 @@ private fun SettingsScreenUI(
     onNavigateToNodeStatus: () -> Unit,
     context: Context,
     showSyncDialog: () -> Unit,
+    showSyncStrategyDialog: () -> Unit = {},
     requestNetworkSwitch: (NetworkType) -> Unit,
     showThemeDialog: () -> Unit,
     onToggleBackgroundSync: (Boolean) -> Unit = {}
@@ -322,6 +364,15 @@ private fun SettingsScreenUI(
                     title = "Background Sync",
                     checked = uiState.isBackgroundSyncEnabled,
                     onCheckedChange = onToggleBackgroundSync
+                )
+            }
+
+            item {
+                SettingsValueRow(
+                    icon = Lucide.RefreshCw,
+                    title = "Wallet Sync Strategy",
+                    value = syncStrategyLabel(uiState.syncStrategy),
+                    onClick = { showSyncStrategyDialog() }
                 )
             }
 
@@ -634,6 +685,18 @@ private fun syncModeLabel(mode: SyncMode): String = when (mode) {
     SyncMode.RECENT -> "Recent"
     SyncMode.FULL_HISTORY -> "Full History"
     SyncMode.CUSTOM -> "Custom"
+}
+
+private fun syncStrategyLabel(strategy: SyncStrategy): String = when (strategy) {
+    SyncStrategy.ACTIVE_ONLY -> "Active Only"
+    SyncStrategy.ALL_WALLETS -> "All Wallets"
+    SyncStrategy.BALANCED -> "Balanced"
+}
+
+private fun syncStrategyDescription(strategy: SyncStrategy): String = when (strategy) {
+    SyncStrategy.ACTIVE_ONLY -> "Only syncs the wallet you're using"
+    SyncStrategy.ALL_WALLETS -> "Keeps all wallets synced (up to 3)"
+    SyncStrategy.BALANCED -> "Active wallet real-time, others every 15 min"
 }
 
 @Preview(showBackground = true)

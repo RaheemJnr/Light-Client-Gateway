@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Group
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -207,6 +208,13 @@ fun StatusTab(uiState: NodeStatusUiState, onCallRpc: (String) -> Unit) {
                         }
                     }
                 }
+            }
+        }
+
+        // Database size card
+        item {
+            StatusCard(title = "Storage", icon = Icons.Rounded.Storage) {
+                InfoItem("Database Size", formatBytes(uiState.dbSizeBytes))
             }
         }
 
@@ -513,6 +521,12 @@ fun LogLine(time: String, message: String, color: Color) {
 // endregion
 
 // region Helpers
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes < 1024 -> "$bytes B"
+    bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
+    else -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
+}
 
 private fun formatTimestampAgo(hexTimestamp: String): String {
     val ms = hexTimestamp.removePrefix("0x").toLongOrNull(16) ?: return "Unknown"

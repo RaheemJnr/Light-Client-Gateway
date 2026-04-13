@@ -3,6 +3,8 @@ package com.rjnr.pocketnode.ui.screens.status
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rjnr.pocketnode.data.database.AppDatabase
+import com.rjnr.pocketnode.data.database.DatabaseMaintenanceUtil
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.JniHeaderView
 import com.rjnr.pocketnode.data.gateway.models.JniRemoteNode
@@ -27,13 +29,15 @@ data class NodeStatusUiState(
     val peers: List<JniRemoteNode> = emptyList(),
     val scriptsJson: String = "",
     val rpcResult: String = "",
-    val logs: List<String> = emptyList()
+    val logs: List<String> = emptyList(),
+    val dbSizeBytes: Long = 0L
 )
 
 @HiltViewModel
 class NodeStatusViewModel @Inject constructor(
     private val repository: GatewayRepository,
-    private val json: Json
+    private val json: Json,
+    private val appDatabase: AppDatabase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NodeStatusUiState())
@@ -71,11 +75,16 @@ class NodeStatusViewModel @Inject constructor(
                 json.decodeFromString<List<JniRemoteNode>>(peersRaw)
             }.getOrDefault(emptyList())
 
+            val dbSize = withContext(Dispatchers.IO) {
+                runCatching { DatabaseMaintenanceUtil.getDatabaseSizeBytes(appDatabase) }.getOrDefault(0L)
+            }
+
             _uiState.update {
                 it.copy(
                     tipHeader = parsedTip,
                     peers = parsedPeers,
-                    scriptsJson = scripts
+                    scriptsJson = scripts,
+                    dbSizeBytes = dbSize
                 )
             }
         } catch (e: Exception) {
