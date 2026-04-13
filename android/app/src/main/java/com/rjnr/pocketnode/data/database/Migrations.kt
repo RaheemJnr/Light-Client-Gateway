@@ -50,10 +50,11 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
 }
 
 /**
- * v2 -> v3: Add wallets table for multi-wallet support (M3).
+ * v2 -> v3: Add wallets table and walletId column to existing tables for multi-wallet support (M3).
  */
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
+        // 1. Create wallets table
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS `wallets` (
@@ -70,6 +71,28 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
                 PRIMARY KEY(`walletId`)
             )
             """.trimIndent()
+        )
+
+        // 2. Add walletId column to transactions
+        db.execSQL(
+            "ALTER TABLE `transactions` ADD COLUMN `walletId` TEXT NOT NULL DEFAULT ''"
+        )
+        // Create the index Room expects
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `idx_tx_wallet_network_time` ON `transactions` (`walletId`, `network`, `timestamp` DESC)"
+        )
+
+        // 3. Add walletId column to balance_cache
+        db.execSQL(
+            "ALTER TABLE `balance_cache` ADD COLUMN `walletId` TEXT NOT NULL DEFAULT ''"
+        )
+
+        // 4. Add walletId column to dao_cells
+        db.execSQL(
+            "ALTER TABLE `dao_cells` ADD COLUMN `walletId` TEXT NOT NULL DEFAULT ''"
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `idx_dao_wallet_network` ON `dao_cells` (`walletId`, `network`)"
         )
     }
 }
