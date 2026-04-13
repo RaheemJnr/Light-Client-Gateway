@@ -84,6 +84,7 @@ import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.Wallet
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.ui.components.SyncOptionsDialog
+import com.rjnr.pocketnode.ui.components.UpdateDialog
 import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
 import com.rjnr.pocketnode.ui.theme.ErrorRed
 import com.rjnr.pocketnode.ui.theme.SuccessGreen
@@ -187,6 +188,15 @@ fun HomeScreen(
         ImportWalletDialog(
             onDismiss = { viewModel.hideImport() },
             onImport = { viewModel.importWallet(it) }
+        )
+    }
+
+    // Update dialog
+    if (uiState.showUpdateDialog && uiState.updateInfo != null) {
+        UpdateDialog(
+            updateInfo = uiState.updateInfo!!,
+            onUpdate = { viewModel.startUpdate() },
+            onDismiss = { viewModel.dismissUpdate() }
         )
     }
 

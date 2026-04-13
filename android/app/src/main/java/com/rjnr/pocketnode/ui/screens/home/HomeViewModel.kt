@@ -8,7 +8,11 @@ import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
+import com.rjnr.pocketnode.BuildConfig
 import com.rjnr.pocketnode.data.price.PriceRepository
+import com.rjnr.pocketnode.data.update.UpdateDownloader
+import com.rjnr.pocketnode.data.update.UpdateInfo
+import com.rjnr.pocketnode.data.update.UpdateRepository
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.WalletInfo
 import com.rjnr.pocketnode.data.wallet.WalletRepository
@@ -28,7 +32,9 @@ private const val TAG = "HomeViewModel"
 class HomeViewModel @Inject constructor(
     private val repository: GatewayRepository,
     private val priceRepository: PriceRepository,
-    private val walletRepository: WalletRepository
+    private val walletRepository: WalletRepository,
+    private val updateRepository: UpdateRepository,
+    private val updateDownloader: UpdateDownloader
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -41,6 +47,7 @@ class HomeViewModel @Inject constructor(
 
     init {
         checkBackupStatus()
+        checkForUpdate()
 
         viewModelScope.launch {
             initializeWallet()
@@ -505,9 +512,43 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    private fun checkForUpdate() {
+        viewModelScope.launch {
+            updateRepository.checkForUpdate(BuildConfig.VERSION_NAME)
+                .onSuccess { info ->
+                    if (info != null) {
+                        Log.d(TAG, "Update available: ${info.latestVersion}")
+                        _uiState.update { it.copy(updateInfo = info, showUpdateDialog = true) }
+                    }
+                }
+                .onFailure { error ->
+                    Log.w(TAG, "Update check failed (non-critical): ${error.message}")
+                }
+        }
+    }
+
+    fun dismissUpdate() {
+        _uiState.update { it.copy(showUpdateDialog = false) }
+    }
+
+    fun startUpdate() {
+        val info = _uiState.value.updateInfo ?: return
+        _uiState.update { it.copy(showUpdateDialog = false) }
+
+        if (info.apkDownloadUrl != null && updateDownloader.canInstallPackages()) {
+            updateDownloader.downloadAndInstall(info.apkDownloadUrl)
+        } else if (info.apkDownloadUrl != null) {
+            _uiState.update { it.copy(showInstallPermissionNeeded = true) }
+        } else {
+            // No APK asset — open the GitHub release page in browser
+            _uiState.update { it.copy(showUpdateDialog = false) }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         syncPollingJob?.cancel()
+        updateDownloader.cleanup()
     }
 }
 
@@ -539,5 +580,8 @@ data class HomeUiState(
     val showNetworkSwitchDialog: Boolean = false,
     val pendingNetworkSwitch: NetworkType? = null,
     val isBalanceHidden: Boolean = false,
-    val wallets: List<WalletEntity> = emptyList()
+    val wallets: List<WalletEntity> = emptyList(),
+    val updateInfo: UpdateInfo? = null,
+    val showUpdateDialog: Boolean = false,
+    val showInstallPermissionNeeded: Boolean = false
 )
