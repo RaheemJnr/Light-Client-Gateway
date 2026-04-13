@@ -27,8 +27,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -88,6 +86,7 @@ import com.rjnr.pocketnode.ui.components.SecurityBanner
 import com.rjnr.pocketnode.ui.components.SecurityBannerState
 import com.rjnr.pocketnode.ui.components.SyncOptionsDialog
 import com.rjnr.pocketnode.ui.components.UpdateDialog
+import com.rjnr.pocketnode.ui.components.WalletSwitcherDropdown
 import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
 import com.rjnr.pocketnode.ui.theme.ErrorRed
 import com.rjnr.pocketnode.ui.theme.SuccessGreen
@@ -1044,49 +1043,6 @@ private fun NetworkBadge(network: NetworkType) {
                 color = textColor
             )
         }
-    }
-}
-
-@Composable
-fun WalletSwitcherDropdown(
-    expanded: Boolean,
-    onDismiss: () -> Unit,
-    wallets: List<WalletEntity>,
-    onSwitchWallet: (String) -> Unit,
-    onManageWallets: () -> Unit
-) {
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        wallets.forEach { wallet ->
-            DropdownMenuItem(
-                text = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(wallet.name, modifier = Modifier.weight(1f))
-                        if (wallet.isActive) {
-                            Icon(
-                                Lucide.Check,
-                                contentDescription = "Active",
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                },
-                onClick = {
-                    onDismiss()
-                    onSwitchWallet(wallet.walletId)
-                }
-            )
-        }
-        if (wallets.isNotEmpty()) {
-            HorizontalDivider()
-        }
-        DropdownMenuItem(
-            text = { Text("Manage Wallets") },
-            onClick = {
-                onDismiss()
-                onManageWallets()
-            }
-        )
     }
 }
 
