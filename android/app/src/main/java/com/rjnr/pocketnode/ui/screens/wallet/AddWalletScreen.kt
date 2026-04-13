@@ -121,11 +121,18 @@ fun AddWalletScreen(
                         icon = { Icon(Lucide.Key, contentDescription = null, modifier = Modifier.size(24.dp)) },
                         onClick = { selectedMode = 3 }
                     )
+                    OptionCard(
+                        title = "HD Sub-Account",
+                        description = "Derive a new account from an existing wallet",
+                        icon = { Icon(Lucide.Users, contentDescription = null, modifier = Modifier.size(24.dp)) },
+                        onClick = { selectedMode = 4 }
+                    )
                 }
 
                 1 -> NewWalletForm(uiState, viewModel)
                 2 -> ImportMnemonicForm(uiState, viewModel)
                 3 -> ImportKeyForm(uiState, viewModel)
+                4 -> SubAccountForm(uiState, viewModel)
             }
         }
     }
@@ -247,6 +254,73 @@ private fun ImportKeyForm(uiState: AddWalletUiState, viewModel: AddWalletViewMod
             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
         } else {
             Text("Import Key")
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SubAccountForm(uiState: AddWalletUiState, viewModel: AddWalletViewModel) {
+    var dropdownExpanded by remember { mutableStateOf(false) }
+    val selectedParent = uiState.parentWallets.firstOrNull { it.walletId == uiState.selectedParentId }
+
+    OutlinedTextField(
+        value = uiState.name,
+        onValueChange = { viewModel.updateName(it) },
+        label = { Text("Account Name") },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true
+    )
+    Spacer(Modifier.height(8.dp))
+    ExposedDropdownMenuBox(
+        expanded = dropdownExpanded,
+        onExpandedChange = { dropdownExpanded = it },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        OutlinedTextField(
+            value = selectedParent?.name ?: "",
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Parent Wallet") },
+            placeholder = { Text("Select a mnemonic wallet") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded) },
+            modifier = Modifier
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                .fillMaxWidth()
+        )
+        ExposedDropdownMenu(
+            expanded = dropdownExpanded,
+            onDismissRequest = { dropdownExpanded = false }
+        ) {
+            if (uiState.parentWallets.isEmpty()) {
+                DropdownMenuItem(
+                    text = { Text("No mnemonic wallets available") },
+                    onClick = { dropdownExpanded = false },
+                    enabled = false
+                )
+            } else {
+                uiState.parentWallets.forEach { wallet ->
+                    DropdownMenuItem(
+                        text = { Text(wallet.name) },
+                        onClick = {
+                            viewModel.selectParent(wallet.walletId)
+                            dropdownExpanded = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+    Spacer(Modifier.height(16.dp))
+    Button(
+        onClick = { viewModel.createSubAccount() },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !uiState.isLoading
+    ) {
+        if (uiState.isLoading) {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+        } else {
+            Text("Create Sub-Account")
         }
     }
 }

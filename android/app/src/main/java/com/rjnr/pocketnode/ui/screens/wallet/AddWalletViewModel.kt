@@ -20,7 +20,9 @@ data class AddWalletUiState(
     val importPrivateKey: String = "",
     val createdWallet: WalletEntity? = null,
     val error: String? = null,
-    val showSyncCapWarning: Boolean = false
+    val showSyncCapWarning: Boolean = false,
+    val parentWallets: List<WalletEntity> = emptyList(),
+    val selectedParentId: String? = null
 )
 
 @HiltViewModel
@@ -31,6 +33,44 @@ class AddWalletViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(AddWalletUiState())
     val uiState: StateFlow<AddWalletUiState> = _uiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            val mnemonicRoots = walletRepository.getAll()
+                .filter { it.type == "mnemonic" && it.parentWalletId == null }
+            _uiState.update { it.copy(parentWallets = mnemonicRoots) }
+        }
+    }
+
+    fun selectParent(walletId: String) {
+        _uiState.update { it.copy(selectedParentId = walletId) }
+    }
+
+    fun createSubAccount() {
+        val name = _uiState.value.name.trim()
+        val parentId = _uiState.value.selectedParentId
+
+        if (name.isBlank()) {
+            _uiState.update { it.copy(error = "Please enter a wallet name") }
+            return
+        }
+        if (parentId == null) {
+            _uiState.update { it.copy(error = "Please select a parent wallet") }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            runCatching {
+                walletRepository.createSubAccount(parentId, name)
+            }.onSuccess { wallet ->
+                gatewayRepository.onActiveWalletChanged(wallet)
+                _uiState.update { it.copy(isLoading = false, createdWallet = wallet) }
+            }.onFailure { error ->
+                _uiState.update { it.copy(isLoading = false, error = error.message) }
+            }
+        }
+    }
 
     fun updateName(name: String) {
         _uiState.update { it.copy(name = name) }
