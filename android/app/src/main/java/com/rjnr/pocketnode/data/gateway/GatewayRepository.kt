@@ -5,6 +5,7 @@ import android.util.Log
 import com.rjnr.pocketnode.data.gateway.models.*
 import com.rjnr.pocketnode.data.sync.SyncForegroundService
 import com.rjnr.pocketnode.data.sync.SyncProgressTracker
+import com.rjnr.pocketnode.data.migration.WalletMigrationHelper
 import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.WalletInfo
@@ -46,7 +47,8 @@ class GatewayRepository @Inject constructor(
     private val json: Json,
     private val transactionBuilder: TransactionBuilder,
     private val cacheManager: CacheManager,
-    private val daoSyncManager: DaoSyncManager
+    private val daoSyncManager: DaoSyncManager,
+    private val walletMigrationHelper: WalletMigrationHelper
 ) {
     private val _walletInfo = MutableStateFlow<WalletInfo?>(null)
     val walletInfo: StateFlow<WalletInfo?> = _walletInfo.asStateFlow()
@@ -83,6 +85,9 @@ class GatewayRepository @Inject constructor(
 
         // Initialize the embedded node for the persisted network
         scope.launch {
+            // Migrate single-wallet to multi-wallet schema (idempotent, no-op if already done)
+            walletMigrationHelper.migrateIfNeeded()
+
             initializeNode(currentNetwork)
         }
     }
