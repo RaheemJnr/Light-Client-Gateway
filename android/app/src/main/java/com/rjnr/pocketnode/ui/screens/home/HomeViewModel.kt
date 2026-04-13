@@ -434,12 +434,14 @@ class HomeViewModel @Inject constructor(
     fun switchWallet(walletId: String) {
         viewModelScope.launch {
             try {
+                _uiState.update { it.copy(isSwitchingWallet = true) }
                 walletRepository.switchActiveWallet(walletId)
-                // Re-initialize with the newly active wallet
-                initializeWallet()
+                val wallet = walletRepository.getById(walletId) ?: return@launch
+                repository.onActiveWalletChanged(wallet)
+                _uiState.update { it.copy(isSwitchingWallet = false) }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to switch wallet", e)
-                _uiState.update { it.copy(error = "Failed to switch wallet: ${e.message}") }
+                _uiState.update { it.copy(isSwitchingWallet = false, error = "Failed to switch wallet: ${e.message}") }
             }
         }
     }
@@ -570,5 +572,6 @@ data class HomeUiState(
     val showInstallPermissionNeeded: Boolean = false,
     val hasPinOrBiometrics: Boolean = false,
     val hasMnemonicBackup: Boolean = false,
-    val showPostDepositReminder: Boolean = false
+    val showPostDepositReminder: Boolean = false,
+    val isSwitchingWallet: Boolean = false
 )

@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
+import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.wallet.WalletRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,7 +18,8 @@ private const val TAG = "WalletManagerVM"
 
 @HiltViewModel
 class WalletManagerViewModel @Inject constructor(
-    private val walletRepository: WalletRepository
+    private val walletRepository: WalletRepository,
+    private val gatewayRepository: GatewayRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(WalletManagerUiState())
@@ -35,6 +37,8 @@ class WalletManagerViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 walletRepository.switchActiveWallet(walletId)
+                val wallet = walletRepository.getById(walletId) ?: return@launch
+                gatewayRepository.onActiveWalletChanged(wallet)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to switch wallet", e)
                 _uiState.update { it.copy(error = "Failed to switch wallet: ${e.message}") }

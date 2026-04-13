@@ -3,6 +3,7 @@ package com.rjnr.pocketnode.ui.screens.wallet
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
+import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.wallet.WalletRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,12 +19,14 @@ data class AddWalletUiState(
     val importMnemonic: String = "",
     val importPrivateKey: String = "",
     val createdWallet: WalletEntity? = null,
-    val error: String? = null
+    val error: String? = null,
+    val showSyncCapWarning: Boolean = false
 )
 
 @HiltViewModel
 class AddWalletViewModel @Inject constructor(
-    private val walletRepository: WalletRepository
+    private val walletRepository: WalletRepository,
+    private val gatewayRepository: GatewayRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AddWalletUiState())
@@ -49,10 +52,17 @@ class AddWalletViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
+            val count = walletRepository.walletCount()
+            if (count >= 3) {
+                _uiState.update { it.copy(showSyncCapWarning = true) }
+                return@launch
+            }
+
             _uiState.update { it.copy(isLoading = true, error = null) }
             runCatching {
                 walletRepository.createWallet(name)
             }.onSuccess { (wallet, _) ->
+                gatewayRepository.onActiveWalletChanged(wallet)
                 _uiState.update { it.copy(isLoading = false, createdWallet = wallet) }
             }.onFailure { error ->
                 _uiState.update { it.copy(isLoading = false, error = error.message) }
@@ -78,6 +88,7 @@ class AddWalletViewModel @Inject constructor(
             runCatching {
                 walletRepository.importWallet(name, words)
             }.onSuccess { wallet ->
+                gatewayRepository.onActiveWalletChanged(wallet)
                 _uiState.update { it.copy(isLoading = false, createdWallet = wallet) }
             }.onFailure { error ->
                 _uiState.update { it.copy(isLoading = false, error = error.message) }
@@ -103,6 +114,7 @@ class AddWalletViewModel @Inject constructor(
             runCatching {
                 walletRepository.importRawKey(name, key)
             }.onSuccess { wallet ->
+                gatewayRepository.onActiveWalletChanged(wallet)
                 _uiState.update { it.copy(isLoading = false, createdWallet = wallet) }
             }.onFailure { error ->
                 _uiState.update { it.copy(isLoading = false, error = error.message) }

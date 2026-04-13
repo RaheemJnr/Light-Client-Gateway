@@ -45,7 +45,7 @@ class WalletDetailViewModel @Inject constructor(
     }
 
     fun cancelEditing() {
-        _uiState.update { it.copy(isEditing = false) }
+        _uiState.update { it.copy(isEditing = false, editName = it.wallet?.name ?: "") }
     }
 
     fun updateEditName(name: String) {
@@ -87,7 +87,8 @@ class WalletDetailViewModel @Inject constructor(
     }
 
     fun hasMnemonic(): Boolean {
-        return _uiState.value.wallet?.type == KeyManager.WALLET_TYPE_MNEMONIC
+        val wallet = _uiState.value.wallet ?: return false
+        return wallet.type == KeyManager.WALLET_TYPE_MNEMONIC && wallet.parentWalletId == null
     }
 
     fun getMnemonic(): List<String>? {
