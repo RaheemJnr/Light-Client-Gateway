@@ -23,7 +23,9 @@ import com.rjnr.pocketnode.ui.screens.send.SendScreen
 import com.rjnr.pocketnode.ui.screens.settings.SecuritySettingsScreen
 import com.rjnr.pocketnode.ui.screens.settings.SecuritySettingsViewModel
 import com.rjnr.pocketnode.ui.screens.recovery.RecoveryScreen
+import androidx.compose.runtime.collectAsState
 import com.rjnr.pocketnode.ui.screens.security.SecurityChecklistScreen
+import com.rjnr.pocketnode.ui.screens.security.SecurityChecklistViewModel
 import com.rjnr.pocketnode.ui.screens.security.MnemonicVerifyScreen
 
 sealed class Screen(val route: String) {
@@ -319,9 +321,25 @@ fun CkbNavGraph(
         }
 
         composable(Screen.SecurityChecklist.route) {
+            val viewModel: SecurityChecklistViewModel = hiltViewModel()
+            val state = viewModel.uiState.collectAsState().value
+
+            // Refresh state when returning from PIN setup or mnemonic backup
+            DisposableEffect(Unit) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_RESUME) {
+                        viewModel.refreshState()
+                    }
+                }
+                val lifecycle = it.lifecycle
+                lifecycle.addObserver(observer)
+                onDispose { lifecycle.removeObserver(observer) }
+            }
+
             SecurityChecklistScreen(
-                hasPinOrBiometrics = false, // TODO: wire from parent ViewModel
-                hasMnemonicBackup = false,  // TODO: wire from parent ViewModel
+                hasPinOrBiometrics = state.hasPinOrBiometrics,
+                hasMnemonicBackup = state.hasMnemonicBackup,
+                isMnemonicWallet = state.isMnemonicWallet,
                 onSetupPin = {
                     navController.navigate(Screen.PinEntry.createRoute("setup"))
                 },

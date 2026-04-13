@@ -43,7 +43,7 @@ class SyncNotificationManager @Inject constructor(
 
     fun buildSyncingNotification(percentage: Int, etaDisplay: String): Notification {
         return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Syncing CKB ($percentage%)")
             .setContentText(etaDisplay)
             .setProgress(100, percentage, false)
@@ -54,7 +54,7 @@ class SyncNotificationManager @Inject constructor(
 
     fun buildSyncedNotification(): Notification {
         return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("CKB synced")
             .setContentText("Up to date")
             .setOngoing(true)

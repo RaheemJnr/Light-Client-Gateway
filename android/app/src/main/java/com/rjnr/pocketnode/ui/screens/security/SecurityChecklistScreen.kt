@@ -16,11 +16,18 @@ import androidx.compose.ui.unit.dp
 fun SecurityChecklistScreen(
     hasPinOrBiometrics: Boolean,
     hasMnemonicBackup: Boolean,
+    isMnemonicWallet: Boolean,
     onSetupPin: () -> Unit,
     onBackupMnemonic: () -> Unit,
     onBack: () -> Unit
 ) {
-    val completedCount = listOf(hasPinOrBiometrics, hasMnemonicBackup).count { it }
+    // For raw-key wallets, only PIN matters (no mnemonic to back up)
+    val totalItems = if (isMnemonicWallet) 2 else 1
+    val completedItems = buildList {
+        if (hasPinOrBiometrics) add(true)
+        if (isMnemonicWallet && hasMnemonicBackup) add(true)
+    }
+    val completedCount = completedItems.size
 
     Scaffold(
         topBar = {
@@ -42,14 +49,14 @@ fun SecurityChecklistScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "$completedCount of 2 complete",
+                text = "$completedCount of $totalItems complete",
                 style = MaterialTheme.typography.titleMedium,
-                color = if (completedCount == 2) MaterialTheme.colorScheme.primary
+                color = if (completedCount == totalItems) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             LinearProgressIndicator(
-                progress = { completedCount / 2f },
+                progress = { completedCount.toFloat() / totalItems },
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -63,13 +70,15 @@ fun SecurityChecklistScreen(
                 actionLabel = if (hasPinOrBiometrics) "Done" else "Set up"
             )
 
-            SecurityChecklistItem(
-                title = "Recovery phrase",
-                description = "Write down your 12 words so you can restore your wallet if this device is lost",
-                isComplete = hasMnemonicBackup,
-                onAction = onBackupMnemonic,
-                actionLabel = if (hasMnemonicBackup) "Done" else "Back up"
-            )
+            if (isMnemonicWallet) {
+                SecurityChecklistItem(
+                    title = "Recovery phrase",
+                    description = "Write down your 12 words so you can restore your wallet if this device is lost",
+                    isComplete = hasMnemonicBackup,
+                    onAction = onBackupMnemonic,
+                    actionLabel = if (hasMnemonicBackup) "Done" else "Back up"
+                )
+            }
         }
     }
 }

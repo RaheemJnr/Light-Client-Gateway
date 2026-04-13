@@ -42,7 +42,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -91,12 +93,47 @@ fun SettingsScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Permission launcher for POST_NOTIFICATIONS (API 33+)
+    // Notification permission explanation dialog + system permission launcher
+    var showNotificationExplanation by remember { mutableStateOf(false) }
+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         // Enable background sync regardless — notification will just be silent if denied
         viewModel.toggleBackgroundSync(true)
+    }
+
+    if (showNotificationExplanation) {
+        AlertDialog(
+            onDismissRequest = { showNotificationExplanation = false },
+            title = { Text("Allow Notifications") },
+            text = {
+                Text(
+                    "Pocket Node needs notification permission to show sync progress " +
+                        "when the app is in the background.\n\n" +
+                        "You'll see a small notification with the current sync percentage " +
+                        "and estimated time remaining. This helps you know when your wallet " +
+                        "is fully synced without opening the app."
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    showNotificationExplanation = false
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }) {
+                    Text("Allow")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showNotificationExplanation = false
+                    // Enable sync anyway — just no visible notification
+                    viewModel.toggleBackgroundSync(true)
+                }) {
+                    Text("Skip")
+                }
+            }
+        )
     }
 
     // Sync options dialog
@@ -195,7 +232,7 @@ fun SettingsScreen(
                     context, Manifest.permission.POST_NOTIFICATIONS
                 ) == PackageManager.PERMISSION_GRANTED
                 if (!hasPermission) {
-                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    showNotificationExplanation = true
                     return@SettingsScreenUI
                 }
             }
