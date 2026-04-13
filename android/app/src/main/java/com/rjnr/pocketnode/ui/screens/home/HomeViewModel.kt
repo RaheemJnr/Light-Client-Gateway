@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
+import com.rjnr.pocketnode.data.gateway.SyncProgress
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
@@ -17,8 +18,6 @@ import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.WalletInfo
 import com.rjnr.pocketnode.data.wallet.WalletRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -39,8 +38,6 @@ class HomeViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
-
-    private var syncPollingJob: Job? = null
 
     private fun formatFiat(ckb: Double, price: Double): String =
         String.format(Locale.US, "≈ $%.2f USD", ckb * price)
@@ -170,73 +167,32 @@ class HomeViewModel @Inject constructor(
     }
 
     private suspend fun checkSyncStatusAndRefresh() {
-        // Check sync status
-        repository.getAccountStatus()
-            .onSuccess { status ->
-                Log.d(TAG, "Account sync status: synced=${status.isSynced}, progress=${status.syncProgress}")
-                _uiState.update {
-                    it.copy(
-                        syncProgress = status.syncProgress,
-                        isSyncing = !status.isSynced,
-                        syncedToBlock = status.syncedToBlock,
-                        tipBlockNumber = status.tipNumber
-                    )
-                }
-
-                if (!status.isSynced) {
-                    Log.d(TAG, "Account still syncing (${(status.syncProgress * 100).toInt()}%), starting fast poll")
-                }
-                startSyncPolling()
-            }
-            .onFailure { error ->
-                Log.e(TAG, "Failed to get account status", error)
-            }
-
+        observeSyncProgress()
         // Refresh data regardless of sync status
         refresh()
     }
 
-    private fun startSyncPolling() {
-        if (syncPollingJob?.isActive == true) return
-        
-        syncPollingJob = viewModelScope.launch {
-            Log.d(TAG, "🚀 Starting indefinite sync polling")
-            var isFullySynced = false
+    private fun observeSyncProgress() {
+        viewModelScope.launch {
+            repository.syncProgress.collect { progress ->
+                _uiState.update {
+                    it.copy(
+                        syncProgress = progress.percentage / 100.0,
+                        isSyncing = progress.isSyncing,
+                        syncedToBlock = progress.syncedToBlock.toString(),
+                        tipBlockNumber = progress.tipBlockNumber.toString()
+                    )
+                }
 
-            while (true) {
-                val delayMs = if (isFullySynced) 30_000L else 5_000L
-                delay(delayMs)
-
-                repository.getAccountStatus()
-                    .onSuccess { status ->
-                        val wasSynced = isFullySynced
-                        isFullySynced = status.isSynced
-                        
-                        _uiState.update {
-                            it.copy(
-                                syncProgress = status.syncProgress,
-                                isSyncing = !status.isSynced,
-                                syncedToBlock = status.syncedToBlock,
-                                tipBlockNumber = status.tipNumber
-                            )
-                        }
-
-                        if (isFullySynced && !wasSynced) {
-                            Log.d(TAG, "✨ Account just reached full sync! Refreshing all data...")
-                            refresh()
-                        } else if (isFullySynced) {
-                            // Periodically check for new transactions even when synced
-                            Log.d(TAG, "📡 Periodic background refresh (Synced)")
-                            refresh()
-                        } else {
-                            Log.d(TAG, "📈 Sync progress: ${(status.syncProgress * 100).toInt()}%")
-                            // Refresh transactions periodically during active sync
-                            refreshTransactionsOnly(silent = true)
-                        }
-                    }
-                    .onFailure {
-                        Log.e(TAG, "❌ Failed to check sync status during polling", it)
-                    }
+                if (progress.justReachedTip) {
+                    Log.d(TAG, "Sync just reached tip -- refreshing all data")
+                    refresh()
+                } else if (!progress.isSyncing && progress.tipBlockNumber > 0) {
+                    // Periodically refresh when synced (the flow emits on each poll)
+                    refresh()
+                } else if (progress.isSyncing) {
+                    refreshTransactionsOnly(silent = true)
+                }
             }
         }
     }
@@ -310,8 +266,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             Log.d(TAG, "Changing sync mode to: $syncMode, customBlock: $customBlockHeight")
 
-            // Cancel any existing sync polling
-            syncPollingJob?.cancel()
+            repository.stopSyncPolling()
 
             _uiState.update {
                 it.copy(
@@ -472,8 +427,7 @@ class HomeViewModel @Inject constructor(
 
         viewModelScope.launch {
             // Cancel active polling before switching
-            syncPollingJob?.cancel()
-            syncPollingJob = null
+            repository.stopSyncPolling()
 
             // Clear UI state for fresh network
             _uiState.update {
@@ -547,7 +501,6 @@ class HomeViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        syncPollingJob?.cancel()
         updateDownloader.cleanup()
     }
 }
