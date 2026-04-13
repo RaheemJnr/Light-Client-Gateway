@@ -2,6 +2,7 @@ package com.rjnr.pocketnode.data.auth
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -23,12 +24,26 @@ class PinManager @Inject constructor(
         get() = testPrefs ?: encryptedPrefs
 
     private val encryptedPrefs: SharedPreferences by lazy {
+        try {
+            createEncryptedPrefs(useStrongBox = true)
+        } catch (e: Exception) {
+            Log.w(TAG, "StrongBox-backed pin prefs failed, trying without StrongBox", e)
+            try {
+                createEncryptedPrefs(useStrongBox = false)
+            } catch (e2: Exception) {
+                Log.e(TAG, "Pin prefs completely unreadable", e2)
+                createEncryptedPrefs(useStrongBox = true)
+            }
+        }
+    }
+
+    private fun createEncryptedPrefs(useStrongBox: Boolean): SharedPreferences {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .setRequestStrongBoxBacked(true)
+            .apply { if (useStrongBox) setRequestStrongBoxBacked(true) }
             .build()
 
-        EncryptedSharedPreferences.create(
+        return EncryptedSharedPreferences.create(
             context,
             PREFS_NAME,
             masterKey,
@@ -147,6 +162,7 @@ class PinManager @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "PinManager"
         internal const val PREFS_NAME = "ckb_pin_prefs"
         internal const val PIN_LENGTH = 6
         internal const val MAX_ATTEMPTS = 5
