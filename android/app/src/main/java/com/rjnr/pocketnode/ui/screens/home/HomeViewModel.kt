@@ -10,6 +10,8 @@ import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
 import com.rjnr.pocketnode.BuildConfig
+import com.rjnr.pocketnode.data.auth.AuthManager
+import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.price.PriceRepository
 import com.rjnr.pocketnode.data.update.UpdateDownloader
 import com.rjnr.pocketnode.data.update.UpdateInfo
@@ -33,17 +35,22 @@ class HomeViewModel @Inject constructor(
     private val priceRepository: PriceRepository,
     private val walletRepository: WalletRepository,
     private val updateRepository: UpdateRepository,
-    private val updateDownloader: UpdateDownloader
+    private val updateDownloader: UpdateDownloader,
+    private val pinManager: PinManager,
+    private val authManager: AuthManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    private var previousBalanceWasZero = true
 
     private fun formatFiat(ckb: Double, price: Double): String =
         String.format(Locale.US, "≈ $%.2f USD", ckb * price)
 
     init {
         checkBackupStatus()
+        refreshSecurityState()
         checkForUpdate()
 
         viewModelScope.launch {
@@ -72,6 +79,14 @@ class HomeViewModel @Inject constructor(
                         fiatBalance = fiat ?: current.fiatBalance
                     )
                 }
+                // Post-deposit reminder: trigger when balance goes from zero to non-zero
+                // and the wallet is not fully secured
+                val hasPin = _uiState.value.hasPinOrBiometrics
+                val hasBackup = _uiState.value.hasMnemonicBackup
+                if (previousBalanceWasZero && ckb > 0.0 && (!hasPin || !hasBackup)) {
+                    _uiState.update { it.copy(showPostDepositReminder = true) }
+                }
+                previousBalanceWasZero = (ckb == 0.0)
             }
         }
 
@@ -333,8 +348,24 @@ class HomeViewModel @Inject constructor(
         _uiState.update { it.copy(walletType = type, showBackupReminder = needsBackup) }
     }
 
+    private fun refreshSecurityState() {
+        val hasPin = pinManager.hasPin()
+        val hasBiometrics = authManager.isBiometricEnabled()
+        val hasMnemonicBackup = repository.hasMnemonicBackup()
+        _uiState.update {
+            it.copy(
+                hasPinOrBiometrics = hasPin || hasBiometrics,
+                hasMnemonicBackup = hasMnemonicBackup
+            )
+        }
+    }
+
     fun dismissBackupReminder() {
         _uiState.update { it.copy(showBackupReminder = false) }
+    }
+
+    fun dismissPostDepositReminder() {
+        _uiState.update { it.copy(showPostDepositReminder = false) }
     }
 
     fun toggleBalanceVisibility() {
@@ -536,5 +567,8 @@ data class HomeUiState(
     val wallets: List<WalletEntity> = emptyList(),
     val updateInfo: UpdateInfo? = null,
     val showUpdateDialog: Boolean = false,
-    val showInstallPermissionNeeded: Boolean = false
+    val showInstallPermissionNeeded: Boolean = false,
+    val hasPinOrBiometrics: Boolean = false,
+    val hasMnemonicBackup: Boolean = false,
+    val showPostDepositReminder: Boolean = false
 )

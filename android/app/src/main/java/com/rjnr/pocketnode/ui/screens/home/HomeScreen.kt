@@ -83,6 +83,8 @@ import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.Wallet
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
+import com.rjnr.pocketnode.ui.components.SecurityBanner
+import com.rjnr.pocketnode.ui.components.SecurityBannerState
 import com.rjnr.pocketnode.ui.components.SyncOptionsDialog
 import com.rjnr.pocketnode.ui.components.UpdateDialog
 import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
@@ -103,6 +105,7 @@ fun HomeScreen(
     onNavigateToDao: () -> Unit = {},
     onNavigateToActivity: () -> Unit = {},
     onNavigateToWalletManager: () -> Unit = {},
+    onNavigateToSecurityChecklist: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -197,6 +200,31 @@ fun HomeScreen(
             updateInfo = uiState.updateInfo!!,
             onUpdate = { viewModel.startUpdate() },
             onDismiss = { viewModel.dismissUpdate() }
+        )
+    }
+
+    // Post-deposit security reminder
+    if (uiState.showPostDepositReminder) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissPostDepositReminder() },
+            title = { Text("Protect your funds") },
+            text = {
+                Text(
+                    "You now have funds in this wallet. Set up a PIN and write down " +
+                        "your recovery phrase to protect them."
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.dismissPostDepositReminder()
+                    onNavigateToSecurityChecklist()
+                }) { Text("Secure now") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissPostDepositReminder() }) {
+                    Text("Later")
+                }
+            }
         )
     }
 
@@ -336,6 +364,7 @@ fun HomeScreen(
                 onNavigateToReceive = onNavigateToReceive,
                 onNavigateToDao = onNavigateToDao,
                 onNavigateToActivity = onNavigateToActivity,
+                onNavigateToSecurityChecklist = onNavigateToSecurityChecklist,
                 dismissBackupReminder = { viewModel.dismissBackupReminder() },
                 onToggleBalanceVisibility = { viewModel.toggleBalanceVisibility() },
                 clipboardManager = clipboardManager,
@@ -357,6 +386,7 @@ fun HomeScreenUI(
     onNavigateToReceive: () -> Unit,
     onNavigateToDao: () -> Unit = {},
     onNavigateToActivity: () -> Unit = {},
+    onNavigateToSecurityChecklist: () -> Unit = {},
     dismissBackupReminder: () -> Unit,
     onToggleBalanceVisibility: () -> Unit,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
@@ -377,6 +407,17 @@ fun HomeScreenUI(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Security Banner (PIN/biometrics + backup status)
+            item {
+                SecurityBanner(
+                    state = SecurityBannerState(
+                        hasPinOrBiometrics = uiState.hasPinOrBiometrics,
+                        hasMnemonicBackup = uiState.hasMnemonicBackup
+                    ),
+                    onActionClick = onNavigateToSecurityChecklist
+                )
+            }
+
             // Mnemonic Backup Reminder
             if (uiState.showBackupReminder) {
                 item {
