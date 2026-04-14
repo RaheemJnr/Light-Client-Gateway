@@ -17,11 +17,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.util.toHex
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -39,6 +41,8 @@ data class MnemonicBackupUiState(
     val currentStep: Int = 1,
     val words: List<String> = emptyList(),
     val privateKeyHex: String? = null,
+    val walletType: String = "",       // "mnemonic", "raw_key", or empty
+    val isSubAccount: Boolean = false,
     val verifyPositions: List<Int> = emptyList(),
     val verifyOptions: Map<Int, List<String>> = emptyMap(),
     val userSelections: Map<Int, String> = emptyMap(),
@@ -47,7 +51,8 @@ data class MnemonicBackupUiState(
 
 @HiltViewModel
 class MnemonicBackupViewModel @Inject constructor(
-    private val repository: GatewayRepository
+    private val repository: GatewayRepository,
+    private val walletRepository: com.rjnr.pocketnode.data.wallet.WalletRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MnemonicBackupUiState())
@@ -58,9 +63,21 @@ class MnemonicBackupViewModel @Inject constructor(
     }
 
     private fun loadMnemonic() {
+        // Detect wallet type for the active wallet
+        viewModelScope.launch {
+            val activeWallet = walletRepository.getActive()
+            val walletType = activeWallet?.type ?: ""
+            val isSubAccount = activeWallet?.parentWalletId != null
+            _uiState.update { it.copy(walletType = walletType, isSubAccount = isSubAccount) }
+        }
+
         val words = repository.getMnemonic()
         if (words.isNullOrEmpty()) {
-            _uiState.update { it.copy(error = "No mnemonic found") }
+            // For raw_key or sub-account wallets, this is expected — not an error
+            val privateKeyHex = try {
+                repository.getPrivateKey().toHex()
+            } catch (_: Exception) { null }
+            _uiState.update { it.copy(privateKeyHex = privateKeyHex) }
             return
         }
         val random = java.util.Random(System.nanoTime())
@@ -180,39 +197,60 @@ fun MnemonicBackupScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        if (simplified) {
-            MnemonicDisplayStep(
-                words = uiState.words,
-                privateKeyHex = uiState.privateKeyHex,
-                snackbarHostState = snackbarHostState,
-                onNext = {
-                    viewModel.markBackedUpAndComplete()
-                    onNavigateBack()
-                },
-                nextButtonLabel = "I've saved my seed phrase",
-                modifier = Modifier.padding(padding)
-            )
-        } else {
-            when (uiState.currentStep) {
-                1 -> MnemonicDisplayStep(
+        when {
+            // Sub-account wallet — no independent backup
+            uiState.isSubAccount -> {
+                SubAccountBackupInfo(
+                    onNavigateBack = onNavigateBack,
+                    modifier = Modifier.padding(padding)
+                )
+            }
+            // Raw key wallet — show private key instead of mnemonic
+            uiState.walletType == "raw_key" -> {
+                RawKeyBackupInfo(
+                    privateKeyHex = uiState.privateKeyHex,
+                    snackbarHostState = snackbarHostState,
+                    onNavigateBack = onNavigateBack,
+                    modifier = Modifier.padding(padding)
+                )
+            }
+            // Simplified mode (post-creation)
+            simplified -> {
+                MnemonicDisplayStep(
                     words = uiState.words,
                     privateKeyHex = uiState.privateKeyHex,
                     snackbarHostState = snackbarHostState,
-                    onNext = { viewModel.advanceToVerify() },
+                    onNext = {
+                        viewModel.markBackedUpAndComplete()
+                        onNavigateBack()
+                    },
+                    nextButtonLabel = "I've saved my seed phrase",
                     modifier = Modifier.padding(padding)
                 )
-                2 -> MnemonicVerifyStep(
-                    verifyPositions = uiState.verifyPositions,
-                    verifyOptions = uiState.verifyOptions,
-                    userSelections = uiState.userSelections,
-                    onSelectWord = { pos, word -> viewModel.selectWord(pos, word) },
-                    onVerify = { viewModel.verify() },
-                    modifier = Modifier.padding(padding)
-                )
-                3 -> MnemonicSuccessStep(
-                    onComplete = onNavigateToHome,
-                    modifier = Modifier.padding(padding)
-                )
+            }
+            // Normal mnemonic backup flow
+            else -> {
+                when (uiState.currentStep) {
+                    1 -> MnemonicDisplayStep(
+                        words = uiState.words,
+                        privateKeyHex = uiState.privateKeyHex,
+                        snackbarHostState = snackbarHostState,
+                        onNext = { viewModel.advanceToVerify() },
+                        modifier = Modifier.padding(padding)
+                    )
+                    2 -> MnemonicVerifyStep(
+                        verifyPositions = uiState.verifyPositions,
+                        verifyOptions = uiState.verifyOptions,
+                        userSelections = uiState.userSelections,
+                        onSelectWord = { pos, word -> viewModel.selectWord(pos, word) },
+                        onVerify = { viewModel.verify() },
+                        modifier = Modifier.padding(padding)
+                    )
+                    3 -> MnemonicSuccessStep(
+                        onComplete = onNavigateToHome,
+                        modifier = Modifier.padding(padding)
+                    )
+                }
             }
         }
     }
@@ -456,6 +494,134 @@ private fun MnemonicSuccessStep(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Continue")
+        }
+    }
+}
+
+// -- Raw key wallet backup info --
+
+@Composable
+private fun RawKeyBackupInfo(
+    privateKeyHex: String?,
+    snackbarHostState: SnackbarHostState,
+    onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "No seed phrase available",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "This wallet was imported using a private key, so there is no seed phrase to back up. You can copy your private key below to store it safely.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        if (privateKeyHex != null) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Private Key",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = privateKeyHex,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = {
+                            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(privateKeyHex))
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Private key copied to clipboard")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Copy Private Key")
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        OutlinedButton(
+            onClick = onNavigateBack,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Done")
+        }
+    }
+}
+
+// -- Sub-account backup info --
+
+@Composable
+private fun SubAccountBackupInfo(
+    onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Sub-accounts don't have their own seed phrase",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "This account is derived from its parent wallet's seed phrase. To back up this account, go to the parent wallet's settings and back up its seed phrase. The parent's seed phrase can recover all of its sub-accounts.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        OutlinedButton(
+            onClick = onNavigateBack,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Got it")
         }
     }
 }
