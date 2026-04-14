@@ -37,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -64,7 +65,7 @@ fun WalletSettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
-    var showSeedPhrase by remember { mutableStateOf(false) }
+    var showSeedPhrase by rememberSaveable { mutableStateOf(false) }
     var showAddAccountDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(uiState.deleted) {
@@ -356,7 +357,7 @@ fun WalletSettingsScreen(
 
                     Spacer(Modifier.height(8.dp))
 
-                    var showPrivateKey by remember { mutableStateOf(false) }
+                    var showPrivateKey by rememberSaveable { mutableStateOf(false) }
 
                     if (showPrivateKey && (uiState.seedPhraseUnlocked || !viewModel.requiresPinForSeedPhrase())) {
                         val keyHex = viewModel.getPrivateKeyHex()

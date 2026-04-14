@@ -158,6 +158,11 @@ class HomeViewModel @Inject constructor(
     }
 
     private suspend fun registerAndRefresh() {
+        // Always refresh saved sync preferences for UI display
+        val savedSyncModeForUi = repository.getSavedSyncMode()
+        val savedCustomBlockHeightForUi = repository.getSavedCustomBlockHeight()
+        _uiState.update { it.copy(currentSyncMode = savedSyncModeForUi, savedCustomBlockHeight = savedCustomBlockHeightForUi) }
+
         // If already registered (e.g., ViewModel recreated by tab navigation),
         // skip re-registration to avoid resetting sync progress
         if (repository.isRegistered.value) {
@@ -326,7 +331,8 @@ class HomeViewModel @Inject constructor(
                     isSyncing = true,
                     syncProgress = 0.0,
                     transactions = emptyList(),
-                    currentSyncMode = syncMode
+                    currentSyncMode = syncMode,
+                    savedCustomBlockHeight = customBlockHeight
                 )
             }
 
@@ -475,9 +481,17 @@ class HomeViewModel @Inject constructor(
                 walletRepository.switchActiveWallet(walletId)
                 val wallet = walletRepository.getById(walletId) ?: return@launch
                 repository.onActiveWalletChanged(wallet)
+                // Refresh per-wallet sync preferences for UI
+                val newSyncMode = repository.getSavedSyncMode()
+                val newCustomHeight = repository.getSavedCustomBlockHeight()
                 checkBackupStatus()
                 refreshSecurityState()
-                _uiState.update { it.copy(isSwitchingWallet = false) }
+                refreshWalletBalances(_uiState.value.wallets)
+                _uiState.update { it.copy(
+                    isSwitchingWallet = false,
+                    currentSyncMode = newSyncMode,
+                    savedCustomBlockHeight = newCustomHeight
+                ) }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to switch wallet", e)
                 _uiState.update { it.copy(isSwitchingWallet = false, error = "Failed to switch wallet: ${e.message}") }

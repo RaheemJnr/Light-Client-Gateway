@@ -21,7 +21,8 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val repository: GatewayRepository,
     private val walletPrefs: WalletPreferences,
-    private val pinManager: PinManager
+    private val pinManager: PinManager,
+    private val walletRepository: com.rjnr.pocketnode.data.wallet.WalletRepository
 ) : ViewModel() {
 
     data class UiState(
@@ -51,13 +52,27 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update { it.copy(currentNetwork = network) }
             }
         }
+
+        // Reload sync preferences when active wallet changes
+        viewModelScope.launch {
+            walletRepository.getActiveWallet().collect { wallet ->
+                val walletId = wallet?.walletId
+                _uiState.update {
+                    it.copy(
+                        syncMode = walletPrefs.getSyncMode(walletId = walletId),
+                        syncStrategy = walletPrefs.getSyncStrategy()
+                    )
+                }
+            }
+        }
     }
 
     private fun loadState() {
+        val walletId = walletPrefs.getActiveWalletId()
         _uiState.update {
             it.copy(
                 isPinEnabled = pinManager.hasPin(),
-                syncMode = walletPrefs.getSyncMode(),
+                syncMode = walletPrefs.getSyncMode(walletId = walletId),
                 syncStrategy = walletPrefs.getSyncStrategy(),
                 currentNetwork = repository.currentNetwork,
                 themeMode = walletPrefs.getThemeMode(),
