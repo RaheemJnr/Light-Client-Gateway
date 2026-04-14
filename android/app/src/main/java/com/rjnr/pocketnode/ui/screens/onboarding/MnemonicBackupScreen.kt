@@ -549,8 +549,9 @@ private fun RawKeyBackupInfo(
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
                     Spacer(Modifier.height(8.dp))
+                    val masked = privateKeyHex.take(8) + "••••••••••••••••" + privateKeyHex.takeLast(8)
                     Text(
-                        text = privateKeyHex,
+                        text = masked,
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onErrorContainer

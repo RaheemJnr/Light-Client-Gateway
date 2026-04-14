@@ -376,8 +376,9 @@ fun WalletSettingsScreen(
                                         color = MaterialTheme.colorScheme.onErrorContainer
                                     )
                                     Spacer(Modifier.height(8.dp))
+                                    val masked = keyHex.take(8) + "••••••••••••••••" + keyHex.takeLast(8)
                                     Text(
-                                        text = keyHex,
+                                        text = masked,
                                         style = MaterialTheme.typography.bodySmall,
                                         fontFamily = FontFamily.Monospace,
                                         color = MaterialTheme.colorScheme.onErrorContainer
