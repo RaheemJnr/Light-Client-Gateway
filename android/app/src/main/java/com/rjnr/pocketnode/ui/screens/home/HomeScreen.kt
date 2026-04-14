@@ -71,6 +71,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.ExternalLink
 import com.composables.icons.lucide.FileText
+import com.composables.icons.lucide.Info
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.TriangleAlert
 import com.composables.icons.lucide.X
@@ -135,7 +136,8 @@ fun HomeScreen(
             onSelectMode = { mode, customBlock ->
                 viewModel.hideSyncOptions()
                 viewModel.changeSyncMode(mode, customBlock)
-            }
+            },
+            savedCustomBlockHeight = uiState.savedCustomBlockHeight
         )
     }
 
@@ -280,7 +282,8 @@ fun HomeScreen(
             activeWalletId = uiState.wallets.find { it.isActive }?.walletId ?: "",
             onSelectAccount = { viewModel.switchWallet(it) },
             onManageWallets = onNavigateToWalletManager,
-            onDismiss = { showAccountSelector = false }
+            onDismiss = { showAccountSelector = false },
+            balances = uiState.walletBalances
         )
     }
 
@@ -480,6 +483,36 @@ fun HomeScreenUI(
                         }
                     }
                 )
+            }
+
+            // Sync warning banner
+            if (uiState.isSyncing) {
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Lucide.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                "Finish syncing before making transactions",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                }
             }
 
             // Quick Actions Row

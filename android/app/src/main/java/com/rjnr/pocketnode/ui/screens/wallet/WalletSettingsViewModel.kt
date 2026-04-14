@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.database.dao.WalletDao
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.wallet.KeyManager
@@ -23,7 +24,8 @@ class WalletSettingsViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val walletRepository: WalletRepository,
     private val walletDao: WalletDao,
-    private val keyManager: KeyManager
+    private val keyManager: KeyManager,
+    private val pinManager: PinManager
 ) : ViewModel() {
 
     private val walletId: String = savedStateHandle["walletId"] ?: ""
@@ -131,6 +133,16 @@ class WalletSettingsViewModel @Inject constructor(
         return wallet.type == KeyManager.WALLET_TYPE_MNEMONIC && wallet.parentWalletId == null
     }
 
+    fun requiresPinForSeedPhrase(): Boolean = pinManager.hasPin()
+
+    fun onPinVerified() {
+        _uiState.update { it.copy(seedPhraseUnlocked = true) }
+    }
+
+    fun lockSeedPhrase() {
+        _uiState.update { it.copy(seedPhraseUnlocked = false) }
+    }
+
     fun getMnemonic(): List<String>? {
         return try {
             keyManager.getMnemonicForWallet(walletId)
@@ -166,5 +178,6 @@ data class WalletSettingsUiState(
     val isBackedUp: Boolean = false,
     val showDeleteConfirm: Boolean = false,
     val deleted: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val seedPhraseUnlocked: Boolean = false
 )

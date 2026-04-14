@@ -58,6 +58,7 @@ import com.rjnr.pocketnode.ui.components.WalletAvatar
 @Composable
 fun WalletSettingsScreen(
     onNavigateBack: () -> Unit = {},
+    onNavigateToPinVerify: () -> Unit = {},
     viewModel: WalletSettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -260,8 +261,8 @@ fun WalletSettingsScreen(
                         onClick = { /* Backup flow handled elsewhere */ }
                     )
 
-                    // View seed phrase
-                    if (showSeedPhrase) {
+                    // View seed phrase (requires PIN verification if PIN is set)
+                    if (showSeedPhrase && (uiState.seedPhraseUnlocked || !viewModel.requiresPinForSeedPhrase())) {
                         val words = viewModel.getMnemonic()
                         if (words != null) {
                             Card(
@@ -286,7 +287,10 @@ fun WalletSettingsScreen(
                                         color = MaterialTheme.colorScheme.onErrorContainer
                                     )
                                     Spacer(Modifier.height(8.dp))
-                                    OutlinedButton(onClick = { showSeedPhrase = false }) {
+                                    OutlinedButton(onClick = {
+                                        showSeedPhrase = false
+                                        viewModel.lockSeedPhrase()
+                                    }) {
                                         Text("Hide")
                                     }
                                 }
@@ -295,7 +299,14 @@ fun WalletSettingsScreen(
                     } else {
                         SettingsActionRow(
                             label = "View seed phrase",
-                            onClick = { showSeedPhrase = true }
+                            onClick = {
+                                if (viewModel.requiresPinForSeedPhrase()) {
+                                    showSeedPhrase = true
+                                    onNavigateToPinVerify()
+                                } else {
+                                    showSeedPhrase = true
+                                }
+                            }
                         )
                     }
                 }

@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
+import com.rjnr.pocketnode.data.gateway.CacheManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.SyncProgress
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
@@ -38,7 +39,8 @@ class HomeViewModel @Inject constructor(
     private val updateRepository: UpdateRepository,
     private val updateDownloader: UpdateDownloader,
     private val pinManager: PinManager,
-    private val authManager: AuthManager
+    private val authManager: AuthManager,
+    private val cacheManager: CacheManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -113,6 +115,8 @@ class HomeViewModel @Inject constructor(
                     )
                 }
                 _uiState.update { it.copy(wallets = wallets, walletGroups = groups) }
+                // Fetch cached balances for all wallets
+                refreshWalletBalances(wallets)
             }
         }
     }
@@ -161,7 +165,7 @@ class HomeViewModel @Inject constructor(
 
         Log.d(TAG, "Loading saved sync preferences: mode=$savedSyncMode, customBlock=$savedCustomBlockHeight, completedSync=$hasCompletedInitialSync")
 
-        _uiState.update { it.copy(currentSyncMode = savedSyncMode) }
+        _uiState.update { it.copy(currentSyncMode = savedSyncMode, savedCustomBlockHeight = savedCustomBlockHeight) }
 
         // Use saved settings, or network-appropriate default for first-time users.
         // Testnet defaults to NEW_WALLET (start from tip — testnet is small, no need for history).
@@ -253,6 +257,23 @@ class HomeViewModel @Inject constructor(
 
             _uiState.update { it.copy(isRefreshing = false) }
         }
+    }
+
+    private suspend fun refreshWalletBalances(wallets: List<WalletEntity>) {
+        val network = _uiState.value.currentNetwork.name
+        val balanceMap = mutableMapOf<String, String>()
+        for (wallet in wallets) {
+            try {
+                val cached = cacheManager.getCachedBalance(network, walletId = wallet.walletId)
+                if (cached != null) {
+                    val ckb = cached.capacityAsCkb()
+                    balanceMap[wallet.walletId] = String.format(Locale.US, "%,.2f CKB", ckb)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to get cached balance for ${wallet.walletId}", e)
+            }
+        }
+        _uiState.update { it.copy(walletBalances = balanceMap) }
     }
 
     private suspend fun refreshTransactionsOnly(silent: Boolean = false) {
@@ -582,5 +603,7 @@ data class HomeUiState(
     val hasPinOrBiometrics: Boolean = false,
     val hasMnemonicBackup: Boolean = false,
     val showPostDepositReminder: Boolean = false,
-    val isSwitchingWallet: Boolean = false
+    val isSwitchingWallet: Boolean = false,
+    val savedCustomBlockHeight: Long? = null,
+    val walletBalances: Map<String, String> = emptyMap()
 )

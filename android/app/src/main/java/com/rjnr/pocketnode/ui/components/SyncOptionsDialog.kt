@@ -44,10 +44,11 @@ internal fun SyncOptionsDialog(
     onSelectMode: (SyncMode, Long?) -> Unit,
     title: String = "Sync Options",
     description: String = "Choose how much transaction history to sync:",
-    availableModes: List<SyncMode> = SyncMode.entries.toList()
+    availableModes: List<SyncMode> = SyncMode.entries.toList(),
+    savedCustomBlockHeight: Long? = null
 ) {
     var selectedMode by remember { mutableStateOf(currentMode) }
-    var customBlockHeight by remember { mutableStateOf("") }
+    var customBlockHeight by remember { mutableStateOf(savedCustomBlockHeight?.toString() ?: "") }
     var showCustomInput by remember { mutableStateOf(currentMode == SyncMode.CUSTOM) }
 
     AlertDialog(

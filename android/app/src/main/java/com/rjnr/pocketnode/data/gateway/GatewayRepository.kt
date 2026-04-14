@@ -404,12 +404,27 @@ class GatewayRepository @Inject constructor(
     }
 
     fun getWalletType(): String = keyManager.getWalletType()
-    fun getMnemonic(): List<String>? = keyManager.getMnemonic()
+    fun getMnemonic(): List<String>? {
+        // Prefer wallet-scoped mnemonic for multi-wallet support
+        val wId = activeWalletId
+        return if (wId.isNotEmpty()) {
+            keyManager.getMnemonicForWallet(wId) ?: keyManager.getMnemonic()
+        } else {
+            keyManager.getMnemonic()
+        }
+    }
     fun hasMnemonicBackup(): Boolean = keyManager.hasMnemonicBackup()
-    fun setMnemonicBackedUp(backedUp: Boolean) = keyManager.setMnemonicBackedUp(backedUp)
+    fun setMnemonicBackedUp(backedUp: Boolean) {
+        keyManager.setMnemonicBackedUp(backedUp)
+        // Also set for the active wallet
+        val wId = activeWalletId
+        if (wId.isNotEmpty()) {
+            keyManager.setMnemonicBackedUpForWallet(wId, backedUp)
+        }
+    }
 
-    fun getSavedSyncMode(): SyncMode = walletPreferences.getSyncMode()
-    fun getSavedCustomBlockHeight(): Long? = walletPreferences.getCustomBlockHeight()
+    fun getSavedSyncMode(): SyncMode = walletPreferences.getSyncMode(walletId = activeWalletId.ifEmpty { null })
+    fun getSavedCustomBlockHeight(): Long? = walletPreferences.getCustomBlockHeight(walletId = activeWalletId.ifEmpty { null })
 
     suspend fun registerAccount(
         syncMode: SyncMode = SyncMode.RECENT,
@@ -481,11 +496,12 @@ class GatewayRepository @Inject constructor(
 
         _isRegistered.value = true
         if (savePreference) {
-            walletPreferences.setSyncMode(syncMode)
+            val wId = activeWalletId.ifEmpty { null }
+            walletPreferences.setSyncMode(syncMode, walletId = wId)
             if (syncMode == SyncMode.CUSTOM) {
-                walletPreferences.setCustomBlockHeight(customBlockHeight)
+                walletPreferences.setCustomBlockHeight(customBlockHeight, walletId = wId)
             }
-            walletPreferences.setInitialSyncCompleted(true)
+            walletPreferences.setInitialSyncCompleted(true, walletId = wId)
         }
     }
 
@@ -499,7 +515,7 @@ class GatewayRepository @Inject constructor(
         return registerAccount(syncMode, customBlockHeight, savePreference = true, forceResync = true)
     }
 
-    fun hasCompletedInitialSync(): Boolean = walletPreferences.hasCompletedInitialSync()
+    fun hasCompletedInitialSync(): Boolean = walletPreferences.hasCompletedInitialSync(walletId = activeWalletId.ifEmpty { null })
     
     suspend fun forceResetSync(): Result<Unit> = runCatching {
         Log.w(TAG, "♻️ Forcing sync reset...")

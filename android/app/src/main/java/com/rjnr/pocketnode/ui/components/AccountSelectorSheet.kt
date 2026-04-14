@@ -53,7 +53,8 @@ fun AccountSelectorSheet(
     activeWalletId: String,
     onSelectAccount: (String) -> Unit,
     onManageWallets: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    balances: Map<String, String> = emptyMap()
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -92,7 +93,8 @@ fun AccountSelectorSheet(
                             onSelectAccount = { walletId ->
                                 onDismiss()
                                 onSelectAccount(walletId)
-                            }
+                            },
+                            balances = balances
                         )
                     }
                 }
@@ -105,7 +107,8 @@ fun AccountSelectorSheet(
 private fun WalletGroupSection(
     group: WalletGroup,
     activeWalletId: String,
-    onSelectAccount: (String) -> Unit
+    onSelectAccount: (String) -> Unit,
+    balances: Map<String, String> = emptyMap()
 ) {
     val hasSubAccounts = group.subAccounts.isNotEmpty()
     var isExpanded by remember { mutableStateOf(true) }
@@ -145,7 +148,8 @@ private fun WalletGroupSection(
         AccountRow(
             wallet = group.wallet,
             isActive = group.wallet.walletId == activeWalletId,
-            onClick = { onSelectAccount(group.wallet.walletId) }
+            onClick = { onSelectAccount(group.wallet.walletId) },
+            cachedBalance = balances[group.wallet.walletId]
         )
 
         // Sub-account rows (collapsible)
@@ -156,7 +160,8 @@ private fun WalletGroupSection(
                         wallet = subAccount,
                         isActive = subAccount.walletId == activeWalletId,
                         isSubAccount = true,
-                        onClick = { onSelectAccount(subAccount.walletId) }
+                        onClick = { onSelectAccount(subAccount.walletId) },
+                        cachedBalance = balances[subAccount.walletId]
                     )
                 }
             }
@@ -174,7 +179,8 @@ private fun AccountRow(
     wallet: WalletEntity,
     isActive: Boolean,
     isSubAccount: Boolean = false,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    cachedBalance: String? = null
 ) {
     val startPadding = if (isSubAccount) 40.dp else 16.dp
     val borderColor = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
@@ -225,6 +231,15 @@ private fun AccountRow(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+            }
+            if (cachedBalance != null) {
+                Text(
+                    text = cachedBalance,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.width(8.dp))
             }
             if (isActive) {
                 Icon(

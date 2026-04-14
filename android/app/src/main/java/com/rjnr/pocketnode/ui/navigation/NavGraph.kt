@@ -30,6 +30,7 @@ import com.rjnr.pocketnode.ui.screens.security.MnemonicVerifyScreen
 import com.rjnr.pocketnode.ui.screens.wallet.AddWalletScreen
 import com.rjnr.pocketnode.ui.screens.wallet.WalletManagerScreen
 import com.rjnr.pocketnode.ui.screens.wallet.WalletSettingsScreen
+import com.rjnr.pocketnode.ui.screens.wallet.WalletSettingsViewModel
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
@@ -196,6 +197,12 @@ fun CkbNavGraph(
                                     navController.previousBackStackEntry
                                         ?.savedStateHandle
                                         ?.set("dao_pin_verified", true)
+                                    navController.popBackStack()
+                                }
+                                Screen.WalletDetail.route -> {
+                                    navController.previousBackStackEntry
+                                        ?.savedStateHandle
+                                        ?.set("pin_verified", true)
                                     navController.popBackStack()
                                 }
                                 else -> {
@@ -393,9 +400,25 @@ fun CkbNavGraph(
         composable(
             route = Screen.WalletDetail.route,
             arguments = listOf(navArgument("walletId") { type = NavType.StringType })
-        ) {
+        ) { backStackEntry ->
+            val viewModel: WalletSettingsViewModel = hiltViewModel()
+
+            // Observe pin_verified result from PinEntry screen
+            val pinVerified = backStackEntry.savedStateHandle
+                .get<Boolean>("pin_verified") == true
+            if (pinVerified) {
+                LaunchedEffect(Unit) {
+                    backStackEntry.savedStateHandle.remove<Boolean>("pin_verified")
+                    viewModel.onPinVerified()
+                }
+            }
+
             WalletSettingsScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToPinVerify = {
+                    navController.navigate(Screen.PinEntry.createRoute("verify"))
+                },
+                viewModel = viewModel
             )
         }
 
