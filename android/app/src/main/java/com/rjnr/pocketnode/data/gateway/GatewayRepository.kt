@@ -111,15 +111,22 @@ class GatewayRepository @Inject constructor(
         _walletInfo.value = info
         _isRegistered.value = false
 
+        val walletSyncMode = walletPreferences.getSyncMode(walletId = wallet.walletId)
+        val walletCustomHeight = if (walletSyncMode == SyncMode.CUSTOM) {
+            walletPreferences.getCustomBlockHeight(walletId = wallet.walletId)
+        } else null
+
         when (walletPreferences.getSyncStrategy()) {
             SyncStrategy.ALL_WALLETS -> registerAllWalletScripts()
             SyncStrategy.ACTIVE_ONLY -> registerAccount(
-                syncMode = walletPreferences.getSyncMode(walletId = wallet.walletId),
+                syncMode = walletSyncMode,
+                customBlockHeight = walletCustomHeight,
                 savePreference = false
             )
             SyncStrategy.BALANCED -> {
                 registerAccount(
-                    syncMode = walletPreferences.getSyncMode(walletId = wallet.walletId),
+                    syncMode = walletSyncMode,
+                    customBlockHeight = walletCustomHeight,
                     savePreference = false
                 )
             }
@@ -711,12 +718,17 @@ class GatewayRepository @Inject constructor(
             0L
         }
 
-        // Fetch script status
+        // Fetch script status — match active wallet's script by lock args
         val scriptsJson = LightClientNative.nativeGetScripts()
         val scriptBlockNumber = if (scriptsJson != null) {
             val scripts = json.decodeFromString<List<JniScriptStatus>>(scriptsJson)
-            // Assuming we only trust one script (our wallet lock script)
-            scripts.firstOrNull()?.blockNumber?.removePrefix("0x")?.toLong(16) ?: 0L
+            val activeArgs = _walletInfo.value?.script?.args
+            val match = if (activeArgs != null) {
+                scripts.find { it.script.args == activeArgs }
+            } else {
+                scripts.firstOrNull()
+            }
+            match?.blockNumber?.removePrefix("0x")?.toLong(16) ?: 0L
         } else {
             0L
         }
@@ -1086,12 +1098,19 @@ class GatewayRepository @Inject constructor(
     /**
      * Get the current block number from the registered script in the light client.
      * This represents how far the light client has synced for our wallet.
+     * In multi-wallet mode, matches the active wallet's script by lock args.
      */
     private fun getExistingScriptBlock(): Long {
         return try {
             val scriptsJson = LightClientNative.nativeGetScripts() ?: return 0L
             val scripts = json.decodeFromString<List<JniScriptStatus>>(scriptsJson)
-            scripts.firstOrNull()?.blockNumber?.removePrefix("0x")?.toLong(16) ?: 0L
+            val activeArgs = _walletInfo.value?.script?.args
+            val match = if (activeArgs != null) {
+                scripts.find { it.script.args == activeArgs }
+            } else {
+                scripts.firstOrNull()
+            }
+            match?.blockNumber?.removePrefix("0x")?.toLong(16) ?: 0L
         } catch (e: Exception) {
             Log.w(TAG, "Failed to get existing script block: ${e.message}")
             0L
@@ -1634,11 +1653,25 @@ class GatewayRepository @Inject constructor(
 
             // Resume from saved per-wallet progress, or calculate from sync mode if first sync
             val savedBlock = walletPreferences.getLastSyncedBlock(walletId = wallet.walletId)
-            val blockNum = if (savedBlock > 0) {
-                savedBlock.toString()
+            val blockNum: String
+            if (savedBlock > 0) {
+                blockNum = savedBlock.toString()
             } else {
                 val syncMode = walletPreferences.getSyncMode(walletId = wallet.walletId)
-                syncMode.toFromBlock(null, tipHeight, currentNetwork)
+                val customHeight = walletPreferences.getCustomBlockHeight(walletId = wallet.walletId)
+                val calculated = syncMode.toFromBlock(
+                    if (syncMode == SyncMode.CUSTOM) customHeight else null,
+                    tipHeight,
+                    currentNetwork
+                )
+                val calculatedLong = calculated.toLongOrNull() ?: 0L
+                // Safety: don't start from block 0 — use checkpoint if available
+                val checkpoint = getCheckpoint(currentNetwork)
+                blockNum = if (calculatedLong == 0L && syncMode != SyncMode.FULL_HISTORY && checkpoint > 0) {
+                    checkpoint.toString()
+                } else {
+                    calculated
+                }
             }
             val blockNumberHex = "0x${blockNum.toLongOrNull()?.toString(16) ?: "0"}"
 
