@@ -19,6 +19,7 @@ data class AddWalletUiState(
     val importMnemonic: String = "",
     val importPrivateKey: String = "",
     val createdWallet: WalletEntity? = null,
+    val isNewlyGenerated: Boolean = false,
     val error: String? = null,
     val showSyncCapWarning: Boolean = false,
     val parentWallets: List<WalletEntity> = emptyList(),
@@ -103,7 +104,7 @@ class AddWalletViewModel @Inject constructor(
                 walletRepository.createWallet(name)
             }.onSuccess { (wallet, _) ->
                 gatewayRepository.onActiveWalletChanged(wallet)
-                _uiState.update { it.copy(isLoading = false, createdWallet = wallet) }
+                _uiState.update { it.copy(isLoading = false, createdWallet = wallet, isNewlyGenerated = true) }
             }.onFailure { error ->
                 _uiState.update { it.copy(isLoading = false, error = error.message) }
             }

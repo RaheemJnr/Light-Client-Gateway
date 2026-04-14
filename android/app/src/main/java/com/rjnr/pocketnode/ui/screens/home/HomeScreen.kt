@@ -373,23 +373,33 @@ fun HomeScreen(
                 }
             }
         } else {
-            HomeScreenUI(
-                uiState = uiState,
-                refresh = { viewModel.refresh() },
-                padding = padding,
-                onNavigateToBackup = onNavigateToBackup,
-                onNavigateToSend = onNavigateToSend,
-                onNavigateToReceive = onNavigateToReceive,
-                onNavigateToDao = onNavigateToDao,
-                onNavigateToActivity = onNavigateToActivity,
-                onNavigateToSecurityChecklist = onNavigateToSecurityChecklist,
-                dismissBackupReminder = { viewModel.dismissBackupReminder() },
-                onToggleBalanceVisibility = { viewModel.toggleBalanceVisibility() },
-                clipboardManager = clipboardManager,
-                snackbarHostState = snackbarHostState,
-                scope = scope,
-                selectedTransaction = { selectedTransaction = it }
-            )
+            Box(modifier = Modifier.fillMaxSize()) {
+                HomeScreenUI(
+                    uiState = uiState,
+                    refresh = { viewModel.refresh() },
+                    padding = padding,
+                    onNavigateToBackup = onNavigateToBackup,
+                    onNavigateToSend = onNavigateToSend,
+                    onNavigateToReceive = onNavigateToReceive,
+                    onNavigateToDao = onNavigateToDao,
+                    onNavigateToActivity = onNavigateToActivity,
+                    onNavigateToSecurityChecklist = onNavigateToSecurityChecklist,
+                    dismissBackupReminder = { viewModel.dismissBackupReminder() },
+                    onToggleBalanceVisibility = { viewModel.toggleBalanceVisibility() },
+                    clipboardManager = clipboardManager,
+                    snackbarHostState = snackbarHostState,
+                    scope = scope,
+                    selectedTransaction = { selectedTransaction = it }
+                )
+                if (uiState.isSwitchingWallet) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = padding.calculateTopPadding()),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
     }
 }

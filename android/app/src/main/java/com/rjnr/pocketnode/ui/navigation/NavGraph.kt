@@ -39,7 +39,11 @@ sealed class Screen(val route: String) {
     object Scanner : Screen("scanner")
     object NodeStatus : Screen("node_status")
     object Onboarding : Screen("onboarding")
-    object MnemonicBackup : Screen("mnemonic_backup")
+    object MnemonicBackup : Screen("mnemonic_backup?simplified={simplified}") {
+        const val BASE = "mnemonic_backup"
+        fun createRoute(simplified: Boolean = false) =
+            if (simplified) "mnemonic_backup?simplified=true" else "mnemonic_backup?simplified=false"
+    }
     object MnemonicImport : Screen("mnemonic_import")
     object Auth : Screen("auth")
     object PinEntry : Screen("pin_entry/{mode}") {
@@ -84,7 +88,7 @@ fun CkbNavGraph(
                     }
                 },
                 onNavigateToBackup = {
-                    navController.navigate(Screen.MnemonicBackup.route) {
+                    navController.navigate(Screen.MnemonicBackup.createRoute()) {
                         popUpTo(Screen.Onboarding.route) { inclusive = true }
                     }
                 },
@@ -96,11 +100,16 @@ fun CkbNavGraph(
             )
         }
 
-        composable(Screen.MnemonicBackup.route) {
+        composable(
+            route = Screen.MnemonicBackup.route,
+            arguments = listOf(navArgument("simplified") { defaultValue = false; type = NavType.BoolType })
+        ) { backStackEntry ->
+            val simplified = backStackEntry.arguments?.getBoolean("simplified") ?: false
             MnemonicBackupScreen(
+                simplified = simplified,
                 onNavigateToHome = {
                     navController.navigate(Screen.Main.route) {
-                        popUpTo(Screen.MnemonicBackup.route) { inclusive = true }
+                        popUpTo(Screen.MnemonicBackup.BASE) { inclusive = true }
                         launchSingleTop = true
                     }
                 },
@@ -255,7 +264,7 @@ fun CkbNavGraph(
                 onNavigateToSend = { navController.navigate(Screen.Send.route) },
                 onNavigateToReceive = { navController.navigate(Screen.Receive.route) },
                 onNavigateToNodeStatus = { navController.navigate(Screen.NodeStatus.route) },
-                onNavigateToBackup = { navController.navigate(Screen.MnemonicBackup.route) },
+                onNavigateToBackup = { navController.navigate(Screen.MnemonicBackup.createRoute()) },
                 onNavigateToSecuritySettings = { navController.navigate(Screen.SecuritySettings.route) },
                 onNavigateToImport = { navController.navigate(Screen.MnemonicImport.route) },
                 onNavigateToPinVerify = {
@@ -355,7 +364,7 @@ fun CkbNavGraph(
                     navController.navigate(Screen.PinEntry.createRoute("setup"))
                 },
                 onBackupMnemonic = {
-                    navController.navigate(Screen.MnemonicBackup.route)
+                    navController.navigate(Screen.MnemonicBackup.createRoute())
                 },
                 onBack = { navController.popBackStack() }
             )
@@ -395,6 +404,11 @@ fun CkbNavGraph(
                 onNavigateBack = { navController.popBackStack() },
                 onWalletCreated = {
                     navController.popBackStack(Screen.Main.route, inclusive = false)
+                },
+                onNewMnemonicWalletCreated = {
+                    navController.navigate(Screen.MnemonicBackup.createRoute(simplified = true)) {
+                        popUpTo(Screen.Main.route) { inclusive = false }
+                    }
                 }
             )
         }

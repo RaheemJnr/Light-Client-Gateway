@@ -110,6 +110,10 @@ class MnemonicBackupViewModel @Inject constructor(
         }
     }
 
+    fun markBackedUpAndComplete() {
+        repository.setMnemonicBackedUp(true)
+    }
+
     fun clearError() {
         _uiState.update { it.copy(error = null) }
     }
@@ -122,6 +126,7 @@ class MnemonicBackupViewModel @Inject constructor(
 fun MnemonicBackupScreen(
     onNavigateToHome: () -> Unit,
     onNavigateBack: () -> Unit,
+    simplified: Boolean = false,
     viewModel: MnemonicBackupViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -153,9 +158,10 @@ fun MnemonicBackupScreen(
             TopAppBar(
                 title = {
                     Text(
-                        when (uiState.currentStep) {
-                            1 -> "Back Up Your Wallet"
-                            2 -> "Verify Your Backup"
+                        when {
+                            simplified -> "Save Your Seed Phrase"
+                            uiState.currentStep == 1 -> "Back Up Your Wallet"
+                            uiState.currentStep == 2 -> "Verify Your Backup"
                             else -> "Backup Complete"
                         }
                     )
@@ -174,26 +180,40 @@ fun MnemonicBackupScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        when (uiState.currentStep) {
-            1 -> MnemonicDisplayStep(
+        if (simplified) {
+            MnemonicDisplayStep(
                 words = uiState.words,
                 privateKeyHex = uiState.privateKeyHex,
                 snackbarHostState = snackbarHostState,
-                onNext = { viewModel.advanceToVerify() },
+                onNext = {
+                    viewModel.markBackedUpAndComplete()
+                    onNavigateBack()
+                },
+                nextButtonLabel = "I've saved my seed phrase",
                 modifier = Modifier.padding(padding)
             )
-            2 -> MnemonicVerifyStep(
-                verifyPositions = uiState.verifyPositions,
-                verifyOptions = uiState.verifyOptions,
-                userSelections = uiState.userSelections,
-                onSelectWord = { pos, word -> viewModel.selectWord(pos, word) },
-                onVerify = { viewModel.verify() },
-                modifier = Modifier.padding(padding)
-            )
-            3 -> MnemonicSuccessStep(
-                onComplete = onNavigateToHome,
-                modifier = Modifier.padding(padding)
-            )
+        } else {
+            when (uiState.currentStep) {
+                1 -> MnemonicDisplayStep(
+                    words = uiState.words,
+                    privateKeyHex = uiState.privateKeyHex,
+                    snackbarHostState = snackbarHostState,
+                    onNext = { viewModel.advanceToVerify() },
+                    modifier = Modifier.padding(padding)
+                )
+                2 -> MnemonicVerifyStep(
+                    verifyPositions = uiState.verifyPositions,
+                    verifyOptions = uiState.verifyOptions,
+                    userSelections = uiState.userSelections,
+                    onSelectWord = { pos, word -> viewModel.selectWord(pos, word) },
+                    onVerify = { viewModel.verify() },
+                    modifier = Modifier.padding(padding)
+                )
+                3 -> MnemonicSuccessStep(
+                    onComplete = onNavigateToHome,
+                    modifier = Modifier.padding(padding)
+                )
+            }
         }
     }
 }
@@ -204,6 +224,7 @@ private fun MnemonicDisplayStep(
     privateKeyHex: String?,
     snackbarHostState: SnackbarHostState,
     onNext: () -> Unit,
+    nextButtonLabel: String = "I've Written Them Down",
     modifier: Modifier = Modifier
 ) {
     val clipboardManager = LocalClipboardManager.current
@@ -308,7 +329,7 @@ private fun MnemonicDisplayStep(
             modifier = Modifier.fillMaxWidth(),
             enabled = words.isNotEmpty()
         ) {
-            Text("I've Written Them Down")
+            Text(nextButtonLabel)
         }
     }
 }

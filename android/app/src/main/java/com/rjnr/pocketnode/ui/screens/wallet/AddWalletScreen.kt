@@ -56,6 +56,7 @@ import com.composables.icons.lucide.Wallet
 fun AddWalletScreen(
     onNavigateBack: () -> Unit = {},
     onWalletCreated: () -> Unit = {},
+    onNewMnemonicWalletCreated: () -> Unit = {},
     viewModel: AddWalletViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -64,7 +65,9 @@ fun AddWalletScreen(
     var selectedMode by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(uiState.createdWallet) {
-        if (uiState.createdWallet != null) onWalletCreated()
+        if (uiState.createdWallet != null) {
+            if (uiState.isNewlyGenerated) onNewMnemonicWalletCreated() else onWalletCreated()
+        }
     }
 
     LaunchedEffect(uiState.error) {
