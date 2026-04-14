@@ -313,7 +313,8 @@ fun HomeScreen(
                             )
                             Text(
                                 text = activeWallet?.name ?: "Pocket Node",
-                                fontWeight = FontWeight.SemiBold
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                         Icon(
