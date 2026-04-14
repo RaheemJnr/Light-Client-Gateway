@@ -158,6 +158,14 @@ class HomeViewModel @Inject constructor(
     }
 
     private suspend fun registerAndRefresh() {
+        // If already registered (e.g., ViewModel recreated by tab navigation),
+        // skip re-registration to avoid resetting sync progress
+        if (repository.isRegistered.value) {
+            Log.d(TAG, "Already registered, skipping re-registration")
+            checkSyncStatusAndRefresh()
+            return
+        }
+
         // Load saved sync preferences
         val savedSyncMode = repository.getSavedSyncMode()
         val savedCustomBlockHeight = repository.getSavedCustomBlockHeight()
