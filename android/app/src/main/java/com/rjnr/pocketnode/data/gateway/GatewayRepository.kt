@@ -405,10 +405,11 @@ class GatewayRepository @Inject constructor(
 
     fun getWalletType(): String = keyManager.getWalletType()
     fun getMnemonic(): List<String>? {
-        // Prefer wallet-scoped mnemonic for multi-wallet support
+        // Use wallet-scoped mnemonic — never fall back to global prefs
+        // (raw_key wallets correctly return null here)
         val wId = activeWalletId
         return if (wId.isNotEmpty()) {
-            keyManager.getMnemonicForWallet(wId) ?: keyManager.getMnemonic()
+            keyManager.getMnemonicForWallet(wId)
         } else {
             keyManager.getMnemonic()
         }
@@ -485,8 +486,8 @@ class GatewayRepository @Inject constructor(
             tip.number.removePrefix("0x").toLong(16)
         } else 0L
 
-        // Check for existing sync progress to resume from
-        val savedBlock = walletPreferences.getLastSyncedBlock()
+        // Check for existing sync progress to resume from (per-wallet)
+        val savedBlock = walletPreferences.getLastSyncedBlock(walletId = activeWalletId.ifEmpty { null })
         val existingScriptBlock = getExistingScriptBlock()
 
         val blockNum: String = when {
@@ -550,8 +551,8 @@ class GatewayRepository @Inject constructor(
         customBlockHeight: Long? = null
     ): Result<Unit> {
         _isRegistered.value = false
-        // Clear saved sync progress when explicitly resyncing
-        walletPreferences.setLastSyncedBlock(0L)
+        // Clear saved sync progress when explicitly resyncing (per-wallet)
+        walletPreferences.setLastSyncedBlock(0L, walletId = activeWalletId.ifEmpty { null })
         return registerAccount(syncMode, customBlockHeight, savePreference = true, forceResync = true)
     }
 
@@ -669,7 +670,7 @@ class GatewayRepository @Inject constructor(
                         )
                         val jsonStr = json.encodeToString(listOf(lockStatus))
                         LightClientNative.nativeSetScripts(jsonStr, LightClientNative.CMD_SET_SCRIPTS_PARTIAL)
-                        walletPreferences.setLastSyncedBlock(rescanFrom)
+                        walletPreferences.setLastSyncedBlock(rescanFrom, walletId = activeWalletId.ifEmpty { null })
                         Log.d(TAG, "✅ Rescan triggered (partial) - balance should update on next refresh")
                     }
                 }
@@ -720,10 +721,11 @@ class GatewayRepository @Inject constructor(
             0L
         }
 
-        // Save sync progress if we've made progress
-        if (scriptBlockNumber > walletPreferences.getLastSyncedBlock()) {
-            walletPreferences.setLastSyncedBlock(scriptBlockNumber)
-            Log.d(TAG, "💾 Saved sync progress: block $scriptBlockNumber")
+        // Save sync progress per-wallet if we've made progress
+        val wId = activeWalletId.ifEmpty { null }
+        if (scriptBlockNumber > walletPreferences.getLastSyncedBlock(walletId = wId)) {
+            walletPreferences.setLastSyncedBlock(scriptBlockNumber, walletId = wId)
+            Log.d(TAG, "💾 Saved sync progress: block $scriptBlockNumber (wallet=${wId ?: "global"})")
         }
 
         // Log sync progress for debugging
@@ -1630,8 +1632,14 @@ class GatewayRepository @Inject constructor(
             val publicKey = keyManager.derivePublicKey(privateKey)
             val lockScript = keyManager.deriveLockScript(publicKey)
 
-            val syncMode = walletPreferences.getSyncMode(walletId = wallet.walletId)
-            val blockNum = syncMode.toFromBlock(null, tipHeight, currentNetwork)
+            // Resume from saved per-wallet progress, or calculate from sync mode if first sync
+            val savedBlock = walletPreferences.getLastSyncedBlock(walletId = wallet.walletId)
+            val blockNum = if (savedBlock > 0) {
+                savedBlock.toString()
+            } else {
+                val syncMode = walletPreferences.getSyncMode(walletId = wallet.walletId)
+                syncMode.toFromBlock(null, tipHeight, currentNetwork)
+            }
             val blockNumberHex = "0x${blockNum.toLongOrNull()?.toString(16) ?: "0"}"
 
             JniScriptStatus(

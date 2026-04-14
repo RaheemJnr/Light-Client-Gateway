@@ -205,3 +205,4 @@ CLAUDE.md
 *.temp
 *.orig
 .vercel
+.superpowers/
