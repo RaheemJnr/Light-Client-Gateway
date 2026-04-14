@@ -37,12 +37,23 @@ class WalletRepository @Inject constructor(
     suspend fun getById(walletId: String): WalletEntity? = walletDao.getById(walletId)
 
     /**
+     * Validate that a wallet name is unique (case-insensitive).
+     */
+    private suspend fun validateUniqueName(name: String) {
+        val existing = walletDao.getAll()
+        if (existing.any { it.name.equals(name, ignoreCase = true) }) {
+            throw IllegalArgumentException("A wallet named \"$name\" already exists")
+        }
+    }
+
+    /**
      * Create a new mnemonic wallet. Stores keys in wallet-scoped encrypted prefs.
      */
     suspend fun createWallet(
         name: String,
         wordCount: MnemonicManager.WordCount = MnemonicManager.WordCount.TWELVE
     ): Pair<WalletEntity, List<String>> {
+        validateUniqueName(name)
         val (info, words) = keyManager.generateWalletWithMnemonic(wordCount)
         val walletId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
@@ -81,6 +92,7 @@ class WalletRepository @Inject constructor(
         words: List<String>,
         passphrase: String = ""
     ): WalletEntity {
+        validateUniqueName(name)
         val info = keyManager.importWalletFromMnemonic(words, passphrase)
         val walletId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
@@ -118,6 +130,7 @@ class WalletRepository @Inject constructor(
         name: String,
         privateKeyHex: String
     ): WalletEntity {
+        validateUniqueName(name)
         val info = keyManager.importWallet(privateKeyHex)
         val walletId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
@@ -162,7 +175,9 @@ class WalletRepository @Inject constructor(
         val parentMnemonic = keyManager.getMnemonicForWallet(parentWalletId)
             ?: throw IllegalStateException("Parent mnemonic not found")
 
-        val nextIndex = walletDao.count() // simple incrementing index
+        // Use max existing sub-account index + 1 to avoid index collisions after deletions
+        val existingSubs = walletDao.getSubAccountsList(parentWalletId)
+        val nextIndex = if (existingSubs.isEmpty()) 1 else existingSubs.maxOf { it.accountIndex } + 1
         val seed = mnemonicManager.mnemonicToSeed(parentMnemonic)
         val privateKey = mnemonicManager.derivePrivateKey(seed, accountIndex = nextIndex)
         val publicKey = keyManager.derivePublicKey(privateKey)

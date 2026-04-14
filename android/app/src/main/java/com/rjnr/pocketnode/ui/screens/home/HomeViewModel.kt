@@ -177,7 +177,7 @@ class HomeViewModel @Inject constructor(
 
         Log.d(TAG, "Registering account with sync mode: $syncMode")
 
-        repository.registerAccount(
+        repository.registerAccountWithStrategy(
             syncMode = syncMode,
             customBlockHeight = customBlockHeight,
             savePreference = !hasCompletedInitialSync // Only save if first time
@@ -373,14 +373,14 @@ class HomeViewModel @Inject constructor(
 
     private fun checkBackupStatus() {
         val type = repository.getWalletType()
-        val needsBackup = type == KeyManager.WALLET_TYPE_MNEMONIC && !repository.hasMnemonicBackup()
+        val needsBackup = type == KeyManager.WALLET_TYPE_MNEMONIC && !repository.hasMnemonicBackupForActiveWallet()
         _uiState.update { it.copy(walletType = type, showBackupReminder = needsBackup) }
     }
 
     fun refreshSecurityState() {
         val hasPin = pinManager.hasPin()
         val hasBiometrics = authManager.isBiometricEnabled()
-        val hasMnemonicBackup = repository.hasMnemonicBackup()
+        val hasMnemonicBackup = repository.hasMnemonicBackupForActiveWallet()
         _uiState.update {
             it.copy(
                 hasPinOrBiometrics = hasPin || hasBiometrics,
@@ -467,6 +467,8 @@ class HomeViewModel @Inject constructor(
                 walletRepository.switchActiveWallet(walletId)
                 val wallet = walletRepository.getById(walletId) ?: return@launch
                 repository.onActiveWalletChanged(wallet)
+                checkBackupStatus()
+                refreshSecurityState()
                 _uiState.update { it.copy(isSwitchingWallet = false) }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to switch wallet", e)

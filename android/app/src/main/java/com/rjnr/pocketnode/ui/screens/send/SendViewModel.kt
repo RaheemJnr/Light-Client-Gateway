@@ -5,11 +5,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.auth.PinManager
+import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.TransactionStatusResponse
 import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
+import com.rjnr.pocketnode.data.wallet.WalletRepository
 import com.rjnr.pocketnode.util.sanitizeAmount
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -44,7 +46,8 @@ data class SendUiState(
     val statusMessage: String = "",
     val burnWarning: String? = null,
     val requiresAuth: Boolean = false,
-    val authMethod: AuthMethod? = null
+    val authMethod: AuthMethod? = null,
+    val otherWallets: List<WalletEntity> = emptyList()
 )
 
 @HiltViewModel
@@ -53,7 +56,8 @@ class SendViewModel @Inject constructor(
     private val keyManager: KeyManager,
     private val transactionBuilder: TransactionBuilder,
     private val authManager: AuthManager,
-    private val pinManager: PinManager
+    private val pinManager: PinManager,
+    private val walletRepository: WalletRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SendUiState())
@@ -73,6 +77,15 @@ class SendViewModel @Inject constructor(
         viewModelScope.launch {
             repository.balance.collect { balance ->
                 _uiState.update { it.copy(availableBalance = balance?.capacityAsLong() ?: 0L) }
+            }
+        }
+
+        // Load other wallets for "My Wallets" shortcut (excludes active wallet)
+        viewModelScope.launch {
+            walletRepository.walletsFlow.collect { wallets ->
+                val active = wallets.find { it.isActive }
+                val others = wallets.filter { it.walletId != active?.walletId }
+                _uiState.update { it.copy(otherWallets = others) }
             }
         }
 

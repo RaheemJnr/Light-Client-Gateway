@@ -414,6 +414,18 @@ class GatewayRepository @Inject constructor(
         }
     }
     fun hasMnemonicBackup(): Boolean = keyManager.hasMnemonicBackup()
+
+    /**
+     * Check backup status for the active wallet specifically, not the global legacy flag.
+     */
+    fun hasMnemonicBackupForActiveWallet(): Boolean {
+        val wId = activeWalletId
+        return if (wId.isNotEmpty()) {
+            keyManager.hasMnemonicBackupForWallet(wId)
+        } else {
+            keyManager.hasMnemonicBackup()
+        }
+    }
     fun setMnemonicBackedUp(backedUp: Boolean) {
         keyManager.setMnemonicBackedUp(backedUp)
         // Also set for the active wallet
@@ -425,6 +437,34 @@ class GatewayRepository @Inject constructor(
 
     fun getSavedSyncMode(): SyncMode = walletPreferences.getSyncMode(walletId = activeWalletId.ifEmpty { null })
     fun getSavedCustomBlockHeight(): Long? = walletPreferences.getCustomBlockHeight(walletId = activeWalletId.ifEmpty { null })
+
+    /**
+     * Register scripts according to the configured sync strategy.
+     * If ALL_WALLETS, registers scripts for all wallets simultaneously.
+     * Otherwise delegates to the single-wallet registerAccount().
+     */
+    suspend fun registerAccountWithStrategy(
+        syncMode: SyncMode = SyncMode.RECENT,
+        customBlockHeight: Long? = null,
+        savePreference: Boolean = true
+    ): Result<Unit> = runCatching {
+        when (walletPreferences.getSyncStrategy()) {
+            SyncStrategy.ALL_WALLETS -> {
+                registerAllWalletScripts()
+                if (savePreference) {
+                    val wId = activeWalletId.ifEmpty { null }
+                    walletPreferences.setSyncMode(syncMode, walletId = wId)
+                    if (syncMode == SyncMode.CUSTOM) {
+                        walletPreferences.setCustomBlockHeight(customBlockHeight, walletId = wId)
+                    }
+                    walletPreferences.setInitialSyncCompleted(true, walletId = wId)
+                }
+            }
+            else -> {
+                registerAccount(syncMode, customBlockHeight, savePreference).getOrThrow()
+            }
+        }
+    }
 
     suspend fun registerAccount(
         syncMode: SyncMode = SyncMode.RECENT,

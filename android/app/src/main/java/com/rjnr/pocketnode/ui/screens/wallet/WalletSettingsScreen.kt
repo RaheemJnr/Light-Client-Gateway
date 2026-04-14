@@ -79,11 +79,26 @@ fun WalletSettingsScreen(
 
     // Delete confirmation dialog
     if (uiState.showDeleteConfirm) {
+        val warningText = buildString {
+            if (uiState.hasDaoDeposits) {
+                append("This wallet has ${uiState.daoDepositAmount} CKB locked in Nervos DAO. ")
+                append("Deleting without a backup means losing these funds forever. ")
+            }
+            if (uiState.pendingTxCount > 0) {
+                append("This wallet has ${uiState.pendingTxCount} pending transaction${if (uiState.pendingTxCount > 1) "s" else ""} that haven't confirmed yet. ")
+            }
+            if (uiState.hasDaoDeposits || uiState.pendingTxCount > 0) {
+                append("\n\nAre you absolutely sure?")
+            } else {
+                append("This will permanently remove the wallet and its keys. This cannot be undone.")
+            }
+        }
+
         AlertDialog(
             onDismissRequest = { viewModel.cancelDelete() },
-            title = { Text("Delete Wallet?") },
+            title = { Text(if (uiState.hasDaoDeposits) "Warning: Delete Wallet?" else "Delete Wallet?") },
             text = {
-                Text("This will permanently remove the wallet and its keys. This cannot be undone.")
+                Text(warningText)
             },
             confirmButton = {
                 Button(

@@ -5,9 +5,12 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.auth.PinManager
+import com.rjnr.pocketnode.data.database.dao.DaoCellDao
+import com.rjnr.pocketnode.data.database.dao.TransactionDao
 import com.rjnr.pocketnode.data.database.dao.WalletDao
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.wallet.KeyManager
+import com.rjnr.pocketnode.data.wallet.WalletPreferences
 import com.rjnr.pocketnode.data.wallet.WalletRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.Locale
 import javax.inject.Inject
 
 private const val TAG = "WalletSettingsVM"
@@ -25,7 +29,10 @@ class WalletSettingsViewModel @Inject constructor(
     private val walletRepository: WalletRepository,
     private val walletDao: WalletDao,
     private val keyManager: KeyManager,
-    private val pinManager: PinManager
+    private val pinManager: PinManager,
+    private val daoCellDao: DaoCellDao,
+    private val transactionDao: TransactionDao,
+    private val walletPreferences: WalletPreferences
 ) : ViewModel() {
 
     private val walletId: String = savedStateHandle["walletId"] ?: ""
@@ -104,7 +111,28 @@ class WalletSettingsViewModel @Inject constructor(
                 _uiState.update { it.copy(error = "Cannot delete the last wallet. Create another wallet first.") }
                 return@launch
             }
-            _uiState.update { it.copy(showDeleteConfirm = true) }
+
+            // Check for active DAO deposits
+            val network = walletPreferences.getSelectedNetwork().name
+            val daoDeposits = daoCellDao.getActiveByWalletAndNetwork(walletId, network)
+            val hasDaoDeposits = daoDeposits.isNotEmpty()
+            val daoAmount = if (hasDaoDeposits) {
+                val totalShannons = daoDeposits.sumOf { it.capacity }
+                String.format(Locale.US, "%,.2f", totalShannons / 100_000_000.0)
+            } else ""
+
+            // Check for pending transactions
+            val pendingTxs = transactionDao.getPendingByWallet(walletId, network)
+            val pendingTxCount = pendingTxs.size
+
+            _uiState.update {
+                it.copy(
+                    showDeleteConfirm = true,
+                    hasDaoDeposits = hasDaoDeposits,
+                    daoDepositAmount = daoAmount,
+                    pendingTxCount = pendingTxCount
+                )
+            }
         }
     }
 
@@ -177,6 +205,9 @@ data class WalletSettingsUiState(
     val editName: String = "",
     val isBackedUp: Boolean = false,
     val showDeleteConfirm: Boolean = false,
+    val hasDaoDeposits: Boolean = false,
+    val daoDepositAmount: String = "",
+    val pendingTxCount: Int = 0,
     val deleted: Boolean = false,
     val error: String? = null,
     val seedPhraseUnlocked: Boolean = false

@@ -48,6 +48,7 @@ class AddWalletViewModel @Inject constructor(
     }
 
     fun createSubAccount() {
+        if (_uiState.value.isLoading) return // prevent double-tap
         val name = _uiState.value.name.trim()
         val parentId = _uiState.value.selectedParentId
 
@@ -86,6 +87,7 @@ class AddWalletViewModel @Inject constructor(
     }
 
     fun createNewWallet() {
+        if (_uiState.value.isLoading) return // prevent double-tap
         val name = _uiState.value.name.trim()
         if (name.isBlank()) {
             _uiState.update { it.copy(error = "Please enter a wallet name") }
@@ -112,6 +114,7 @@ class AddWalletViewModel @Inject constructor(
     }
 
     fun importMnemonic() {
+        if (_uiState.value.isLoading) return // prevent double-tap
         val name = _uiState.value.name.trim()
         val words = _uiState.value.importMnemonic.trim().split("\\s+".toRegex())
 
@@ -138,6 +141,7 @@ class AddWalletViewModel @Inject constructor(
     }
 
     fun importRawKey() {
+        if (_uiState.value.isLoading) return // prevent double-tap
         val name = _uiState.value.name.trim()
         val key = _uiState.value.importPrivateKey.trim()
 

@@ -51,6 +51,9 @@ interface WalletDao {
     @Query("SELECT * FROM wallets WHERE parentWalletId = :parentId ORDER BY accountIndex ASC")
     fun getSubAccounts(parentId: String): Flow<List<WalletEntity>>
 
+    @Query("SELECT * FROM wallets WHERE parentWalletId = :parentId ORDER BY accountIndex ASC")
+    suspend fun getSubAccountsList(parentId: String): List<WalletEntity>
+
     @Query("UPDATE wallets SET name = :name WHERE walletId = :walletId")
     suspend fun rename(walletId: String, name: String)
 
