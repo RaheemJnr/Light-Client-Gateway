@@ -63,6 +63,7 @@ fun WalletSettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     var showSeedPhrase by remember { mutableStateOf(false) }
     var showAddAccountDialog by remember { mutableStateOf(false) }
 
@@ -261,8 +262,9 @@ fun WalletSettingsScreen(
 
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
 
-            // -- Backup & seed phrase section (mnemonic wallets only) --
+            // -- Backup & key section --
             if (viewModel.hasMnemonic()) {
+                // Mnemonic wallet: show backup status + seed phrase
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                     Spacer(Modifier.height(8.dp))
 
@@ -324,6 +326,121 @@ fun WalletSettingsScreen(
                             }
                         )
                     }
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            } else if (viewModel.isRawKey()) {
+                // Raw key wallet: explain no mnemonic, offer private key copy
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    Spacer(Modifier.height(8.dp))
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "No seed phrase available",
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "This wallet was imported using a private key, so there is no seed phrase. You can copy your private key instead to back up this wallet.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    var showPrivateKey by remember { mutableStateOf(false) }
+
+                    if (showPrivateKey && (uiState.seedPhraseUnlocked || !viewModel.requiresPinForSeedPhrase())) {
+                        val keyHex = viewModel.getPrivateKeyHex()
+                        if (keyHex != null) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer
+                                )
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = "Private Key",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        text = keyHex,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedButton(onClick = {
+                                            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(keyHex))
+                                        }) {
+                                            Text("Copy")
+                                        }
+                                        OutlinedButton(onClick = {
+                                            showPrivateKey = false
+                                            viewModel.lockSeedPhrase()
+                                        }) {
+                                            Text("Hide")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        SettingsActionRow(
+                            label = "View private key",
+                            onClick = {
+                                if (viewModel.requiresPinForSeedPhrase()) {
+                                    showPrivateKey = true
+                                    onNavigateToPinVerify()
+                                } else {
+                                    showPrivateKey = true
+                                }
+                            }
+                        )
+                    }
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            } else if (viewModel.isSubAccount()) {
+                // Sub-account: explain dependency on parent
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    Spacer(Modifier.height(8.dp))
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "No seed phrase for sub-accounts",
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "This account is derived from its parent wallet's seed phrase. To back up this account, back up the parent wallet instead. The parent's seed phrase can recover all its sub-accounts.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
                 }
 
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))

@@ -154,11 +154,32 @@ class WalletSettingsViewModel @Inject constructor(
         }
     }
 
-    // -- Mnemonic / seed phrase --
+    // -- Wallet type helpers --
 
     fun hasMnemonic(): Boolean {
         val wallet = _uiState.value.wallet ?: return false
         return wallet.type == KeyManager.WALLET_TYPE_MNEMONIC && wallet.parentWalletId == null
+    }
+
+    fun isRawKey(): Boolean {
+        val wallet = _uiState.value.wallet ?: return false
+        return wallet.type == KeyManager.WALLET_TYPE_RAW_KEY
+    }
+
+    fun isSubAccount(): Boolean {
+        val wallet = _uiState.value.wallet ?: return false
+        return wallet.parentWalletId != null
+    }
+
+    fun getPrivateKeyHex(): String? {
+        return try {
+            keyManager.getPrivateKeyForWallet(walletId)?.let { bytes ->
+                bytes.joinToString("") { "%02x".format(it) }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get private key", e)
+            null
+        }
     }
 
     fun requiresPinForSeedPhrase(): Boolean = pinManager.hasPin()
