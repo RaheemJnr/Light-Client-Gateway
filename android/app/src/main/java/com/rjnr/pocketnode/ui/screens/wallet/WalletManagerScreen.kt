@@ -195,7 +195,7 @@ private fun SubAccountDots(group: WalletGroup) {
         }
         // Invisible spacer to size the Box correctly
         Spacer(
-            Modifier.width(dotSize + (visible.size - 1).coerceAtLeast(0) * (dotSize - overlap))
+            Modifier.width(dotSize + (dotSize - overlap) * (visible.size - 1).coerceAtLeast(0))
         )
     }
 }

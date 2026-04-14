@@ -33,13 +33,13 @@ interface TransactionDao {
 
     // -- Wallet-scoped queries --
 
-    @Query("SELECT * FROM transactions WHERE walletId = :walletId AND network = :network ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, timestamp DESC LIMIT :limit")
+    @Query("SELECT * FROM transactions WHERE walletId = :walletId AND network = :network ORDER BY CASE WHEN status = 'PENDING' THEN 0 ELSE 1 END, timestamp DESC LIMIT :limit")
     suspend fun getByWalletAndNetwork(walletId: String, network: String, limit: Int = 50): List<TransactionEntity>
 
     @Query("SELECT * FROM transactions WHERE walletId = :walletId AND network = :network ORDER BY timestamp DESC")
     suspend fun getAllByWalletAndNetwork(walletId: String, network: String): List<TransactionEntity>
 
-    @Query("SELECT * FROM transactions WHERE walletId = :walletId AND network = :network AND status = 'pending'")
+    @Query("SELECT * FROM transactions WHERE walletId = :walletId AND network = :network AND status = 'PENDING'")
     suspend fun getPendingByWallet(walletId: String, network: String): List<TransactionEntity>
 
     @Query("DELETE FROM transactions WHERE walletId = :walletId AND network = :network")
