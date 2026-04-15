@@ -327,7 +327,14 @@ class GatewayRepository @Inject constructor(
      */
     suspend fun initializeWallet(): Result<WalletInfo> = runCatching {
         if (keyManager.hasWallet()) {
-            val info = keyManager.getWalletInfo()
+            // Use wallet-scoped keys for the active wallet, not global legacy prefs
+            val info = if (activeWalletId.isNotEmpty()) {
+                val privateKey = keyManager.getPrivateKeyForWallet(activeWalletId)
+                    ?: throw Exception("No key for active wallet $activeWalletId")
+                keyManager.deriveWalletInfo(privateKey)
+            } else {
+                keyManager.getWalletInfo() // fallback for legacy single-wallet
+            }
             _walletInfo.value = info
             info
         } else {
