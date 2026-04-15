@@ -142,7 +142,8 @@ fun SettingsScreen(
         SyncOptionsDialog(
             currentMode = uiState.syncMode,
             onDismiss = { viewModel.hideSyncDialog() },
-            onSelectMode = { mode, customBlock -> viewModel.setSyncMode(mode, customBlock) }
+            onSelectMode = { mode, customBlock -> viewModel.setSyncMode(mode, customBlock) },
+            savedCustomBlockHeight = uiState.savedCustomBlockHeight
         )
     }
 

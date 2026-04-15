@@ -763,12 +763,11 @@ class GatewayRepository @Inject constructor(
         Log.d(TAG, "📈 SYNC STATUS: tip=$tipNumber, scriptBlock=$scriptBlockNumber, " +
                 "behind=${tipNumber - scriptBlockNumber} blocks")
 
-        // Calculate progress
-        // Note: Light client might be syncing headers, so tipNumber increases over time.
-        // Script block number catches up to tipNumber.
-        
+        // Calculate progress relative to sync start (not absolute tip ratio).
+        // This gives meaningful feedback for small block ranges (e.g. 50-100 blocks).
+        val trackerInfo = syncProgressTracker.calculate(tipNumber)
         val progress = if (tipNumber > 0) {
-            scriptBlockNumber.toDouble() / tipNumber.toDouble()
+            (trackerInfo.percentage / 100.0).coerceIn(0.0, 1.0)
         } else {
             0.0
         }
@@ -1069,20 +1068,26 @@ class GatewayRepository @Inject constructor(
         val status = txWithStatus.txStatus.status
         Log.d(TAG, "📊 getTransactionStatus: Raw status='$status', blockHash=${txWithStatus.txStatus.blockHash}")
 
-        // Calculate confirmations if committed
+        // Calculate actual confirmations from tip - txBlock
         val confirmations = if (status == "committed" && txWithStatus.txStatus.blockHash != null) {
-            // Get tip to calculate confirmations
             val tipJson = LightClientNative.nativeGetTipHeader()
             if (tipJson != null) {
                 val tip = json.decodeFromString<JniHeaderView>(tipJson)
                 val tipNumber = tip.number.removePrefix("0x").toLong(16)
 
-                // Try to get block number from transaction's header
-                // For committed transactions, we know it's confirmed - use at least 1
-                // The light client should have synced the block, so it's confirmed
-                val estimatedConfirmations = 3 // Safe assumption for committed tx
-                Log.d(TAG, "📈 Tip: $tipNumber, estimated confirmations: $estimatedConfirmations")
-                estimatedConfirmations
+                // Get tx's block header to compute real confirmation depth
+                val txBlockJson = LightClientNative.nativeGetHeader(txWithStatus.txStatus.blockHash!!)
+                if (txBlockJson != null) {
+                    val txBlock = json.decodeFromString<JniHeaderView>(txBlockJson)
+                    val txBlockNumber = txBlock.number.removePrefix("0x").toLong(16)
+                    val realConfirmations = (tipNumber - txBlockNumber + 1).coerceAtLeast(1).toInt()
+                    Log.d(TAG, "📈 Tip: $tipNumber, txBlock: $txBlockNumber, confirmations: $realConfirmations")
+                    realConfirmations
+                } else {
+                    // Can't get tx block header — committed means at least 1
+                    Log.d(TAG, "📈 Tip: $tipNumber, txBlock header unavailable, using 1")
+                    1
+                }
             } else {
                 1 // At least 1 confirmation if committed
             }

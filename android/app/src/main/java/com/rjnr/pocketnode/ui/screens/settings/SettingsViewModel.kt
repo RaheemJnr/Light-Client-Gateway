@@ -28,6 +28,7 @@ class SettingsViewModel @Inject constructor(
     data class UiState(
         val isPinEnabled: Boolean = false,
         val syncMode: SyncMode = SyncMode.RECENT,
+        val savedCustomBlockHeight: Long? = null,
         val syncStrategy: SyncStrategy = SyncStrategy.ALL_WALLETS,
         val currentNetwork: NetworkType = NetworkType.MAINNET,
         val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -60,6 +61,7 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         syncMode = walletPrefs.getSyncMode(walletId = walletId),
+                        savedCustomBlockHeight = walletPrefs.getCustomBlockHeight(walletId = walletId),
                         syncStrategy = walletPrefs.getSyncStrategy()
                     )
                 }
@@ -73,6 +75,7 @@ class SettingsViewModel @Inject constructor(
             it.copy(
                 isPinEnabled = pinManager.hasPin(),
                 syncMode = walletPrefs.getSyncMode(walletId = walletId),
+                savedCustomBlockHeight = walletPrefs.getCustomBlockHeight(walletId = walletId),
                 syncStrategy = walletPrefs.getSyncStrategy(),
                 currentNetwork = repository.currentNetwork,
                 themeMode = walletPrefs.getThemeMode(),

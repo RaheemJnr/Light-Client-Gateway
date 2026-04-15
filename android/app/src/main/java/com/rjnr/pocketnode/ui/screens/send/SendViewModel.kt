@@ -467,10 +467,9 @@ class SendViewModel @Inject constructor(
                 val newBalance = balance.capacityAsLong()
                 Log.d(TAG, "💰 Balance poll #$balanceAttempts: $newBalance shannons (${balance.capacityCkb} CKB)")
 
-                // Balance updated successfully if:
-                // 1. It's non-zero (change output synced), OR
-                // 2. It's different from the previous balance
-                if (newBalance > 0 || newBalance != previousBalance) {
+                // Balance updated when it differs from pre-send value
+                // (for self-transfers, change is just the fee)
+                if (newBalance != previousBalance) {
                     Log.d(TAG, "✅ Balance updated: $newBalance shannons")
                     return
                 }
