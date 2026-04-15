@@ -55,8 +55,13 @@ object AppModule {
     @Singleton
     fun provideKeyManager(
         @ApplicationContext context: Context,
-        mnemonicManager: MnemonicManager
-    ): KeyManager = KeyManager(context, mnemonicManager)
+        mnemonicManager: MnemonicManager,
+        keyBackupManager: KeyBackupManager,
+        keyStoreMigrationHelper: KeyStoreMigrationHelper
+    ): KeyManager = KeyManager(context, mnemonicManager).also {
+        it.keyBackupManager = keyBackupManager
+        it.keyStoreMigrationHelper = keyStoreMigrationHelper
+    }
 
     @Provides
     @Singleton
