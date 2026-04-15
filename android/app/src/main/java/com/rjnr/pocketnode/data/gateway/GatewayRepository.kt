@@ -93,6 +93,10 @@ class GatewayRepository @Inject constructor(
         scope.launch {
             // Migrate single-wallet to multi-wallet schema (idempotent, no-op if already done)
             walletMigrationHelper.migrateIfNeeded()
+            // Migrate key material from ESP to Room (one-time, for upgrading users)
+            keyManager.migrateEspToRoomIfNeeded(walletDao)
+            // Delete ESP files after successful migration
+            keyManager.deleteEspFilesIfSafe()
             activeWalletId = walletPreferences.getActiveWalletId() ?: ""
 
             initializeNode(currentNetwork)

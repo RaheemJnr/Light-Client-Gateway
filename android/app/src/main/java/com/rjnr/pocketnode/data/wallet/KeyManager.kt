@@ -504,6 +504,76 @@ class KeyManager @Inject constructor(
             .commit()
     }
 
+    /**
+     * One-time migration: read all wallet keys from ESP, encrypt and store in Room.
+     * Verifies round-trip for each wallet. Only marks complete when ALL wallets succeed.
+     * Safe to call multiple times — no-op if already complete.
+     */
+    suspend fun migrateEspToRoomIfNeeded(walletDao: com.rjnr.pocketnode.data.database.dao.WalletDao) {
+        val helper = keyStoreMigrationHelper ?: return
+        if (helper.isMigrationComplete()) return
+
+        try {
+            val wallets = walletDao.getAll()
+            for (wallet in wallets) {
+                // Skip if already migrated (idempotent)
+                if (helper.readDecryptedKey(wallet.walletId) != null) continue
+
+                val privKeyHex = try {
+                    getPrivateKeyForWallet(wallet.walletId)
+                        ?.joinToString("") { "%02x".format(it) }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Cannot read ESP key for ${wallet.walletId}, skipping", e)
+                    continue
+                } ?: continue
+
+                val mnemonic = getMnemonicForWallet(wallet.walletId)?.joinToString(" ")
+                val walletType = if (mnemonic != null) WALLET_TYPE_MNEMONIC else WALLET_TYPE_RAW_KEY
+                val backed = hasMnemonicBackupForWallet(wallet.walletId)
+
+                helper.migrateWallet(wallet.walletId, privKeyHex, mnemonic, walletType, backed)
+
+                // Verify round-trip
+                val check = helper.readDecryptedKey(wallet.walletId)
+                if (check == null || check.privateKeyHex != privKeyHex) {
+                    Log.e(TAG, "Round-trip verification failed for ${wallet.walletId}")
+                    return // Abort — don't mark complete, retry next launch
+                }
+            }
+
+            helper.markMigrationComplete()
+            Log.i(TAG, "ESP to Room migration complete for ${wallets.size} wallets")
+        } catch (e: Exception) {
+            Log.e(TAG, "ESP to Room migration failed", e)
+        }
+    }
+
+    /**
+     * Delete ESP shared_prefs files after successful Room migration.
+     * Only runs if migration is marked complete. Safe to call multiple times.
+     */
+    fun deleteEspFilesIfSafe() {
+        val helper = keyStoreMigrationHelper ?: return
+        if (!helper.isMigrationComplete()) return
+
+        try {
+            context.deleteSharedPreferences("ckb_wallet_keys")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to delete global ESP file", e)
+        }
+
+        val prefsDir = java.io.File(context.filesDir.parent, "shared_prefs")
+        prefsDir.listFiles()
+            ?.filter { it.name.startsWith("ckb_wallet_keys_") }
+            ?.forEach { file ->
+                try { file.delete() } catch (e: Exception) {
+                    Log.w(TAG, "Failed to delete ESP file: ${file.name}", e)
+                }
+            }
+
+        Log.i(TAG, "ESP files deleted after successful Room migration")
+    }
+
     private fun writeToRoom(
         walletId: String,
         privateKeyHex: String,
