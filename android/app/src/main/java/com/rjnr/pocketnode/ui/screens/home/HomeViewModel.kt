@@ -394,14 +394,23 @@ class HomeViewModel @Inject constructor(
 
     private fun checkBackupStatus() {
         val type = repository.getWalletType()
-        val needsBackup = type == KeyManager.WALLET_TYPE_MNEMONIC && !repository.hasMnemonicBackupForActiveWallet()
+        // Sub-accounts (parentWalletId != null) don't hold their own mnemonic —
+        // the parent wallet's backup covers them. Don't show backup reminder.
+        val activeWallet = _uiState.value.wallets.find { it.isActive }
+        val isSubAccount = activeWallet?.parentWalletId != null
+        val needsBackup = type == KeyManager.WALLET_TYPE_MNEMONIC
+            && !isSubAccount
+            && !repository.hasMnemonicBackupForActiveWallet()
         _uiState.update { it.copy(walletType = type, showBackupReminder = needsBackup) }
     }
 
     fun refreshSecurityState() {
         val hasPin = pinManager.hasPin()
         val hasBiometrics = authManager.isBiometricEnabled()
-        val hasMnemonicBackup = repository.hasMnemonicBackupForActiveWallet()
+        // Sub-accounts inherit parent's backup status — treat as backed up
+        val activeWallet = _uiState.value.wallets.find { it.isActive }
+        val isSubAccount = activeWallet?.parentWalletId != null
+        val hasMnemonicBackup = isSubAccount || repository.hasMnemonicBackupForActiveWallet()
         _uiState.update {
             it.copy(
                 hasPinOrBiometrics = hasPin || hasBiometrics,
