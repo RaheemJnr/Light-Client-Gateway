@@ -147,3 +147,26 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         db.execSQL("ALTER TABLE `wallets` ADD COLUMN `colorIndex` INTEGER NOT NULL DEFAULT 0")
     }
 }
+
+/**
+ * v4 -> v5: Add key_material table for encrypted key storage (Phase 2 of key storage redesign).
+ * Key material moves from EncryptedSharedPreferences to Room, encrypted with Android Keystore AES key.
+ */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `key_material` (
+                `walletId` TEXT NOT NULL,
+                `encryptedPrivateKey` BLOB NOT NULL,
+                `encryptedMnemonic` BLOB,
+                `iv` BLOB NOT NULL,
+                `walletType` TEXT NOT NULL,
+                `mnemonicBackedUp` INTEGER NOT NULL DEFAULT 0,
+                `updatedAt` INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(`walletId`)
+            )
+            """.trimIndent()
+        )
+    }
+}

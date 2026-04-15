@@ -7,12 +7,15 @@ import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.crypto.Blake2b
 import com.rjnr.pocketnode.data.database.AppDatabase
+import com.rjnr.pocketnode.data.crypto.KeystoreEncryptionManager
 import com.rjnr.pocketnode.data.database.MIGRATION_1_2
 import com.rjnr.pocketnode.data.database.MIGRATION_2_3
 import com.rjnr.pocketnode.data.database.MIGRATION_3_4
+import com.rjnr.pocketnode.data.database.MIGRATION_4_5
 import com.rjnr.pocketnode.data.database.dao.BalanceCacheDao
 import com.rjnr.pocketnode.data.database.dao.DaoCellDao
 import com.rjnr.pocketnode.data.database.dao.HeaderCacheDao
+import com.rjnr.pocketnode.data.database.dao.KeyMaterialDao
 import com.rjnr.pocketnode.data.database.dao.TransactionDao
 import com.rjnr.pocketnode.data.database.dao.WalletDao
 import com.rjnr.pocketnode.data.migration.WalletMigrationHelper
@@ -99,7 +102,7 @@ object AppModule {
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "pocket_node.db")
             .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .build()
 
     @Provides
@@ -116,6 +119,13 @@ object AppModule {
 
     @Provides
     fun provideWalletDao(db: AppDatabase): WalletDao = db.walletDao()
+
+    @Provides
+    fun provideKeyMaterialDao(db: AppDatabase): KeyMaterialDao = db.keyMaterialDao()
+
+    @Provides
+    @Singleton
+    fun provideKeystoreEncryptionManager(): KeystoreEncryptionManager = KeystoreEncryptionManager()
 
     @Provides
     @Singleton
