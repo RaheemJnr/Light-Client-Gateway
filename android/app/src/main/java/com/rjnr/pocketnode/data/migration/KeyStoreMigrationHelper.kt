@@ -5,8 +5,6 @@ import android.util.Log
 import com.rjnr.pocketnode.data.crypto.KeystoreEncryptionManager
 import com.rjnr.pocketnode.data.database.dao.KeyMaterialDao
 import com.rjnr.pocketnode.data.database.entity.KeyMaterialEntity
-import javax.inject.Inject
-import javax.inject.Singleton
 
 data class DecryptedKeyData(
     val privateKeyHex: String,
@@ -15,8 +13,7 @@ data class DecryptedKeyData(
     val mnemonicBackedUp: Boolean
 )
 
-@Singleton
-class KeyStoreMigrationHelper @Inject constructor(
+class KeyStoreMigrationHelper(
     private val keyMaterialDao: KeyMaterialDao,
     private val encryptionManager: KeystoreEncryptionManager,
     private val migrationPrefs: SharedPreferences

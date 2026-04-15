@@ -36,8 +36,11 @@ import io.ktor.client.engine.android.Android
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
+import com.rjnr.pocketnode.data.migration.KeyStoreMigrationHelper
 import com.rjnr.pocketnode.data.wallet.KeyBackupManager
+import android.content.SharedPreferences
 import java.io.File
+import javax.inject.Named
 import javax.inject.Singleton
 
 @Module
@@ -126,6 +129,20 @@ object AppModule {
     @Provides
     @Singleton
     fun provideKeystoreEncryptionManager(): KeystoreEncryptionManager = KeystoreEncryptionManager()
+
+    @Provides
+    @Singleton
+    @Named("migrationPrefs")
+    fun provideMigrationPrefs(@ApplicationContext context: Context): SharedPreferences =
+        context.getSharedPreferences("key_migration", Context.MODE_PRIVATE)
+
+    @Provides
+    @Singleton
+    fun provideKeyStoreMigrationHelper(
+        keyMaterialDao: KeyMaterialDao,
+        encryptionManager: KeystoreEncryptionManager,
+        @Named("migrationPrefs") migrationPrefs: SharedPreferences
+    ): KeyStoreMigrationHelper = KeyStoreMigrationHelper(keyMaterialDao, encryptionManager, migrationPrefs)
 
     @Provides
     @Singleton
