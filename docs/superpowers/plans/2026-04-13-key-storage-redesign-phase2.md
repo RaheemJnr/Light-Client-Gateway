@@ -1,12 +1,12 @@
-# Key Storage Redesign — Phase 2 Implementation Plan
+# Key Storage Redesign — Phase 2+3 Combined Implementation Plan
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Migrate the primary key store from EncryptedSharedPreferences to Android Keystore + Room, so key material is encrypted with a Keystore-managed AES key and stored in the SQLite database. The PIN-encrypted backup from Phase 1 provides a safety net during migration.
+**Goal:** Migrate the primary key store from EncryptedSharedPreferences to Android Keystore + Room, remove ESP entirely, and clean up ESP files for upgrading users. Combined Phase 2+3 — Room becomes the only key store in one release. The PIN-encrypted backup from Phase 1 provides a safety net for Keystore failures.
 
-**Architecture:** A `KeystoreEncryptionManager` manages AES-256-GCM keys in Android Keystore. Key material is encrypted/decrypted through this manager and stored as `ByteArray` columns in a new `key_material` Room table (MIGRATION_4_5, DB version 5). `KeyManager` is updated to read/write via Room first, falling back to ESP during the transition. A one-time migration copies data from ESP → Room on first launch.
+**Architecture:** `KeystoreEncryptionManager` manages AES-256-GCM keys in Android Keystore. Key material is stored encrypted in a `key_material` Room table (MIGRATION_4_5, DB version 5). `KeyManager` reads/writes exclusively through Room. For the ~21 existing users who upgrade without reinstalling, a one-time silent migration copies ESP data → Room, then deletes ESP files.
 
-**Important:** The DB is already at version 4 with `MIGRATION_3_4` (balance_cache PK fix + wallet columns from M3 multi-wallet work). This plan uses `MIGRATION_4_5` to add the `key_material` table.
+**Important:** DB is at version 4 with `MIGRATION_3_4` (from M3 multi-wallet). This plan adds `MIGRATION_4_5` for the `key_material` table. PinManager still uses ESP (separate concern, not migrated here).
 
 **Tech Stack:** Kotlin, Android Keystore (AES-256-GCM), Room 2.8.4, JUnit 4 + Robolectric
 
@@ -826,14 +826,15 @@ cd android && git add -A && git commit -m "feat: wire KeyStoreMigrationHelper an
 
 ---
 
-### Task 6: KeyManager Room Integration
+### Task 6: Rewrite KeyManager to Use Room as Primary Store
+
+This is the biggest task. KeyManager currently reads/writes through ESP. After this task, it reads/writes through `KeyStoreMigrationHelper` (which uses `KeystoreEncryptionManager` + `KeyMaterialDao`). ESP code paths are removed from normal operation.
 
 **Files:**
 - Modify: `android/app/src/main/java/com/rjnr/pocketnode/data/wallet/KeyManager.kt`
+- Modify: `android/app/src/test/java/com/rjnr/pocketnode/data/wallet/KeyManagerTest.kt`
 
-- [ ] **Step 1: Add Room-based read/write alongside ESP**
-
-Add new dependencies to KeyManager (injected via setter like `setBackupManager`):
+- [ ] **Step 1: Add KeyStoreMigrationHelper dependency**
 
 ```kotlin
 @VisibleForTesting
@@ -845,42 +846,164 @@ fun setMigrationHelper(helper: KeyStoreMigrationHelper) {
 }
 ```
 
-Add a method that reads key material, preferring Room over ESP:
+- [ ] **Step 2: Rewrite key read methods to use Room**
+
+Replace `getPrivateKey()`, `getPrivateKeyForWallet()`, `getMnemonic()`, `getMnemonicForWallet()`, `getKeyPair()`, `getWalletType()`, `hasMnemonicBackup()`, `hasMnemonicBackupForWallet()` to read from Room via `keyStoreMigrationHelper.readDecryptedKey()`.
+
+Keep ESP as a fallback for users upgrading from older versions where migration hasn't run yet:
 
 ```kotlin
-fun getPrivateKeyPreferRoom(walletId: String): ByteArray {
-    val helper = keyStoreMigrationHelper
-    if (helper != null && helper.isMigrationComplete()) {
-        val data = kotlinx.coroutines.runBlocking { helper.readDecryptedKey(walletId) }
-        if (data != null) {
-            return org.nervos.ckb.utils.Numeric.hexStringToByteArray(data.privateKeyHex)
-        }
-    }
-    // Fallback to ESP
-    return if (walletId == "default") getPrivateKey() else getPrivateKeyForWallet(walletId)
+fun getPrivateKey(): ByteArray {
+    return getPrivateKeyForWallet("default")
 }
 
-fun getMnemonicPreferRoom(walletId: String): List<String>? {
+fun getPrivateKeyForWallet(walletId: String): ByteArray {
+    // Try Room first
     val helper = keyStoreMigrationHelper
-    if (helper != null && helper.isMigrationComplete()) {
+    if (helper != null) {
         val data = kotlinx.coroutines.runBlocking { helper.readDecryptedKey(walletId) }
-        if (data?.mnemonic != null) {
-            return data.mnemonic.split(" ")
+        if (data != null) {
+            return Numeric.hexStringToByteArray(data.privateKeyHex)
         }
     }
-    // Fallback to ESP
-    return if (walletId == "default") getMnemonic() else getMnemonicForWallet(walletId)
+    // Fallback to ESP for pre-migration users
+    if (walletId == "default") {
+        val hex = prefs.getString(KEY_PRIVATE_KEY, null)
+            ?: throw IllegalStateException("No wallet found")
+        return Numeric.hexStringToByteArray(hex)
+    }
+    val hex = getWalletPrefs(walletId).getString(KEY_PRIVATE_KEY, null)
+        ?: throw IllegalStateException("No wallet found for $walletId")
+    return Numeric.hexStringToByteArray(hex)
 }
 ```
 
-Add a method to trigger the one-time ESP → Room migration:
+Apply the same Room-first-ESP-fallback pattern to all other read methods.
+
+- [ ] **Step 3: Rewrite key write methods to use Room as primary**
+
+All mutation methods (`generateWalletWithMnemonic`, `importWalletFromMnemonic`, `savePrivateKey`, `storeKeysForWallet`, `setMnemonicBackedUp`, `setMnemonicBackedUpForWallet`, `deleteWallet`, `deleteWalletKeys`) should write to Room as the primary store.
+
+Keep `writeBackupIfPinAvailable()` calls (Phase 1 backup still writes).
+
+Remove the ESP write calls. The write flow becomes:
+1. Write to Room (primary)
+2. Write to PIN backup (secondary, Phase 1)
+3. NO ESP write
 
 ```kotlin
-suspend fun migrateEspToRoom(walletDao: com.rjnr.pocketnode.data.database.dao.WalletDao) {
+fun generateWalletWithMnemonic(
+    wordCount: MnemonicManager.WordCount = MnemonicManager.WordCount.TWELVE
+): Pair<WalletInfo, List<String>> {
+    val words = mnemonicManager.generateMnemonic(wordCount)
+    val privateKeyBytes = mnemonicManager.mnemonicToPrivateKey(words)
+    val hex = Numeric.toHexStringNoPrefixZeroPadded(BigInteger(1, privateKeyBytes), 64)
+
+    // Write to Room (primary)
+    writeToRoom("default", hex, words.joinToString(" "), WALLET_TYPE_MNEMONIC, false)
+
+    // Write to PIN backup (secondary)
+    writeBackupIfPinAvailable("default") {
+        KeyMaterial(
+            privateKey = hex,
+            mnemonic = words.joinToString(" "),
+            walletType = WALLET_TYPE_MNEMONIC,
+            mnemonicBackedUp = false
+        )
+    }
+
+    return Pair(getWalletInfo(), words)
+}
+```
+
+Add private helper:
+
+```kotlin
+private fun writeToRoom(walletId: String, privateKeyHex: String, mnemonic: String?, walletType: String, mnemonicBackedUp: Boolean) {
+    val helper = keyStoreMigrationHelper ?: return
+    kotlinx.coroutines.runBlocking {
+        helper.migrateWallet(walletId, privateKeyHex, mnemonic, walletType, mnemonicBackedUp)
+    }
+}
+```
+
+- [ ] **Step 4: Update `hasWallet()` to check Room**
+
+```kotlin
+fun hasWallet(): Boolean {
+    val helper = keyStoreMigrationHelper
+    if (helper != null) {
+        val count = kotlinx.coroutines.runBlocking {
+            helper.keyMaterialDao.count()
+        }
+        if (count > 0) return true
+    }
+    // Fallback to ESP for pre-migration
+    return prefs.contains(KEY_PRIVATE_KEY)
+}
+```
+
+Note: `keyMaterialDao` needs to be accessible from the helper, or add a `hasAnyKeys()` method to `KeyStoreMigrationHelper`.
+
+- [ ] **Step 5: Update tests**
+
+Update `KeyManagerTest.kt` setUp to provide a `KeyStoreMigrationHelper` backed by an in-memory Room DB + test `KeystoreEncryptionManager`:
+
+```kotlin
+private lateinit var migrationHelper: KeyStoreMigrationHelper
+private lateinit var encryptionManager: KeystoreEncryptionManager
+
+@Before
+fun setUp() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        .allowMainThreadQueries()
+        .build()
+    encryptionManager = KeystoreEncryptionManager.createForTest()
+    val migrationPrefs = context.getSharedPreferences("test_migration", Context.MODE_PRIVATE)
+    migrationPrefs.edit().clear().commit()
+    migrationHelper = KeyStoreMigrationHelper(db.keyMaterialDao(), encryptionManager, migrationPrefs)
+
+    mnemonicManager = MnemonicManager()
+    keyManager = KeyManager(context, mnemonicManager)
+    keyManager.testPrefs = context.getSharedPreferences("test_keys", Context.MODE_PRIVATE)
+    keyManager.keyStoreMigrationHelper = migrationHelper
+    // ... existing backup manager setup ...
+    keyManager.deleteWallet()
+}
+```
+
+Ensure existing tests still pass — they test via public API so internal storage change should be transparent.
+
+- [ ] **Step 6: Run tests**
+
+Run: `cd android && ./gradlew testDebugUnitTest --tests "com.rjnr.pocketnode.data.wallet.KeyManagerTest"`
+Expected: All PASS
+
+- [ ] **Step 7: Commit**
+
+```bash
+cd android && git add -A && git commit -m "feat: rewrite KeyManager to use Room as primary key store, ESP as migration fallback"
+```
+
+---
+
+### Task 7: Startup Migration + Conditional ESP Deletion
+
+**Files:**
+- Modify: `android/app/src/main/java/com/rjnr/pocketnode/data/gateway/GatewayRepository.kt`
+- Modify: `android/app/src/main/java/com/rjnr/pocketnode/data/wallet/KeyManager.kt`
+
+- [ ] **Step 1: Add ESP → Room migration method to KeyManager**
+
+```kotlin
+suspend fun migrateEspToRoomIfNeeded(walletDao: WalletDao) {
     val helper = keyStoreMigrationHelper ?: return
     if (helper.isMigrationComplete()) return
 
     try {
+        // Migrate wallet-scoped ESP keys
         val wallets = walletDao.getAll()
         for (wallet in wallets) {
             val privKeyHex = try {
@@ -893,15 +1016,10 @@ suspend fun migrateEspToRoom(walletDao: com.rjnr.pocketnode.data.database.dao.Wa
 
             val mnemonic = getMnemonicForWallet(wallet.walletId)?.joinToString(" ")
             val walletType = try {
-                getWalletPrefs(wallet.walletId).getString(KEY_WALLET_TYPE, WALLET_TYPE_RAW_KEY) ?: WALLET_TYPE_RAW_KEY
-            } catch (e: Exception) {
-                WALLET_TYPE_RAW_KEY
-            }
-            val backed = try {
                 hasMnemonicBackupForWallet(wallet.walletId)
-            } catch (e: Exception) {
-                false
-            }
+                    .let { if (it) WALLET_TYPE_MNEMONIC else WALLET_TYPE_RAW_KEY }
+            } catch (e: Exception) { WALLET_TYPE_RAW_KEY }
+            val backed = try { hasMnemonicBackupForWallet(wallet.walletId) } catch (e: Exception) { false }
 
             helper.migrateWallet(wallet.walletId, privKeyHex, mnemonic, walletType, backed)
 
@@ -909,18 +1027,7 @@ suspend fun migrateEspToRoom(walletDao: com.rjnr.pocketnode.data.database.dao.Wa
             val check = helper.readDecryptedKey(wallet.walletId)
             if (check == null || check.privateKeyHex != privKeyHex) {
                 Log.e(TAG, "Round-trip verification failed for ${wallet.walletId}")
-                return // Abort migration — don't mark complete
-            }
-        }
-
-        // Also migrate the "default" legacy wallet if it exists
-        if (hasWallet() && wallets.none { it.walletId == "default" }) {
-            val privKeyHex = prefs.getString(KEY_PRIVATE_KEY, null)
-            if (privKeyHex != null) {
-                val mnemonic = prefs.getString(KEY_MNEMONIC, null)
-                val walletType = getWalletType()
-                val backed = hasMnemonicBackup()
-                helper.migrateWallet("default", privKeyHex, mnemonic, walletType, backed)
+                return // Abort — don't mark complete, retry next launch
             }
         }
 
@@ -928,111 +1035,104 @@ suspend fun migrateEspToRoom(walletDao: com.rjnr.pocketnode.data.database.dao.Wa
         Log.i(TAG, "ESP to Room migration complete for ${wallets.size} wallets")
     } catch (e: Exception) {
         Log.e(TAG, "ESP to Room migration failed", e)
-        // Don't mark complete — will retry next launch
     }
 }
 ```
 
-Note: `getWalletPrefs` is currently private. It needs to be changed to `internal` so the migration can access it, or the method can be accessed through the existing public `getPrivateKeyForWallet`/`getMnemonicForWallet` methods which already call `getWalletPrefs` internally.
-
-- [ ] **Step 2: Run build**
-
-Run: `cd android && ./gradlew compileDebugKotlin`
-Expected: PASS
-
-- [ ] **Step 3: Commit**
-
-```bash
-cd android && git add -A && git commit -m "feat: add Room-based key read paths to KeyManager with ESP fallback and migration trigger"
-```
-
----
-
-### Task 7: Trigger Migration on Startup
-
-**Files:**
-- Modify: `android/app/src/main/java/com/rjnr/pocketnode/data/gateway/GatewayRepository.kt`
-
-- [ ] **Step 1: Add migration call to startup**
-
-Find the `GatewayRepository` initialization or startup method. Add a call to `keyManager.migrateEspToRoom(walletDao)` during the init sequence (after the existing `WalletMigrationHelper` runs).
-
-This should run inside a coroutine scope. If `GatewayRepository` has an init block or a `startNode()` method, add:
+- [ ] **Step 2: Add conditional ESP deletion method**
 
 ```kotlin
-// After wallet migration helper:
-viewModelScope.launch(Dispatchers.IO) {
-    keyManager.migrateEspToRoom(walletDao)
+fun deleteEspFilesIfSafe(context: Context) {
+    val helper = keyStoreMigrationHelper ?: return
+    if (!helper.isMigrationComplete()) return
+
+    // Delete the global ESP file
+    try {
+        context.deleteSharedPreferences("ckb_wallet_keys")
+    } catch (e: Exception) {
+        Log.w(TAG, "Failed to delete global ESP file", e)
+    }
+
+    // Delete wallet-scoped ESP files
+    val prefsDir = File(context.filesDir.parent, "shared_prefs")
+    prefsDir.listFiles()
+        ?.filter { it.name.startsWith("ckb_wallet_keys_") }
+        ?.forEach { file ->
+            try { file.delete() } catch (e: Exception) {
+                Log.w(TAG, "Failed to delete ESP file: ${file.name}", e)
+            }
+        }
+
+    Log.i(TAG, "ESP files deleted after successful Room migration")
 }
 ```
 
-Or if GatewayRepository uses its own coroutine scope:
+- [ ] **Step 3: Wire migration into GatewayRepository startup**
+
+Find the startup sequence in GatewayRepository. Add after `WalletMigrationHelper.migrateIfNeeded()`:
 
 ```kotlin
-scope.launch {
-    keyManager.migrateEspToRoom(walletDao)
-}
+// Migrate key material from ESP to Room (one-time, for upgrading users)
+keyManager.migrateEspToRoomIfNeeded(walletDao)
+// Delete ESP files after successful migration
+keyManager.deleteEspFilesIfSafe(context)
 ```
 
-Read the file to determine the exact placement. The migration must run AFTER `WalletMigrationHelper.migrateIfNeeded()` (which creates wallet entries in Room) and BEFORE any key reads happen.
-
-- [ ] **Step 2: Add WalletDao dependency to GatewayRepository if not already present**
-
-Check the constructor. If `walletDao` is not directly available, pass it through or access via `AppDatabase`.
-
-- [ ] **Step 3: Run build + tests**
+- [ ] **Step 4: Run build + tests**
 
 Run: `cd android && ./gradlew testDebugUnitTest && ./gradlew assembleDebug`
 Expected: All PASS, BUILD SUCCESSFUL
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-cd android && git add -A && git commit -m "feat: trigger ESP-to-Room key migration on startup after wallet migration"
+cd android && git add -A && git commit -m "feat: add ESP-to-Room migration on startup with conditional ESP deletion"
 ```
 
 ---
 
-### Task 8: Update KeyManager Write Paths to Dual-Write to Room
+### Task 8: Remove ESP Code from KeyManager
+
+Now that Room is the primary store and ESP migration + deletion runs on startup, remove the dead ESP code paths.
 
 **Files:**
 - Modify: `android/app/src/main/java/com/rjnr/pocketnode/data/wallet/KeyManager.kt`
 
-- [ ] **Step 1: Add Room write alongside ESP write in mutation methods**
+- [ ] **Step 1: Remove ESP fields and methods**
 
-Add a private helper:
+Remove or mark as `@Deprecated` (for one release cycle):
+- `private val prefs` property
+- `private val encryptedPrefs` lazy block
+- `createEncryptedPrefs(useStrongBox)` method
+- `createEncryptedPrefsForWallet(fileName, useStrongBox)` method
+- `getWalletPrefs(walletId)` method
+- `walletResetDueToCorruption` flag and `wasResetDueToCorruption()` / `resetCorruptionFlag()`
+- ESP-related imports: `EncryptedSharedPreferences`, `MasterKey`
+
+Keep `testPrefs` for tests that still need a simple SharedPreferences for non-key data.
+
+**Important:** Keep the ESP fallback in read methods for one release cycle. Users who upgrade but whose migration fails (e.g., Keystore issue) still need ESP as a last resort. Mark them `@Deprecated`:
 
 ```kotlin
-private fun writeToRoomIfMigrated(walletId: String, privateKeyHex: String, mnemonic: String?, walletType: String, mnemonicBackedUp: Boolean) {
-    val helper = keyStoreMigrationHelper ?: return
-    if (!helper.isMigrationComplete()) return
-    try {
-        kotlinx.coroutines.runBlocking {
-            helper.migrateWallet(walletId, privateKeyHex, mnemonic, walletType, mnemonicBackedUp)
-        }
-    } catch (e: Exception) {
-        Log.w(TAG, "Room write failed for $walletId", e)
-    }
-}
+@Deprecated("ESP fallback — remove after one release cycle")
+private fun getPrivateKeyFromEsp(walletId: String): ByteArray? { ... }
 ```
 
-Add calls to `writeToRoomIfMigrated` in each mutation method, right after the `writeBackupIfPinAvailable` calls:
-- `generateWalletWithMnemonic()` — write with the hex and words
-- `importWalletFromMnemonic()` — write with hex and words
-- `savePrivateKey()` — write with hex and null mnemonic
-- `storeKeysForWallet()` — write with wallet ID
-- `setMnemonicBackedUp()` / `setMnemonicBackedUpForWallet()` — use Room DAO's `updateMnemonicBackedUp` instead of full re-write
-- `deleteWallet()` / `deleteWalletKeys()` — delete from Room
+- [ ] **Step 2: Check if `security-crypto` dependency can be removed**
 
-- [ ] **Step 2: Run tests**
+Search for other usages of `EncryptedSharedPreferences` or `MasterKey` in the codebase (PinManager still uses them). If PinManager is the only other user, the dependency stays. If nothing else uses it after ESP removal from KeyManager, it can be removed from `build.gradle.kts`.
+
+Run: `grep -r "EncryptedSharedPreferences\|MasterKey\|security-crypto" android/app/src/main/`
+
+- [ ] **Step 3: Run tests**
 
 Run: `cd android && ./gradlew testDebugUnitTest`
 Expected: All PASS
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-cd android && git add -A && git commit -m "feat: dual-write key material to Room alongside ESP on every mutation"
+cd android && git add -A && git commit -m "refactor: remove ESP write paths from KeyManager, keep deprecated ESP read fallback"
 ```
 
 ---
@@ -1081,17 +1181,20 @@ cd android && git add -A && git commit -m "chore: add ProGuard keep rules for Ke
 | 3 | MIGRATION_4_5 + AppDatabase v5 + DI | Migrations.kt, AppDatabase.kt, AppModule.kt |
 | 4 | KeyStoreMigrationHelper (ESP → Room) | KeyStoreMigrationHelper.kt (new) |
 | 5 | Wire migration helper into DI | AppModule.kt |
-| 6 | KeyManager Room read paths + migration trigger | KeyManager.kt |
-| 7 | Startup migration trigger | GatewayRepository.kt |
-| 8 | KeyManager Room write paths (dual-write) | KeyManager.kt |
+| 6 | Rewrite KeyManager to use Room as primary store | KeyManager.kt |
+| 7 | Startup migration + conditional ESP deletion | GatewayRepository.kt, KeyManager.kt |
+| 8 | Remove ESP code from KeyManager | KeyManager.kt |
 | 9 | Final integration + ProGuard | proguard-rules.pro |
 
-**Dependencies:** Tasks 1, 2 are independent. Task 3 depends on 1+2. Task 4 depends on 1+3. Task 5 depends on 4. Tasks 6-7 depend on 5. Task 8 depends on 6. Task 9 is last.
+**This is a combined Phase 2+3.** After this, Room is the only key store, ESP is deleted, and the PIN backup (Phase 1) remains as the safety net for Keystore failures. Upgrading users (from v1.4.1 or v1.5.0) get a one-time silent ESP → Room migration on first launch.
+
+**Dependencies:** Tasks 1, 2 are independent. Task 3 depends on 1+2. Task 4 depends on 1+3. Task 5 depends on 4. Task 6 depends on 5. Task 7 depends on 6. Task 8 depends on 7. Task 9 is last.
 
 **Parallelizable groups:**
 - Group A: Tasks 1, 2
 - Group B (after A): Task 3
 - Group C (after B): Tasks 4, 5
-- Group D (after C): Tasks 6, 7
-- Group E (after D): Task 8
-- Group F: Task 9
+- Group D (after C): Task 6
+- Group E (after D): Task 7
+- Group F (after E): Task 8
+- Group G: Task 9
