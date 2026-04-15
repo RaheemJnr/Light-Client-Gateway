@@ -4,7 +4,9 @@
 
 **Goal:** Migrate the primary key store from EncryptedSharedPreferences to Android Keystore + Room, so key material is encrypted with a Keystore-managed AES key and stored in the SQLite database. The PIN-encrypted backup from Phase 1 provides a safety net during migration.
 
-**Architecture:** A `KeystoreEncryptionManager` manages AES-256-GCM keys in Android Keystore. Key material is encrypted/decrypted through this manager and stored as `ByteArray` columns in a new `key_material` Room table (MIGRATION_3_4). `KeyManager` is updated to read/write via Room first, falling back to ESP during the transition. A one-time migration copies data from ESP → Room on first launch.
+**Architecture:** A `KeystoreEncryptionManager` manages AES-256-GCM keys in Android Keystore. Key material is encrypted/decrypted through this manager and stored as `ByteArray` columns in a new `key_material` Room table (MIGRATION_4_5, DB version 5). `KeyManager` is updated to read/write via Room first, falling back to ESP during the transition. A one-time migration copies data from ESP → Room on first launch.
+
+**Important:** The DB is already at version 4 with `MIGRATION_3_4` (balance_cache PK fix + wallet columns from M3 multi-wallet work). This plan uses `MIGRATION_4_5` to add the `key_material` table.
 
 **Tech Stack:** Kotlin, Android Keystore (AES-256-GCM), Room 2.8.4, JUnit 4 + Robolectric
 
@@ -33,8 +35,8 @@
 | File | Changes |
 |------|---------|
 | `data/database/AppDatabase.kt` | Add `KeyMaterialEntity` to entities, add `keyMaterialDao()`, bump version to 4 |
-| `data/database/Migrations.kt` | Add `MIGRATION_3_4` (create `key_material` table) |
-| `data/database/MigrationTest.kt` | Add tests for v3→v4 migration and `key_material` schema |
+| `data/database/Migrations.kt` | Add `MIGRATION_4_5` (create `key_material` table) |
+| `data/database/MigrationTest.kt` | Add tests for v4→v5 migration and `key_material` schema |
 | `di/AppModule.kt` | Provide `KeystoreEncryptionManager`, `KeyMaterialDao`, `KeyStoreMigrationHelper` |
 | `data/wallet/KeyManager.kt` | Add Room-based read/write paths alongside ESP, migration trigger |
 
@@ -322,7 +324,7 @@ cd android && git add -A && git commit -m "feat: add KeyMaterialEntity and KeyMa
 
 ---
 
-### Task 3: Room MIGRATION_3_4 + AppDatabase Update
+### Task 3: Room MIGRATION_4_5 + AppDatabase Update
 
 **Files:**
 - Modify: `android/app/src/main/java/com/rjnr/pocketnode/data/database/AppDatabase.kt`
@@ -330,16 +332,16 @@ cd android && git add -A && git commit -m "feat: add KeyMaterialEntity and KeyMa
 - Modify: `android/app/src/main/java/com/rjnr/pocketnode/di/AppModule.kt`
 - Modify: `android/app/src/test/java/com/rjnr/pocketnode/data/database/MigrationTest.kt`
 
-- [ ] **Step 1: Add MIGRATION_3_4 to Migrations.kt**
+- [ ] **Step 1: Add MIGRATION_4_5 to Migrations.kt**
 
 Append after `MIGRATION_2_3`:
 
 ```kotlin
 /**
- * v3 -> v4: Add key_material table for encrypted key storage (Phase 2 of key storage redesign).
+ * v4 -> v5: Add key_material table for encrypted key storage (Phase 2 of key storage redesign).
  * Key material moves from EncryptedSharedPreferences to Room, encrypted with Android Keystore AES key.
  */
-val MIGRATION_3_4 = object : Migration(3, 4) {
+val MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
             """
@@ -361,7 +363,7 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
 
 - [ ] **Step 2: Update AppDatabase.kt**
 
-Change version from 3 to 4, add `KeyMaterialEntity` to entities, add `keyMaterialDao()`:
+Change version from 4 to 5, add `KeyMaterialEntity` to entities, add `keyMaterialDao()`:
 
 ```kotlin
 import com.rjnr.pocketnode.data.database.dao.KeyMaterialDao
@@ -376,7 +378,7 @@ import com.rjnr.pocketnode.data.database.entity.KeyMaterialEntity
         WalletEntity::class,
         KeyMaterialEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -391,12 +393,12 @@ abstract class AppDatabase : RoomDatabase() {
 
 - [ ] **Step 3: Update AppModule.kt**
 
-Add `MIGRATION_3_4` to the database builder:
+Add `MIGRATION_4_5` to the database builder (append to existing list):
 
 ```kotlin
 fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
     Room.databaseBuilder(context, AppDatabase::class.java, "pocket_node.db")
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
         .build()
 ```
 
@@ -425,10 +427,10 @@ import com.rjnr.pocketnode.data.database.dao.KeyMaterialDao
 
 Add to `MigrationTest.kt`:
 
-Update `setUp()` to include `MIGRATION_2_3` and `MIGRATION_3_4`:
+Update `setUp()` to include all migrations:
 ```kotlin
 db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
-    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
     .allowMainThreadQueries()
     .build()
 ```
@@ -536,7 +538,7 @@ Expected: All PASS
 - [ ] **Step 7: Commit**
 
 ```bash
-cd android && git add -A && git commit -m "feat: add MIGRATION_3_4 with key_material table, update AppDatabase to v4"
+cd android && git add -A && git commit -m "feat: add MIGRATION_4_5 with key_material table, update AppDatabase to v5"
 ```
 
 ---
@@ -564,7 +566,7 @@ import com.rjnr.pocketnode.data.crypto.KeystoreEncryptionManager
 import com.rjnr.pocketnode.data.database.AppDatabase
 import com.rjnr.pocketnode.data.database.MIGRATION_1_2
 import com.rjnr.pocketnode.data.database.MIGRATION_2_3
-import com.rjnr.pocketnode.data.database.MIGRATION_3_4
+import com.rjnr.pocketnode.data.database.MIGRATION_4_5
 import com.rjnr.pocketnode.data.database.dao.KeyMaterialDao
 import com.rjnr.pocketnode.data.database.dao.WalletDao
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
@@ -592,7 +594,7 @@ class KeyStoreMigrationHelperTest {
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
         keyMaterialDao = db.keyMaterialDao()
@@ -1076,7 +1078,7 @@ cd android && git add -A && git commit -m "chore: add ProGuard keep rules for Ke
 |------|-------------|-------|
 | 1 | KeystoreEncryptionManager (encrypt/decrypt) | KeystoreEncryptionManager.kt (new) |
 | 2 | KeyMaterialEntity + KeyMaterialDao | KeyMaterialEntity.kt, KeyMaterialDao.kt (new) |
-| 3 | MIGRATION_3_4 + AppDatabase v4 + DI | Migrations.kt, AppDatabase.kt, AppModule.kt |
+| 3 | MIGRATION_4_5 + AppDatabase v5 + DI | Migrations.kt, AppDatabase.kt, AppModule.kt |
 | 4 | KeyStoreMigrationHelper (ESP → Room) | KeyStoreMigrationHelper.kt (new) |
 | 5 | Wire migration helper into DI | AppModule.kt |
 | 6 | KeyManager Room read paths + migration trigger | KeyManager.kt |
