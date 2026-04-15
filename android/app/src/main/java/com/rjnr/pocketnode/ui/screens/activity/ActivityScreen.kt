@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -59,6 +58,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.paging.LoadState
+import androidx.paging.compose.collectAsLazyPagingItems
 import com.composables.icons.lucide.*
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
@@ -94,18 +95,13 @@ fun ActivityScreen(
         }
     }
 
+    val pagingItems = viewModel.transactionPagingFlow.collectAsLazyPagingItems()
+
     LaunchedEffect(Unit) {
         viewModel.exportEvent.collect { csv ->
             pendingCsvContent = csv
             exportLauncher.launch("transactions.csv")
         }
-    }
-
-    val filtered = remember(uiState.transactions, uiState.filter) {
-        viewModel.filteredTransactions(uiState)
-    }
-    val grouped = remember(filtered) {
-        groupByDate(filtered)
     }
 
     Scaffold(
@@ -126,7 +122,7 @@ fun ActivityScreen(
                             contentDescription = "Export CSV"
                         )
                     }
-                    IconButton(onClick = { viewModel.loadTransactions() }) {
+                    IconButton(onClick = { viewModel.refreshCache() }) {
                         Icon(
                             imageVector = Lucide.RefreshCw,
                             contentDescription = "Refresh"
@@ -151,7 +147,7 @@ fun ActivityScreen(
             )
 
             when {
-                uiState.isLoading -> {
+                pagingItems.loadState.refresh is LoadState.Loading || uiState.isLoading -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -160,14 +156,22 @@ fun ActivityScreen(
                     }
                 }
 
-                uiState.error != null -> {
+                pagingItems.loadState.refresh is LoadState.Error -> {
+                    val errorMsg = (pagingItems.loadState.refresh as LoadState.Error).error.message
                     ErrorState(
-                        message = uiState.error,
-                        onRetry = { viewModel.loadTransactions() }
+                        message = uiState.error ?: errorMsg,
+                        onRetry = { viewModel.refreshCache() }
                     )
                 }
 
-                grouped.isEmpty() -> {
+                uiState.error != null -> {
+                    ErrorState(
+                        message = uiState.error,
+                        onRetry = { viewModel.refreshCache() }
+                    )
+                }
+
+                pagingItems.itemCount == 0 && pagingItems.loadState.refresh is LoadState.NotLoading -> {
                     EmptyState(filter = uiState.filter)
                 }
 
@@ -176,15 +180,36 @@ fun ActivityScreen(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(0.dp)
                     ) {
-                        grouped.forEach { (label, txs) ->
-                            item(key = "header_$label") {
-                                DateGroupHeader(label = label)
+                        items(
+                            count = pagingItems.itemCount,
+                            key = { index -> pagingItems.peek(index)?.txHash ?: "item_$index" }
+                        ) { index ->
+                            val tx = pagingItems[index] ?: return@items
+
+                            // Date header: show if first item or date changed from previous
+                            val currentDate = tx.dateLabel()
+                            val previousDate = if (index > 0) pagingItems.peek(index - 1)?.dateLabel() else null
+                            if (currentDate != previousDate) {
+                                DateGroupHeader(label = currentDate)
                             }
-                            items(items = txs, key = { it.txHash }) { tx ->
-                                ActivityTransactionItem(
-                                    transaction = tx,
-                                    onClick = { selectedTransaction = tx }
-                                )
+
+                            ActivityTransactionItem(
+                                transaction = tx,
+                                onClick = { selectedTransaction = tx }
+                            )
+                        }
+
+                        // Loading indicator at bottom when appending more pages
+                        if (pagingItems.loadState.append is LoadState.Loading) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                }
                             }
                         }
                     }
@@ -676,56 +701,25 @@ private fun DetailRow(label: String, value: String) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Groups a list of transactions by a human-readable date label.
- * Returns an ordered list of (label, transactions) pairs so the
- * caller can render headers without re-sorting.
- *
- * Uses `blockTimestampHex` when available; falls back to TODAY for
- * zero/null timestamps (pending transactions that haven't been mined yet).
- */
-private fun groupByDate(transactions: List<TransactionRecord>): List<Pair<String, List<TransactionRecord>>> {
+/** Returns a human-readable date group label for inline date headers in the paged list. */
+private fun TransactionRecord.dateLabel(): String {
+    val hex = blockTimestampHex
+    if (hex.isNullOrBlank() || hex == "0x0" || hex == "0") return "Pending"
+    val millis = runCatching {
+        if (hex.startsWith("0x", ignoreCase = true))
+            hex.removePrefix("0x").removePrefix("0X").toLong(16)
+        else hex.toLong()
+    }.getOrElse { 0L }
+    if (millis <= 0L) return "Pending"
     val today = LocalDate.now(ZoneId.systemDefault())
-    val yesterday = today.minusDays(1)
-
-    return transactions
-        .groupBy { tx ->
-            val hex = tx.blockTimestampHex
-            if (hex.isNullOrBlank() || hex == "0x0" || hex == "0") {
-                "Pending"
-            } else {
-                val millis = runCatching {
-                    if (hex.startsWith("0x", ignoreCase = true))
-                        hex.removePrefix("0x").removePrefix("0X").toLong(16)
-                    else hex.toLong()
-                }.getOrElse { 0L }
-
-                if (millis <= 0L) {
-                    "Pending"
-                } else {
-                    val date = Instant.ofEpochMilli(millis)
-                        .atZone(ZoneId.systemDefault())
-                        .toLocalDate()
-                    when (date) {
-                        today -> "Today"
-                        yesterday -> "Yesterday"
-                        else -> "Earlier"
-                    }
-                }
-            }
-        }
-        .entries
-        // Preserve a sensible display order: Pending (unconfirmed) first,
-        // then Today, Yesterday, Earlier.
-        .sortedBy { (label, _) ->
-            when (label) {
-                "Pending" -> 0
-                "Today" -> 1
-                "Yesterday" -> 2
-                else -> 3
-            }
-        }
-        .map { it.key to it.value }
+    val date = Instant.ofEpochMilli(millis)
+        .atZone(ZoneId.systemDefault())
+        .toLocalDate()
+    return when (date) {
+        today -> "Today"
+        today.minusDays(1) -> "Yesterday"
+        else -> "Earlier"
+    }
 }
 
 private fun buildExplorerUrl(txHash: String, network: NetworkType): String {

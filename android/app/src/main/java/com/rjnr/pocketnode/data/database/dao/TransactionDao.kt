@@ -45,6 +45,12 @@ interface TransactionDao {
     @Query("DELETE FROM transactions WHERE walletId = :walletId AND network = :network")
     suspend fun deleteByWalletAndNetwork(walletId: String, network: String)
 
-    @Query("SELECT * FROM transactions WHERE walletId = :walletId AND network = :network ORDER BY timestamp DESC")
+    @Query("SELECT * FROM transactions WHERE walletId = :walletId AND network = :network ORDER BY CASE WHEN status = 'PENDING' THEN 0 ELSE 1 END, timestamp DESC")
     fun getTransactionsPaged(walletId: String, network: String): PagingSource<Int, TransactionEntity>
+
+    @Query("SELECT * FROM transactions WHERE walletId = :walletId AND network = :network AND direction IN ('in', 'dao_unlock') ORDER BY CASE WHEN status = 'PENDING' THEN 0 ELSE 1 END, timestamp DESC")
+    fun getReceivedTransactionsPaged(walletId: String, network: String): PagingSource<Int, TransactionEntity>
+
+    @Query("SELECT * FROM transactions WHERE walletId = :walletId AND network = :network AND direction IN ('out', 'self', 'dao_deposit', 'dao_withdraw') ORDER BY CASE WHEN status = 'PENDING' THEN 0 ELSE 1 END, timestamp DESC")
+    fun getSentTransactionsPaged(walletId: String, network: String): PagingSource<Int, TransactionEntity>
 }
