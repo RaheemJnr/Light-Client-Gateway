@@ -1,7 +1,16 @@
 package com.rjnr.pocketnode.data.wallet
 
 import android.content.Context
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.rjnr.pocketnode.data.crypto.KeystoreEncryptionManager
+import com.rjnr.pocketnode.data.database.AppDatabase
+import com.rjnr.pocketnode.data.database.MIGRATION_1_2
+import com.rjnr.pocketnode.data.database.MIGRATION_2_3
+import com.rjnr.pocketnode.data.database.MIGRATION_3_4
+import com.rjnr.pocketnode.data.database.MIGRATION_4_5
+import com.rjnr.pocketnode.data.migration.KeyStoreMigrationHelper
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -17,6 +26,8 @@ class KeyManagerTest {
     private lateinit var keyManager: KeyManager
     private lateinit var mnemonicManager: MnemonicManager
     private lateinit var backupManager: KeyBackupManager
+    private lateinit var db: AppDatabase
+    private lateinit var migrationHelper: KeyStoreMigrationHelper
 
     private val testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
         .split(" ")
@@ -33,7 +44,24 @@ class KeyManagerTest {
         backupManager = KeyBackupManager(backupDir)
         backupManager.kdfIterations = 1000
         keyManager.keyBackupManager = backupManager
+
+        // Set up Room-backed KeyStoreMigrationHelper
+        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .allowMainThreadQueries()
+            .build()
+        val encryptionManager = KeystoreEncryptionManager.createForTest()
+        val migrationPrefs = context.getSharedPreferences("test_migration", Context.MODE_PRIVATE)
+        migrationPrefs.edit().clear().commit()
+        migrationHelper = KeyStoreMigrationHelper(db.keyMaterialDao(), encryptionManager, migrationPrefs)
+        keyManager.keyStoreMigrationHelper = migrationHelper
+
         keyManager.deleteWallet()
+    }
+
+    @After
+    fun tearDown() {
+        db.close()
     }
 
     // -- Mnemonic generation --
@@ -179,5 +207,37 @@ class KeyManagerTest {
         assertTrue(backupManager.hasBackup("default"))
         keyManager.deleteWallet()
         assertFalse(backupManager.hasBackup("default"))
+    }
+
+    // -- Room storage verification --
+
+    @Test
+    fun `writes go to Room and are readable`() {
+        keyManager.generateWalletWithMnemonic()
+        // Verify data is in Room via the migration helper
+        val data = kotlinx.coroutines.runBlocking { migrationHelper.readDecryptedKey("default") }
+        assertNotNull(data)
+        assertEquals(KeyManager.WALLET_TYPE_MNEMONIC, data!!.walletType)
+        assertNotNull(data.mnemonic)
+    }
+
+    @Test
+    fun `ESP fallback works when Room has no data`() {
+        // Simulate a pre-migration user: keys exist only in ESP, not Room.
+        // Write directly to the testPrefs (standing in for EncryptedSharedPreferences).
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val espPrefs = context.getSharedPreferences("test_keys", Context.MODE_PRIVATE)
+        espPrefs.edit()
+            .putString("private_key", "ab".repeat(32))
+            .putString("wallet_type", KeyManager.WALLET_TYPE_MNEMONIC)
+            .putString("mnemonic_words", testMnemonic.joinToString(" "))
+            .putBoolean("mnemonic_backed_up", false)
+            .commit()
+
+        // Room is empty — reads should fall back to ESP
+        assertTrue(keyManager.hasWallet())
+        assertEquals(testMnemonic, keyManager.getMnemonic())
+        assertEquals(KeyManager.WALLET_TYPE_MNEMONIC, keyManager.getWalletType())
+        assertFalse(keyManager.hasMnemonicBackup())
     }
 }

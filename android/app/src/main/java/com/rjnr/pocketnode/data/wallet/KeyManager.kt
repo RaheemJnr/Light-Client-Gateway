@@ -7,8 +7,10 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.Script
+import com.rjnr.pocketnode.data.migration.KeyStoreMigrationHelper
 import androidx.annotation.VisibleForTesting
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.runBlocking
 import org.nervos.ckb.crypto.Blake2b
 import org.nervos.ckb.crypto.secp256k1.ECKeyPair
 import org.nervos.ckb.crypto.secp256k1.Sign
@@ -29,6 +31,9 @@ class KeyManager @Inject constructor(
     @VisibleForTesting
     internal var keyBackupManager: KeyBackupManager? = null
 
+    @VisibleForTesting
+    internal var keyStoreMigrationHelper: KeyStoreMigrationHelper? = null
+
     private var sessionPin: CharArray? = null
 
     fun setSessionPin(pin: CharArray) {
@@ -44,6 +49,11 @@ class KeyManager @Inject constructor(
     @Inject
     fun setBackupManager(backupManager: KeyBackupManager) {
         this.keyBackupManager = backupManager
+    }
+
+    @Inject
+    fun setMigrationHelper(helper: KeyStoreMigrationHelper) {
+        this.keyStoreMigrationHelper = helper
     }
 
     private var walletResetDueToCorruption = false
@@ -92,7 +102,14 @@ class KeyManager @Inject constructor(
         )
     }
 
-    fun hasWallet(): Boolean = prefs.contains(KEY_PRIVATE_KEY)
+    fun hasWallet(): Boolean {
+        val helper = keyStoreMigrationHelper
+        if (helper != null) {
+            val hasKeys = runBlocking { helper.hasAnyKeys() }
+            if (hasKeys) return true
+        }
+        return prefs.contains(KEY_PRIVATE_KEY)
+    }
 
     // -- Existing methods (raw key) --
 
@@ -123,15 +140,10 @@ class KeyManager @Inject constructor(
         val privateKeyBytes = mnemonicManager.mnemonicToPrivateKey(words)
         val hex = Numeric.toHexStringNoPrefixZeroPadded(BigInteger(1, privateKeyBytes), 64)
 
-        // Single atomic write — commit() is synchronous, all-or-nothing.
-        // Prevents race where app is killed between key save and mnemonic save.
-        prefs.edit()
-            .putString(KEY_PRIVATE_KEY, hex)
-            .putString(KEY_WALLET_TYPE, WALLET_TYPE_MNEMONIC)
-            .putString(KEY_MNEMONIC, words.joinToString(" "))
-            .putBoolean(KEY_MNEMONIC_BACKED_UP, false)
-            .commit()
+        // Write to Room (primary)
+        writeToRoom("default", hex, words.joinToString(" "), WALLET_TYPE_MNEMONIC, false)
 
+        // Write to PIN backup (secondary)
         writeBackupIfPinAvailable("default") {
             KeyMaterial(
                 privateKey = hex,
@@ -153,14 +165,10 @@ class KeyManager @Inject constructor(
         val privateKeyBytes = mnemonicManager.mnemonicToPrivateKey(words, passphrase)
         val hex = Numeric.toHexStringNoPrefixZeroPadded(BigInteger(1, privateKeyBytes), 64)
 
-        // Single atomic write — mark as backed up since user already knows their mnemonic
-        prefs.edit()
-            .putString(KEY_PRIVATE_KEY, hex)
-            .putString(KEY_WALLET_TYPE, WALLET_TYPE_MNEMONIC)
-            .putString(KEY_MNEMONIC, words.joinToString(" "))
-            .putBoolean(KEY_MNEMONIC_BACKED_UP, true)
-            .commit()
+        // Write to Room (primary)
+        writeToRoom("default", hex, words.joinToString(" "), WALLET_TYPE_MNEMONIC, true)
 
+        // Write to PIN backup (secondary)
         writeBackupIfPinAvailable("default") {
             KeyMaterial(
                 privateKey = hex,
@@ -174,21 +182,61 @@ class KeyManager @Inject constructor(
     }
 
     fun getMnemonic(): List<String>? {
+        val helper = keyStoreMigrationHelper
+        if (helper != null) {
+            val data = runBlocking { helper.readDecryptedKey("default") }
+            if (data != null) {
+                return data.mnemonic?.split(" ")
+            }
+        }
+        // Fallback to ESP
         val joined = prefs.getString(KEY_MNEMONIC, null) ?: return null
         return joined.split(" ")
     }
 
     fun getWalletType(): String {
+        val helper = keyStoreMigrationHelper
+        if (helper != null) {
+            val data = runBlocking { helper.readDecryptedKey("default") }
+            if (data != null) {
+                return data.walletType
+            }
+        }
+        // Fallback to ESP
         return prefs.getString(KEY_WALLET_TYPE, WALLET_TYPE_RAW_KEY) ?: WALLET_TYPE_RAW_KEY
     }
 
     fun hasMnemonicBackup(): Boolean {
+        val helper = keyStoreMigrationHelper
+        if (helper != null) {
+            val data = runBlocking { helper.readDecryptedKey("default") }
+            if (data != null) {
+                return data.mnemonicBackedUp
+            }
+        }
+        // Fallback to ESP
         return prefs.getBoolean(KEY_MNEMONIC_BACKED_UP, false)
     }
 
     fun setMnemonicBackedUp(backedUp: Boolean) {
+        val helper = keyStoreMigrationHelper
+        if (helper != null) {
+            val data = runBlocking { helper.readDecryptedKey("default") }
+            if (data != null) {
+                writeToRoom("default", data.privateKeyHex, data.mnemonic, data.walletType, backedUp)
+                writeBackupIfPinAvailable("default") {
+                    KeyMaterial(
+                        privateKey = data.privateKeyHex,
+                        mnemonic = data.mnemonic,
+                        walletType = data.walletType,
+                        mnemonicBackedUp = backedUp
+                    )
+                }
+                return
+            }
+        }
+        // ESP fallback
         prefs.edit().putBoolean(KEY_MNEMONIC_BACKED_UP, backedUp).commit()
-
         val pk = prefs.getString(KEY_PRIVATE_KEY, null) ?: return
         writeBackupIfPinAvailable("default") {
             KeyMaterial(
@@ -218,12 +266,30 @@ class KeyManager @Inject constructor(
     }
 
     fun getPrivateKey(): ByteArray {
+        // Try Room first
+        val helper = keyStoreMigrationHelper
+        if (helper != null) {
+            val data = runBlocking { helper.readDecryptedKey("default") }
+            if (data != null) {
+                return Numeric.hexStringToByteArray(data.privateKeyHex)
+            }
+        }
+        // Fallback to ESP
         val hex = prefs.getString(KEY_PRIVATE_KEY, null)
             ?: throw IllegalStateException("No wallet found")
         return Numeric.hexStringToByteArray(hex)
     }
 
     fun getKeyPair(): ECKeyPair {
+        // Try Room first
+        val helper = keyStoreMigrationHelper
+        if (helper != null) {
+            val data = runBlocking { helper.readDecryptedKey("default") }
+            if (data != null) {
+                return ECKeyPair.create(BigInteger(data.privateKeyHex, 16))
+            }
+        }
+        // Fallback to ESP
         val hex = prefs.getString(KEY_PRIVATE_KEY, null)
             ?: throw IllegalStateException("No wallet found")
         val privateKey = BigInteger(hex, 16)
@@ -254,6 +320,12 @@ class KeyManager @Inject constructor(
 
     fun deleteWallet() {
         keyBackupManager?.deleteBackup("default")
+        // Delete from Room
+        val helper = keyStoreMigrationHelper
+        if (helper != null) {
+            runBlocking { helper.deleteKey("default") }
+        }
+        // Also clear ESP (for pre-migration state)
         prefs.edit()
             .remove(KEY_PRIVATE_KEY)
             .remove(KEY_MNEMONIC)
@@ -264,11 +336,11 @@ class KeyManager @Inject constructor(
 
     private fun savePrivateKey(privateKey: BigInteger, walletType: String) {
         val hex = Numeric.toHexStringNoPrefixZeroPadded(privateKey, 64)
-        prefs.edit()
-            .putString(KEY_PRIVATE_KEY, hex)
-            .putString(KEY_WALLET_TYPE, walletType)
-            .commit()
 
+        // Write to Room (primary)
+        writeToRoom("default", hex, null, walletType, false)
+
+        // Write to PIN backup (secondary)
         writeBackupIfPinAvailable("default") {
             KeyMaterial(
                 privateKey = hex,
@@ -282,20 +354,18 @@ class KeyManager @Inject constructor(
     // -- Wallet-scoped key storage (multi-wallet support) --
 
     fun storeKeysForWallet(walletId: String, privateKey: ByteArray, mnemonic: List<String>?) {
-        val walletPrefs = getWalletPrefs(walletId)
-        walletPrefs.edit().apply {
-            putString(KEY_PRIVATE_KEY, privateKey.joinToString("") { "%02x".format(it) })
-            putString(KEY_WALLET_TYPE, if (mnemonic != null) WALLET_TYPE_MNEMONIC else WALLET_TYPE_RAW_KEY)
-            if (mnemonic != null) {
-                putString(KEY_MNEMONIC, mnemonic.joinToString(" "))
-            }
-        }.commit()
+        val hex = privateKey.joinToString("") { "%02x".format(it) }
+        val walletType = if (mnemonic != null) WALLET_TYPE_MNEMONIC else WALLET_TYPE_RAW_KEY
 
+        // Write to Room (primary)
+        writeToRoom(walletId, hex, mnemonic?.joinToString(" "), walletType, false)
+
+        // Write to PIN backup (secondary)
         writeBackupIfPinAvailable(walletId) {
             KeyMaterial(
-                privateKey = privateKey.joinToString("") { "%02x".format(it) },
+                privateKey = hex,
                 mnemonic = mnemonic?.joinToString(" "),
-                walletType = if (mnemonic != null) WALLET_TYPE_MNEMONIC else WALLET_TYPE_RAW_KEY,
+                walletType = walletType,
                 mnemonicBackedUp = false
             )
         }
@@ -330,11 +400,27 @@ class KeyManager @Inject constructor(
     }
 
     fun getMnemonicForWallet(walletId: String): List<String>? {
+        val helper = keyStoreMigrationHelper
+        if (helper != null) {
+            val data = runBlocking { helper.readDecryptedKey(walletId) }
+            if (data != null) {
+                return data.mnemonic?.split(" ")
+            }
+        }
+        // Fallback to ESP
         val joined = getWalletPrefs(walletId).getString(KEY_MNEMONIC, null) ?: return null
         return joined.split(" ")
     }
 
     fun getPrivateKeyForWallet(walletId: String): ByteArray? {
+        val helper = keyStoreMigrationHelper
+        if (helper != null) {
+            val data = runBlocking { helper.readDecryptedKey(walletId) }
+            if (data != null) {
+                return Numeric.hexStringToByteArray(data.privateKeyHex)
+            }
+        }
+        // Fallback to ESP
         val hex = getWalletPrefs(walletId).getString(KEY_PRIVATE_KEY, null) ?: return null
         return Numeric.hexStringToByteArray(hex)
     }
@@ -361,8 +447,24 @@ class KeyManager @Inject constructor(
     }
 
     fun setMnemonicBackedUpForWallet(walletId: String, backedUp: Boolean) {
+        val helper = keyStoreMigrationHelper
+        if (helper != null) {
+            val data = runBlocking { helper.readDecryptedKey(walletId) }
+            if (data != null) {
+                writeToRoom(walletId, data.privateKeyHex, data.mnemonic, data.walletType, backedUp)
+                writeBackupIfPinAvailable(walletId) {
+                    KeyMaterial(
+                        privateKey = data.privateKeyHex,
+                        mnemonic = data.mnemonic,
+                        walletType = data.walletType,
+                        mnemonicBackedUp = backedUp
+                    )
+                }
+                return
+            }
+        }
+        // ESP fallback
         getWalletPrefs(walletId).edit().putBoolean(KEY_MNEMONIC_BACKED_UP, backedUp).commit()
-
         writeBackupIfPinAvailable(walletId) {
             val walletPrefs = getWalletPrefs(walletId)
             KeyMaterial(
@@ -375,17 +477,44 @@ class KeyManager @Inject constructor(
     }
 
     fun hasMnemonicBackupForWallet(walletId: String): Boolean {
+        val helper = keyStoreMigrationHelper
+        if (helper != null) {
+            val data = runBlocking { helper.readDecryptedKey(walletId) }
+            if (data != null) {
+                return data.mnemonicBackedUp
+            }
+        }
+        // Fallback to ESP
         return getWalletPrefs(walletId).getBoolean(KEY_MNEMONIC_BACKED_UP, false)
     }
 
     fun deleteWalletKeys(walletId: String) {
         keyBackupManager?.deleteBackup(walletId)
+        // Delete from Room
+        val helper = keyStoreMigrationHelper
+        if (helper != null) {
+            runBlocking { helper.deleteKey(walletId) }
+        }
+        // Also clear ESP (for pre-migration state)
         getWalletPrefs(walletId).edit()
             .remove(KEY_PRIVATE_KEY)
             .remove(KEY_MNEMONIC)
             .remove(KEY_MNEMONIC_BACKED_UP)
             .remove(KEY_WALLET_TYPE)
             .commit()
+    }
+
+    private fun writeToRoom(
+        walletId: String,
+        privateKeyHex: String,
+        mnemonic: String?,
+        walletType: String,
+        mnemonicBackedUp: Boolean
+    ) {
+        val helper = keyStoreMigrationHelper ?: return
+        runBlocking {
+            helper.migrateWallet(walletId, privateKeyHex, mnemonic, walletType, mnemonicBackedUp)
+        }
     }
 
     private fun writeBackupIfPinAvailable(walletId: String, buildMaterial: () -> KeyMaterial) {

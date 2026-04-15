@@ -81,6 +81,14 @@ class KeyStoreMigrationHelper(
         migrationPrefs.edit().putBoolean(KEY_MIGRATION_COMPLETE, true).commit()
     }
 
+    suspend fun deleteKey(walletId: String) {
+        keyMaterialDao.delete(walletId)
+    }
+
+    suspend fun hasAnyKeys(): Boolean {
+        return keyMaterialDao.count() > 0
+    }
+
     companion object {
         private const val TAG = "KeyStoreMigrationHelper"
         private const val KEY_MIGRATION_COMPLETE = "esp_to_room_migration_complete"
