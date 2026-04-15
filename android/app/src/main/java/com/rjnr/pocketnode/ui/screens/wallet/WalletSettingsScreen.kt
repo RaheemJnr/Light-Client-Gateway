@@ -323,6 +323,7 @@ fun WalletSettingsScreen(
                                     onNavigateToPinVerify()
                                 } else {
                                     showSeedPhrase = true
+                                    viewModel.loadSensitiveData()
                                 }
                             }
                         )
@@ -410,6 +411,7 @@ fun WalletSettingsScreen(
                                     onNavigateToPinVerify()
                                 } else {
                                     showPrivateKey = true
+                                    viewModel.loadSensitiveData()
                                 }
                             }
                         )

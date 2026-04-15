@@ -217,10 +217,6 @@ class SendViewModel @Inject constructor(
 
         // Capture wallet identity upfront to prevent wallet-switch race conditions
         val capturedAddress = repository.getCurrentAddress()
-        val capturedKey = try { repository.getPrivateKey() } catch (e: Exception) {
-            _uiState.update { it.copy(error = "Failed to access wallet keys: ${e.message}") }
-            return
-        }
         val capturedNetwork = repository.currentNetwork
 
         if (capturedAddress == null) {
@@ -229,6 +225,10 @@ class SendViewModel @Inject constructor(
         }
 
         sendJob = viewModelScope.launch {
+            val capturedKey = try { repository.getPrivateKey() } catch (e: Exception) {
+                _uiState.update { it.copy(error = "Failed to access wallet keys: ${e.message}") }
+                return@launch
+            }
             _uiState.update {
                 it.copy(
                     isLoading = true,

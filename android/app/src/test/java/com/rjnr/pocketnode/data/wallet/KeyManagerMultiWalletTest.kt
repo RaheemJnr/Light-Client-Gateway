@@ -10,6 +10,7 @@ import com.rjnr.pocketnode.data.database.MIGRATION_2_3
 import com.rjnr.pocketnode.data.database.MIGRATION_3_4
 import com.rjnr.pocketnode.data.database.MIGRATION_4_5
 import com.rjnr.pocketnode.data.migration.KeyStoreMigrationHelper
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -44,7 +45,7 @@ class KeyManagerMultiWalletTest {
     fun tearDown() { db.close() }
 
     @Test
-    fun `storeKeysForWallet and getPrivateKeyForWallet are isolated per wallet`() {
+    fun `storeKeysForWallet and getPrivateKeyForWallet are isolated per wallet`() = runTest {
         val key1 = ByteArray(32) { 0x01 }
         val key2 = ByteArray(32) { 0x02 }
 
@@ -56,7 +57,7 @@ class KeyManagerMultiWalletTest {
     }
 
     @Test
-    fun `deleteWalletKeys removes only target wallet`() {
+    fun `deleteWalletKeys removes only target wallet`() = runTest {
         val key1 = ByteArray(32) { 0x01 }
         val key2 = ByteArray(32) { 0x02 }
 
@@ -70,7 +71,7 @@ class KeyManagerMultiWalletTest {
     }
 
     @Test
-    fun `getMnemonicForWallet returns stored mnemonic`() {
+    fun `getMnemonicForWallet returns stored mnemonic`() = runTest {
         val key = ByteArray(32) { 0x01 }
         val mnemonic = listOf("abandon", "abandon", "abandon", "abandon", "abandon", "abandon",
             "abandon", "abandon", "abandon", "abandon", "abandon", "about")
@@ -81,7 +82,7 @@ class KeyManagerMultiWalletTest {
     }
 
     @Test
-    fun `getMnemonicForWallet returns null for raw key wallet`() {
+    fun `getMnemonicForWallet returns null for raw key wallet`() = runTest {
         val key = ByteArray(32) { 0x01 }
         keyManager.storeKeysForWallet("wallet-1", key, null)
 

@@ -355,13 +355,13 @@ class GatewayRepository @Inject constructor(
     /**
      * Checks if a wallet is already configured
      */
-    fun hasWallet(): Boolean = keyManager.hasWallet()
+    suspend fun hasWallet(): Boolean = keyManager.hasWallet()
 
     /**
      * Returns true if the current wallet is a mnemonic wallet that hasn't completed backup verification.
      * Used by MainActivity to gate access to the dashboard until backup is done.
      */
-    fun needsMnemonicBackup(): Boolean {
+    suspend fun needsMnemonicBackup(): Boolean {
         return activeWalletType == KeyManager.WALLET_TYPE_MNEMONIC
             && !hasMnemonicBackupForActiveWallet()
     }
@@ -428,7 +428,7 @@ class GatewayRepository @Inject constructor(
     }
 
     fun getWalletType(): String = activeWalletType
-    fun getMnemonic(): List<String>? {
+    suspend fun getMnemonic(): List<String>? {
         // Use wallet-scoped mnemonic — never fall back to global prefs
         // (raw_key wallets correctly return null here)
         val wId = activeWalletId
@@ -438,12 +438,12 @@ class GatewayRepository @Inject constructor(
             keyManager.getMnemonic()
         }
     }
-    fun hasMnemonicBackup(): Boolean = hasMnemonicBackupForActiveWallet()
+    suspend fun hasMnemonicBackup(): Boolean = hasMnemonicBackupForActiveWallet()
 
     /**
      * Check backup status for the active wallet specifically, not the global legacy flag.
      */
-    fun hasMnemonicBackupForActiveWallet(): Boolean {
+    suspend fun hasMnemonicBackupForActiveWallet(): Boolean {
         val wId = activeWalletId
         return if (wId.isNotEmpty()) {
             keyManager.hasMnemonicBackupForWallet(wId)
@@ -451,7 +451,7 @@ class GatewayRepository @Inject constructor(
             keyManager.hasMnemonicBackup()
         }
     }
-    fun setMnemonicBackedUp(backedUp: Boolean) {
+    suspend fun setMnemonicBackedUp(backedUp: Boolean) {
         if (activeWalletId.isNotEmpty()) {
             keyManager.setMnemonicBackedUpForWallet(activeWalletId, backedUp)
         } else {
@@ -1117,7 +1117,7 @@ class GatewayRepository @Inject constructor(
         }
     }
 
-    fun getPrivateKey(): ByteArray {
+    suspend fun getPrivateKey(): ByteArray {
         return if (activeWalletId.isNotEmpty()) {
             keyManager.getPrivateKeyForWallet(activeWalletId)
                 ?: throw IllegalStateException("No key found for active wallet $activeWalletId")

@@ -171,33 +171,41 @@ class WalletSettingsViewModel @Inject constructor(
         return wallet.parentWalletId != null
     }
 
-    fun getPrivateKeyHex(): String? {
-        return try {
-            keyManager.getPrivateKeyForWallet(walletId)?.let { bytes ->
-                bytes.joinToString("") { "%02x".format(it) }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to get private key", e)
-            null
-        }
-    }
+    fun getPrivateKeyHex(): String? = _uiState.value.privateKeyHex
 
     fun requiresPinForSeedPhrase(): Boolean = pinManager.hasPin()
 
     fun onPinVerified() {
         _uiState.update { it.copy(seedPhraseUnlocked = true) }
+        loadSensitiveData()
     }
 
     fun lockSeedPhrase() {
-        _uiState.update { it.copy(seedPhraseUnlocked = false) }
+        _uiState.update { it.copy(seedPhraseUnlocked = false, privateKeyHex = null, mnemonicWords = null) }
     }
 
-    fun getMnemonic(): List<String>? {
-        return try {
-            keyManager.getMnemonicForWallet(walletId)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to get mnemonic", e)
-            null
+    fun getMnemonic(): List<String>? = _uiState.value.mnemonicWords
+
+    /**
+     * Load private key and mnemonic from Room into UiState.
+     * Called when seed phrase is unlocked (PIN verified or no PIN required).
+     */
+    fun loadSensitiveData() {
+        viewModelScope.launch {
+            try {
+                val keyHex = keyManager.getPrivateKeyForWallet(walletId)?.let { bytes ->
+                    bytes.joinToString("") { "%02x".format(it) }
+                }
+                val words = try {
+                    keyManager.getMnemonicForWallet(walletId)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to get mnemonic", e)
+                    null
+                }
+                _uiState.update { it.copy(privateKeyHex = keyHex, mnemonicWords = words) }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to load sensitive data", e)
+            }
         }
     }
 
@@ -231,5 +239,7 @@ data class WalletSettingsUiState(
     val pendingTxCount: Int = 0,
     val deleted: Boolean = false,
     val error: String? = null,
-    val seedPhraseUnlocked: Boolean = false
+    val seedPhraseUnlocked: Boolean = false,
+    val privateKeyHex: String? = null,
+    val mnemonicWords: List<String>? = null
 )

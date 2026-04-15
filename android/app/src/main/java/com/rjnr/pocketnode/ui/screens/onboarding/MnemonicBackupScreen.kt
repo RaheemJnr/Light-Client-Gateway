@@ -63,42 +63,42 @@ class MnemonicBackupViewModel @Inject constructor(
     }
 
     private fun loadMnemonic() {
-        // Detect wallet type for the active wallet
         viewModelScope.launch {
+            // Detect wallet type for the active wallet
             val activeWallet = walletRepository.getActive()
             val walletType = activeWallet?.type ?: ""
             val isSubAccount = activeWallet?.parentWalletId != null
             _uiState.update { it.copy(walletType = walletType, isSubAccount = isSubAccount) }
-        }
 
-        val words = repository.getMnemonic()
-        if (words.isNullOrEmpty()) {
-            // For raw_key or sub-account wallets, this is expected — not an error
+            val words = repository.getMnemonic()
+            if (words.isNullOrEmpty()) {
+                // For raw_key or sub-account wallets, this is expected — not an error
+                val privateKeyHex = try {
+                    repository.getPrivateKey().toHex()
+                } catch (_: Exception) { null }
+                _uiState.update { it.copy(privateKeyHex = privateKeyHex) }
+                return@launch
+            }
+            val random = java.util.Random(System.nanoTime())
+            val positions = words.indices.toList().shuffled(random).take(3).sorted()
+            val options = positions.associateWith { pos ->
+                val correct = words[pos]
+                val decoys = words.filterIndexed { i, _ -> i != pos }
+                    .distinct()
+                    .filter { it != correct }
+                    .shuffled(random)
+                    .take(3)
+                val choices = mutableListOf(correct).apply { addAll(decoys) }
+                choices.apply { shuffle(random) }.toList()
+            }
             val privateKeyHex = try {
                 repository.getPrivateKey().toHex()
-            } catch (_: Exception) { null }
-            _uiState.update { it.copy(privateKeyHex = privateKeyHex) }
-            return
-        }
-        val random = java.util.Random(System.nanoTime())
-        val positions = words.indices.toList().shuffled(random).take(3).sorted()
-        val options = positions.associateWith { pos ->
-            val correct = words[pos]
-            val decoys = words.filterIndexed { i, _ -> i != pos }
-                .distinct()
-                .filter { it != correct }
-                .shuffled(random)
-                .take(3)
-            val choices = mutableListOf(correct).apply { addAll(decoys) }
-            choices.apply { shuffle(random) }.toList()
-        }
-        val privateKeyHex = try {
-            repository.getPrivateKey().toHex()
-        } catch (_: Exception) {
-            null
-        }
-        _uiState.update {
-            it.copy(words = words, privateKeyHex = privateKeyHex, verifyPositions = positions, verifyOptions = options)
+            } catch (_: Exception) {
+                null
+            }
+            _uiState.update {
+                it.copy(words = words, privateKeyHex = privateKeyHex, verifyPositions = positions, verifyOptions = options)
+            }
         }
     }
 
@@ -118,8 +118,10 @@ class MnemonicBackupViewModel @Inject constructor(
             state.userSelections[pos] == state.words[pos]
         }
         if (allCorrect) {
-            repository.setMnemonicBackedUp(true)
-            _uiState.update { it.copy(currentStep = 3) }
+            viewModelScope.launch {
+                repository.setMnemonicBackedUp(true)
+                _uiState.update { it.copy(currentStep = 3) }
+            }
         } else {
             _uiState.update {
                 it.copy(error = "Some words are incorrect. Please try again.", userSelections = emptyMap())
@@ -128,7 +130,9 @@ class MnemonicBackupViewModel @Inject constructor(
     }
 
     fun markBackedUpAndComplete() {
-        repository.setMnemonicBackedUp(true)
+        viewModelScope.launch {
+            repository.setMnemonicBackedUp(true)
+        }
     }
 
     fun clearError() {

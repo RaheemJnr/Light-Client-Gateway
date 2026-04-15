@@ -382,40 +382,46 @@ class HomeViewModel @Inject constructor(
      */
     fun showBackup() {
         if (isMnemonicWallet()) return // handled by navigation in HomeScreen
-        try {
-            val privateKey = repository.getPrivateKey()
-            val hex = org.nervos.ckb.utils.Numeric.toHexStringNoPrefix(privateKey)
-            _uiState.update { it.copy(privateKeyHex = hex, showBackupDialog = true) }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to get private key for backup", e)
-            _uiState.update { it.copy(error = "Failed to access wallet keys") }
+        viewModelScope.launch {
+            try {
+                val privateKey = repository.getPrivateKey()
+                val hex = org.nervos.ckb.utils.Numeric.toHexStringNoPrefix(privateKey)
+                _uiState.update { it.copy(privateKeyHex = hex, showBackupDialog = true) }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to get private key for backup", e)
+                _uiState.update { it.copy(error = "Failed to access wallet keys") }
+            }
         }
     }
 
     private fun checkBackupStatus() {
-        val type = repository.getWalletType()
-        // Sub-accounts (parentWalletId != null) don't hold their own mnemonic —
-        // the parent wallet's backup covers them. Don't show backup reminder.
-        val activeWallet = _uiState.value.wallets.find { it.isActive }
-        val isSubAccount = activeWallet?.parentWalletId != null
-        val needsBackup = type == KeyManager.WALLET_TYPE_MNEMONIC
-            && !isSubAccount
-            && !repository.hasMnemonicBackupForActiveWallet()
-        _uiState.update { it.copy(walletType = type, showBackupReminder = needsBackup) }
+        viewModelScope.launch {
+            val type = repository.getWalletType()
+            // Sub-accounts (parentWalletId != null) don't hold their own mnemonic —
+            // the parent wallet's backup covers them. Don't show backup reminder.
+            val activeWallet = _uiState.value.wallets.find { it.isActive }
+            val isSubAccount = activeWallet?.parentWalletId != null
+            val needsBackup = type == KeyManager.WALLET_TYPE_MNEMONIC
+                && !isSubAccount
+                && !repository.hasMnemonicBackupForActiveWallet()
+            _uiState.update { it.copy(walletType = type, showBackupReminder = needsBackup) }
+        }
     }
 
     fun refreshSecurityState() {
-        val hasPin = pinManager.hasPin()
-        val hasBiometrics = authManager.isBiometricEnabled()
-        // Sub-accounts inherit parent's backup status — treat as backed up
-        val activeWallet = _uiState.value.wallets.find { it.isActive }
-        val isSubAccount = activeWallet?.parentWalletId != null
-        val hasMnemonicBackup = isSubAccount || repository.hasMnemonicBackupForActiveWallet()
-        _uiState.update {
-            it.copy(
-                hasPinOrBiometrics = hasPin || hasBiometrics,
-                hasMnemonicBackup = hasMnemonicBackup
-            )
+        viewModelScope.launch {
+            val hasPin = pinManager.hasPin()
+            val hasBiometrics = authManager.isBiometricEnabled()
+            // Sub-accounts inherit parent's backup status — treat as backed up
+            val activeWallet = _uiState.value.wallets.find { it.isActive }
+            val isSubAccount = activeWallet?.parentWalletId != null
+            val hasMnemonicBackup = isSubAccount || repository.hasMnemonicBackupForActiveWallet()
+            _uiState.update {
+                it.copy(
+                    hasPinOrBiometrics = hasPin || hasBiometrics,
+                    hasMnemonicBackup = hasMnemonicBackup
+                )
+            }
         }
     }
 

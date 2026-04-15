@@ -1,6 +1,7 @@
 package com.rjnr.pocketnode.ui.screens.security
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.wallet.KeyManager
@@ -9,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class SecurityChecklistUiState(
@@ -31,12 +33,14 @@ class SecurityChecklistViewModel @Inject constructor(
     }
 
     fun refreshState() {
-        _uiState.update {
-            it.copy(
-                hasPinOrBiometrics = pinManager.hasPin(),
-                hasMnemonicBackup = repository.hasMnemonicBackup(),
-                isMnemonicWallet = repository.getWalletType() == KeyManager.WALLET_TYPE_MNEMONIC
-            )
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    hasPinOrBiometrics = pinManager.hasPin(),
+                    hasMnemonicBackup = repository.hasMnemonicBackup(),
+                    isMnemonicWallet = repository.getWalletType() == KeyManager.WALLET_TYPE_MNEMONIC
+                )
+            }
         }
     }
 }
