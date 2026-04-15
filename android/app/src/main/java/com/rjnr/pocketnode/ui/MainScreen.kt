@@ -127,6 +127,7 @@ fun MainScreen(
                     onNavigateToBackup = onNavigateToBackup,
                     onNavigateToSecuritySettings = onNavigateToSecuritySettings,
                     onNavigateToImport = onNavigateToImport,
+                    onNavigateToWalletManager = onNavigateToWalletManager,
                 )
             }
         }

@@ -67,6 +67,7 @@ import com.composables.icons.lucide.RefreshCw
 import com.composables.icons.lucide.Shield
 import com.composables.icons.lucide.ShieldCheck
 import com.composables.icons.lucide.Terminal
+import com.composables.icons.lucide.Wallet
 import com.rjnr.pocketnode.BuildConfig
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
@@ -88,6 +89,7 @@ fun SettingsScreen(
     onNavigateToBackup: () -> Unit = {},
     onNavigateToSecuritySettings: () -> Unit = {},
     onNavigateToImport: () -> Unit = {},
+    onNavigateToWalletManager: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -262,6 +264,7 @@ fun SettingsScreen(
         uiState,
         onNavigateToNodeStatus,
         context,
+        onNavigateToWalletManager = onNavigateToWalletManager,
         showSyncDialog = { viewModel.showSyncDialog() },
         showSyncStrategyDialog = { viewModel.showSyncStrategyDialog() },
         requestNetworkSwitch = {
@@ -293,6 +296,7 @@ private fun SettingsScreenUI(
     uiState: SettingsViewModel.UiState,
     onNavigateToNodeStatus: () -> Unit,
     context: Context,
+    onNavigateToWalletManager: () -> Unit = {},
     showSyncDialog: () -> Unit,
     showSyncStrategyDialog: () -> Unit = {},
     requestNetworkSwitch: (NetworkType) -> Unit,
@@ -335,11 +339,18 @@ private fun SettingsScreenUI(
 
             item {
                 SettingsLinkRow(
+                    icon = Lucide.Wallet,
+                    title = "Manage Wallets",
+                    onClick = onNavigateToWalletManager
+                )
+            }
+
+            item {
+                SettingsLinkRow(
                     icon = Lucide.ShieldCheck,
                     title = "Backup Wallet",
                     onClick = { onNavigateToBackup() }
                 )
-
             }
 
             item {
