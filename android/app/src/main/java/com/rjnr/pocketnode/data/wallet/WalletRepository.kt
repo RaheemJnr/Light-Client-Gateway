@@ -3,6 +3,9 @@ package com.rjnr.pocketnode.data.wallet
 import android.util.Log
 import com.rjnr.pocketnode.data.database.AppDatabase
 import com.rjnr.pocketnode.data.database.DatabaseMaintenanceUtil
+import com.rjnr.pocketnode.data.database.dao.BalanceCacheDao
+import com.rjnr.pocketnode.data.database.dao.DaoCellDao
+import com.rjnr.pocketnode.data.database.dao.TransactionDao
 import com.rjnr.pocketnode.data.database.dao.WalletDao
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
@@ -20,7 +23,10 @@ class WalletRepository @Inject constructor(
     private val keyManager: KeyManager,
     private val walletPreferences: WalletPreferences,
     private val mnemonicManager: MnemonicManager,
-    private val appDatabase: AppDatabase
+    private val appDatabase: AppDatabase,
+    private val transactionDao: TransactionDao,
+    private val balanceCacheDao: BalanceCacheDao,
+    private val daoCellDao: DaoCellDao
 ) {
     val walletsFlow: Flow<List<WalletEntity>> = walletDao.getAllFlow()
 
@@ -247,8 +253,14 @@ class WalletRepository @Inject constructor(
     suspend fun deleteWallet(walletId: String) {
         keyManager.deleteWalletKeys(walletId)
         walletDao.delete(walletId)
+        // Clean up wallet-scoped caches for both networks
+        for (network in listOf("MAINNET", "TESTNET")) {
+            transactionDao.deleteByWalletAndNetwork(walletId, network)
+            balanceCacheDao.deleteByWalletAndNetwork(walletId, network)
+            daoCellDao.deleteByWalletAndNetwork(walletId, network)
+        }
         DatabaseMaintenanceUtil.vacuum(appDatabase)
-        Log.d(TAG, "Deleted wallet: $walletId")
+        Log.d(TAG, "Deleted wallet and caches: $walletId")
     }
 
     suspend fun walletCount(): Int = walletDao.count()

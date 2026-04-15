@@ -15,10 +15,12 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.util.Log
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.wallet.MnemonicManager
+import com.rjnr.pocketnode.data.wallet.WalletRepository
 import com.rjnr.pocketnode.ui.components.SyncOptionsDialog
 import com.rjnr.pocketnode.ui.util.Bip39WordList
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -42,10 +44,13 @@ data class MnemonicImportUiState(
     val error: String? = null
 )
 
+private const val TAG = "MnemonicImportVM"
+
 @HiltViewModel
 class MnemonicImportViewModel @Inject constructor(
     private val repository: GatewayRepository,
-    private val mnemonicManager: MnemonicManager
+    private val mnemonicManager: MnemonicManager,
+    private val walletRepository: WalletRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MnemonicImportUiState())
@@ -110,20 +115,23 @@ class MnemonicImportViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.update { it.copy(isImporting = true, error = null) }
-            repository.importFromMnemonic(words)
-                .onSuccess {
-                    val showDialog = repository.currentNetwork == NetworkType.MAINNET
-                    _uiState.update {
-                        it.copy(
-                            isImporting = false,
-                            importSuccess = !showDialog,
-                            showSyncModeDialog = showDialog
-                        )
-                    }
+            try {
+                // Import via WalletRepository so a Room entity is created
+                val entity = walletRepository.importWallet("Imported Wallet", words)
+                Log.d(TAG, "Imported wallet entity: ${entity.walletId}")
+                repository.onActiveWalletChanged(entity)
+                val showDialog = repository.currentNetwork == NetworkType.MAINNET
+                _uiState.update {
+                    it.copy(
+                        isImporting = false,
+                        importSuccess = !showDialog,
+                        showSyncModeDialog = showDialog
+                    )
                 }
-                .onFailure { error ->
-                    _uiState.update { it.copy(isImporting = false, error = error.message) }
-                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Mnemonic import failed", e)
+                _uiState.update { it.copy(isImporting = false, error = e.message) }
+            }
         }
     }
 
@@ -138,20 +146,23 @@ class MnemonicImportViewModel @Inject constructor(
     fun importPrivateKey(hex: String) {
         viewModelScope.launch {
             _uiState.update { it.copy(isImporting = true, showPrivateKeyDialog = false, error = null) }
-            repository.importExistingWallet(hex)
-                .onSuccess {
-                    val showDialog = repository.currentNetwork == NetworkType.MAINNET
-                    _uiState.update {
-                        it.copy(
-                            isImporting = false,
-                            importSuccess = !showDialog,
-                            showSyncModeDialog = showDialog
-                        )
-                    }
+            try {
+                // Import via WalletRepository so a Room entity is created
+                val entity = walletRepository.importRawKey("Imported Wallet", hex)
+                Log.d(TAG, "Imported raw key wallet entity: ${entity.walletId}")
+                repository.onActiveWalletChanged(entity)
+                val showDialog = repository.currentNetwork == NetworkType.MAINNET
+                _uiState.update {
+                    it.copy(
+                        isImporting = false,
+                        importSuccess = !showDialog,
+                        showSyncModeDialog = showDialog
+                    )
                 }
-                .onFailure { error ->
-                    _uiState.update { it.copy(isImporting = false, error = error.message) }
-                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Private key import failed", e)
+                _uiState.update { it.copy(isImporting = false, error = e.message) }
+            }
         }
     }
 

@@ -61,12 +61,19 @@ class HomeViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
+            var previousWalletInfo: WalletInfo? = null
             repository.walletInfo.collect { info ->
-                _uiState.update { 
+                val walletChanged = previousWalletInfo != null && info != null && previousWalletInfo != info
+                previousWalletInfo = info
+                _uiState.update {
                     it.copy(
                         walletInfo = info,
                         address = repository.getCurrentAddress() ?: ""
-                    ) 
+                    )
+                }
+                // When wallet changes externally (e.g. from WalletManager), refresh data
+                if (walletChanged) {
+                    refresh()
                 }
             }
         }
@@ -487,11 +494,14 @@ class HomeViewModel @Inject constructor(
                 checkBackupStatus()
                 refreshSecurityState()
                 refreshWalletBalances(_uiState.value.wallets)
+                // Clear stale transactions and refresh from new wallet
                 _uiState.update { it.copy(
                     isSwitchingWallet = false,
+                    transactions = emptyList(),
                     currentSyncMode = newSyncMode,
                     savedCustomBlockHeight = newCustomHeight
                 ) }
+                refresh()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to switch wallet", e)
                 _uiState.update { it.copy(isSwitchingWallet = false, error = "Failed to switch wallet: ${e.message}") }

@@ -215,6 +215,19 @@ class SendViewModel @Inject constructor(
             return
         }
 
+        // Capture wallet identity upfront to prevent wallet-switch race conditions
+        val capturedAddress = repository.getCurrentAddress()
+        val capturedKey = try { repository.getPrivateKey() } catch (e: Exception) {
+            _uiState.update { it.copy(error = "Failed to access wallet keys: ${e.message}") }
+            return
+        }
+        val capturedNetwork = repository.currentNetwork
+
+        if (capturedAddress == null) {
+            _uiState.update { it.copy(error = "Wallet not initialized") }
+            return
+        }
+
         sendJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
@@ -226,32 +239,29 @@ class SendViewModel @Inject constructor(
             }
 
             try {
-                Log.d(TAG, "📤 Starting send transaction flow")
+                Log.d(TAG, "Starting send transaction flow")
                 Log.d(TAG, "  Recipient: ${state.recipientAddress}")
                 Log.d(TAG, "  Amount: ${state.amountCkb} CKB ($amountShannons shannons)")
+                Log.d(TAG, "  From address: $capturedAddress")
 
-                val address = repository.getCurrentAddress()
-                    ?: throw Exception("Wallet not initialized")
-                Log.d(TAG, "  From address: $address")
-
-                Log.d(TAG, "🔍 Fetching available cells...")
-                val cellsResult = repository.getCells(address)
+                Log.d(TAG, "Fetching available cells...")
+                val cellsResult = repository.getCells(capturedAddress)
                 val cells = cellsResult.getOrThrow().items
-                Log.d(TAG, "✅ Got ${cells.size} cells")
+                Log.d(TAG, "Got ${cells.size} cells")
                 cells.forEachIndexed { i, cell ->
                     Log.d(TAG, "  Cell[$i]: ${cell.capacityAsLong()} shannons")
                 }
 
                 _uiState.update { it.copy(statusMessage = "Signing transaction...") }
-                Log.d(TAG, "✍️ Building and signing transaction...")
+                Log.d(TAG, "Building and signing transaction...")
 
                 val signedTx = transactionBuilder.buildTransfer(
-                    fromAddress = address,
+                    fromAddress = capturedAddress,
                     toAddress = state.recipientAddress,
                     amountShannons = amountShannons,
                     availableCells = cells,
-                    privateKey = repository.getPrivateKey(),
-                    network = repository.currentNetwork
+                    privateKey = capturedKey,
+                    network = capturedNetwork
                 )
                 Log.d(TAG, "✅ Transaction built: ${signedTx.cellInputs.size} inputs, ${signedTx.cellOutputs.size} outputs")
 
@@ -272,8 +282,8 @@ class SendViewModel @Inject constructor(
                     )
                 }
 
-                // Start polling for transaction status
-                startPollingTransactionStatus(txHash, address)
+                // Start polling for transaction status using the captured address
+                startPollingTransactionStatus(txHash, capturedAddress)
 
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Transaction failed", e)

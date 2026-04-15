@@ -111,6 +111,7 @@ class GatewayRepository @Inject constructor(
             ?: throw Exception("No key for wallet ${wallet.walletId}")
         val info = keyManager.deriveWalletInfo(privateKey)
         _walletInfo.value = info
+        _balance.value = null  // Clear old wallet's balance immediately
         _isRegistered.value = false
 
         val walletSyncMode = walletPreferences.getSyncMode(walletId = wallet.walletId)
@@ -577,12 +578,15 @@ class GatewayRepository @Inject constructor(
     fun hasCompletedInitialSync(): Boolean = walletPreferences.hasCompletedInitialSync(walletId = activeWalletId.ifEmpty { null })
     
     suspend fun forceResetSync(): Result<Unit> = runCatching {
-        Log.w(TAG, "♻️ Forcing sync reset...")
-        walletPreferences.clear()
+        Log.w(TAG, "Forcing sync reset...")
+        // Only clear sync-related preferences for the active wallet, not all preferences
+        val wId = activeWalletId.ifEmpty { null }
+        walletPreferences.setLastSyncedBlock(0L, walletId = wId)
+        walletPreferences.setInitialSyncCompleted(false, walletId = wId)
         _isRegistered.value = false
         _balance.value = null
         registerAccount(SyncMode.RECENT)
-        Log.i(TAG, "♻️ Sync reset complete. Registered as RECENT.")
+        Log.i(TAG, "Sync reset complete. Registered as RECENT.")
     }
 
     suspend fun refreshBalance(address: String? = null): Result<BalanceResponse> = runCatching {
@@ -1107,9 +1111,9 @@ class GatewayRepository @Inject constructor(
     fun getPrivateKey(): ByteArray {
         return if (activeWalletId.isNotEmpty()) {
             keyManager.getPrivateKeyForWallet(activeWalletId)
-                ?: keyManager.getPrivateKey() // legacy fallback
+                ?: throw IllegalStateException("No key found for active wallet $activeWalletId")
         } else {
-            keyManager.getPrivateKey()
+            keyManager.getPrivateKey() // legacy single-wallet only
         }
     }
 

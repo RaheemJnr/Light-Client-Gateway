@@ -39,6 +39,13 @@ class DaoViewModel @Inject constructor(
 
     init {
         startPolling()
+
+        // Refresh DAO deposits when active wallet changes
+        viewModelScope.launch {
+            repository.walletInfo.collect { info ->
+                if (info != null) refreshDaoData()
+            }
+        }
     }
 
     private fun startPolling() {
