@@ -56,17 +56,22 @@ class KeyManager @Inject constructor(
         this.keyStoreMigrationHelper = helper
     }
 
+    // @Deprecated ESP fallback — remove after one release cycle (v1.6.0+)
     private var walletResetDueToCorruption = false
 
+    @Deprecated("ESP fallback — remove after one release cycle")
     fun wasResetDueToCorruption(): Boolean = walletResetDueToCorruption
 
+    @Deprecated("ESP fallback — remove after one release cycle")
     fun resetCorruptionFlag() {
         walletResetDueToCorruption = false
     }
 
+    @Deprecated("ESP fallback — remove after one release cycle")
     private val prefs: SharedPreferences
         get() = testPrefs ?: encryptedPrefs
 
+    @Deprecated("ESP fallback — remove after one release cycle")
     private val encryptedPrefs: SharedPreferences by lazy {
         try {
             createEncryptedPrefs(useStrongBox = true)
@@ -87,6 +92,7 @@ class KeyManager @Inject constructor(
         }
     }
 
+    @Deprecated("ESP fallback — remove after one release cycle")
     private fun createEncryptedPrefs(useStrongBox: Boolean = true): SharedPreferences {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -371,6 +377,7 @@ class KeyManager @Inject constructor(
         }
     }
 
+    @Deprecated("ESP fallback — remove after one release cycle")
     private fun getWalletPrefs(walletId: String): SharedPreferences {
         val fileName = "ckb_wallet_keys_$walletId"
         return try {
@@ -387,6 +394,7 @@ class KeyManager @Inject constructor(
         }
     }
 
+    @Deprecated("ESP fallback — remove after one release cycle")
     private fun createEncryptedPrefsForWallet(fileName: String, useStrongBox: Boolean): SharedPreferences {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
