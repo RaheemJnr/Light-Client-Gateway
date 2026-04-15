@@ -76,6 +76,7 @@ class GatewayRepository @Inject constructor(
     private val scope = CoroutineScope(Dispatchers.IO)
     private val _nodeReady = MutableStateFlow<Boolean?>(null)
     private var activeWalletId: String = walletPreferences.getActiveWalletId() ?: ""
+    private var activeWalletType: String = KeyManager.WALLET_TYPE_MNEMONIC
 
     // --- Sync progress tracking ---
     private val syncProgressTracker = SyncProgressTracker()
@@ -105,6 +106,7 @@ class GatewayRepository @Inject constructor(
      */
     suspend fun onActiveWalletChanged(wallet: WalletEntity) {
         activeWalletId = wallet.walletId
+        activeWalletType = wallet.type
         val privateKey = keyManager.getPrivateKeyForWallet(wallet.walletId)
             ?: throw Exception("No key for wallet ${wallet.walletId}")
         val info = keyManager.deriveWalletInfo(privateKey)
@@ -331,6 +333,9 @@ class GatewayRepository @Inject constructor(
             val info = if (activeWalletId.isNotEmpty()) {
                 val privateKey = keyManager.getPrivateKeyForWallet(activeWalletId)
                     ?: throw Exception("No key for active wallet $activeWalletId")
+                // Set activeWalletType from Room entity
+                val activeWallet = walletDao.getActive()
+                activeWalletType = activeWallet?.type ?: KeyManager.WALLET_TYPE_MNEMONIC
                 keyManager.deriveWalletInfo(privateKey)
             } else {
                 keyManager.getWalletInfo() // fallback for legacy single-wallet
@@ -352,8 +357,8 @@ class GatewayRepository @Inject constructor(
      * Used by MainActivity to gate access to the dashboard until backup is done.
      */
     fun needsMnemonicBackup(): Boolean {
-        return keyManager.getWalletType() == KeyManager.WALLET_TYPE_MNEMONIC
-            && !keyManager.hasMnemonicBackup()
+        return activeWalletType == KeyManager.WALLET_TYPE_MNEMONIC
+            && !hasMnemonicBackupForActiveWallet()
     }
 
     fun wasResetDueToCorruption(): Boolean = keyManager.wasResetDueToCorruption()
@@ -417,7 +422,7 @@ class GatewayRepository @Inject constructor(
         info
     }
 
-    fun getWalletType(): String = keyManager.getWalletType()
+    fun getWalletType(): String = activeWalletType
     fun getMnemonic(): List<String>? {
         // Use wallet-scoped mnemonic — never fall back to global prefs
         // (raw_key wallets correctly return null here)
@@ -428,7 +433,7 @@ class GatewayRepository @Inject constructor(
             keyManager.getMnemonic()
         }
     }
-    fun hasMnemonicBackup(): Boolean = keyManager.hasMnemonicBackup()
+    fun hasMnemonicBackup(): Boolean = hasMnemonicBackupForActiveWallet()
 
     /**
      * Check backup status for the active wallet specifically, not the global legacy flag.
@@ -442,11 +447,10 @@ class GatewayRepository @Inject constructor(
         }
     }
     fun setMnemonicBackedUp(backedUp: Boolean) {
-        keyManager.setMnemonicBackedUp(backedUp)
-        // Also set for the active wallet
-        val wId = activeWalletId
-        if (wId.isNotEmpty()) {
-            keyManager.setMnemonicBackedUpForWallet(wId, backedUp)
+        if (activeWalletId.isNotEmpty()) {
+            keyManager.setMnemonicBackedUpForWallet(activeWalletId, backedUp)
+        } else {
+            keyManager.setMnemonicBackedUp(backedUp)
         }
     }
 
@@ -1100,7 +1104,14 @@ class GatewayRepository @Inject constructor(
         }
     }
 
-    fun getPrivateKey(): ByteArray = keyManager.getPrivateKey()
+    fun getPrivateKey(): ByteArray {
+        return if (activeWalletId.isNotEmpty()) {
+            keyManager.getPrivateKeyForWallet(activeWalletId)
+                ?: keyManager.getPrivateKey() // legacy fallback
+        } else {
+            keyManager.getPrivateKey()
+        }
+    }
 
     /**
      * Get the current block number from the registered script in the light client.
@@ -1488,7 +1499,7 @@ class GatewayRepository @Inject constructor(
         }
 
         val cellsResponse = getCells().getOrThrow()
-        val privateKey = keyManager.getPrivateKey()
+        val privateKey = getPrivateKey()
 
         val tx = transactionBuilder.buildDaoDeposit(
             amountShannons = amountShannons,
@@ -1516,7 +1527,7 @@ class GatewayRepository @Inject constructor(
         val deposit = deposits.find { it.outPoint == depositOutPoint }
             ?: throw Exception("Deposit not found")
 
-        val privateKey = keyManager.getPrivateKey()
+        val privateKey = getPrivateKey()
 
         require(deposit.depositBlockHash.isNotBlank()) {
             "Deposit block hash unavailable. Please retry after sync."
@@ -1568,7 +1579,7 @@ class GatewayRepository @Inject constructor(
         val withdrawBlockHash = deposit.withdrawBlockHash
             ?: throw Exception("Withdraw block hash unavailable. Please retry after sync.")
 
-        val privateKey = keyManager.getPrivateKey()
+        val privateKey = getPrivateKey()
 
         // Get headers for max withdraw calculation (cache-first)
         val depositHeader = getOrFetchHeader(depositBlockHash)

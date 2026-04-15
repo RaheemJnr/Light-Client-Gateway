@@ -7,6 +7,7 @@ import com.rjnr.pocketnode.data.database.dao.WalletDao
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import kotlinx.coroutines.flow.Flow
+import org.nervos.ckb.utils.Numeric
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -59,8 +60,9 @@ class WalletRepository @Inject constructor(
         val now = System.currentTimeMillis()
         val colorIndex = walletDao.count() % 8
 
-        // Store keys in wallet-scoped prefs
-        keyManager.storeKeysForWallet(walletId, keyManager.getPrivateKey(), words)
+        // Derive private key from mnemonic — never read back from global prefs
+        val privateKey = mnemonicManager.mnemonicToPrivateKey(words)
+        keyManager.storeKeysForWallet(walletId, privateKey, words)
 
         val entity = WalletEntity(
             walletId = walletId,
@@ -98,7 +100,9 @@ class WalletRepository @Inject constructor(
         val now = System.currentTimeMillis()
         val colorIndex = walletDao.count() % 8
 
-        keyManager.storeKeysForWallet(walletId, keyManager.getPrivateKey(), words)
+        // Derive private key from mnemonic — never read back from global prefs
+        val privateKey = mnemonicManager.mnemonicToPrivateKey(words, passphrase)
+        keyManager.storeKeysForWallet(walletId, privateKey, words)
         keyManager.setMnemonicBackedUpForWallet(walletId, true)
 
         val entity = WalletEntity(
@@ -136,7 +140,9 @@ class WalletRepository @Inject constructor(
         val now = System.currentTimeMillis()
         val colorIndex = walletDao.count() % 8
 
-        keyManager.storeKeysForWallet(walletId, keyManager.getPrivateKey(), null)
+        // Use the hex directly — never read back from global prefs
+        val privateKeyBytes = Numeric.hexStringToByteArray(privateKeyHex)
+        keyManager.storeKeysForWallet(walletId, privateKeyBytes, null)
         keyManager.setMnemonicBackedUpForWallet(walletId, true)
 
         val entity = WalletEntity(
