@@ -1,7 +1,16 @@
 package com.rjnr.pocketnode.data.wallet
 
 import android.content.Context
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.rjnr.pocketnode.data.crypto.KeystoreEncryptionManager
+import com.rjnr.pocketnode.data.database.AppDatabase
+import com.rjnr.pocketnode.data.database.MIGRATION_1_2
+import com.rjnr.pocketnode.data.database.MIGRATION_2_3
+import com.rjnr.pocketnode.data.database.MIGRATION_3_4
+import com.rjnr.pocketnode.data.database.MIGRATION_4_5
+import com.rjnr.pocketnode.data.migration.KeyStoreMigrationHelper
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -12,13 +21,27 @@ import org.robolectric.RobolectricTestRunner
 class KeyManagerMultiWalletTest {
 
     private lateinit var keyManager: KeyManager
+    private lateinit var db: AppDatabase
 
     @Before
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
+        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .allowMainThreadQueries()
+            .build()
+        val encryptionManager = KeystoreEncryptionManager.createForTest()
+        val migrationPrefs = context.getSharedPreferences("test_multi_migration", Context.MODE_PRIVATE)
+        migrationPrefs.edit().clear().commit()
+        val migrationHelper = KeyStoreMigrationHelper(db.keyMaterialDao(), encryptionManager, migrationPrefs)
+
         val mnemonicManager = MnemonicManager()
         keyManager = KeyManager(context, mnemonicManager)
+        keyManager.keyStoreMigrationHelper = migrationHelper
     }
+
+    @After
+    fun tearDown() { db.close() }
 
     @Test
     fun `storeKeysForWallet and getPrivateKeyForWallet are isolated per wallet`() {

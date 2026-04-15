@@ -3,7 +3,12 @@ package com.rjnr.pocketnode.data.migration
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.rjnr.pocketnode.data.crypto.KeystoreEncryptionManager
 import com.rjnr.pocketnode.data.database.AppDatabase
+import com.rjnr.pocketnode.data.database.MIGRATION_1_2
+import com.rjnr.pocketnode.data.database.MIGRATION_2_3
+import com.rjnr.pocketnode.data.database.MIGRATION_3_4
+import com.rjnr.pocketnode.data.database.MIGRATION_4_5
 import com.rjnr.pocketnode.data.database.dao.WalletDao
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.MnemonicManager
@@ -29,10 +34,15 @@ class WalletMigrationHelperTest {
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
         walletDao = db.walletDao()
         keyManager = KeyManager(context, MnemonicManager())
+        val encryptionManager = KeystoreEncryptionManager.createForTest()
+        val migrationPrefs = context.getSharedPreferences("test_wallet_mig", Context.MODE_PRIVATE)
+        migrationPrefs.edit().clear().commit()
+        keyManager.keyStoreMigrationHelper = KeyStoreMigrationHelper(db.keyMaterialDao(), encryptionManager, migrationPrefs)
         walletPreferences = WalletPreferences(context)
         helper = WalletMigrationHelper(walletDao, keyManager, walletPreferences, db)
     }
