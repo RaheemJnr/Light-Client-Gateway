@@ -1,7 +1,8 @@
 {
   "rewrites": [
     { "source": "/privacy", "destination": "/privacy.html" },
-    { "source": "/waitlist", "destination": "/waitlist.html" }
+    { "source": "/waitlist", "destination": "/waitlist.html" },
+    { "source": "/claim", "destination": "/claim.html" }
   ],
   "headers": [
     {
