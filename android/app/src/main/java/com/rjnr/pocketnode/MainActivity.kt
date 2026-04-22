@@ -63,7 +63,7 @@ class MainActivity : FragmentActivity() {
                 keyManager.wasResetDueToCorruption() -> Screen.Recovery.route
                 !cachedHasWallet -> Screen.Onboarding.route
                 repository.needsMnemonicBackup() -> Screen.MnemonicBackup.route
-                !pinManager.hasPin() -> Screen.PinEntry.createRoute("setup")
+                !pinManager.hasPin() -> Screen.InitialPinSetup.route
                 else -> Screen.Auth.route
             }
         }

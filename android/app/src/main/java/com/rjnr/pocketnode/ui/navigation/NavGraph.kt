@@ -14,6 +14,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.ui.MainScreen
 import com.rjnr.pocketnode.ui.screens.auth.AuthScreen
+import com.rjnr.pocketnode.ui.screens.auth.InitialPinSetupScreen
 import com.rjnr.pocketnode.ui.screens.auth.PinEntryScreen
 import com.rjnr.pocketnode.ui.screens.auth.PinMode
 import com.rjnr.pocketnode.ui.screens.onboarding.MnemonicBackupScreen
@@ -60,6 +61,7 @@ sealed class Screen(val route: String) {
         fun createRoute(walletId: String) = "wallet_detail/$walletId"
     }
     object AddWallet : Screen("add_wallet")
+    object InitialPinSetup : Screen("initial_pin_setup")
 }
 
 sealed class BottomTab(val route: String, val label: String) {
@@ -83,7 +85,7 @@ fun CkbNavGraph(
     // must first pass through PIN setup. See MainActivity startup gate for the
     // cold-start path.
     fun destinationAfterWalletReady(): String =
-        if (pinManager.hasPin()) Screen.Main.route else Screen.PinEntry.createRoute("setup")
+        if (pinManager.hasPin()) Screen.Main.route else Screen.InitialPinSetup.route
 
     NavHost(
         navController = navController,
@@ -180,17 +182,12 @@ fun CkbNavGraph(
                             navController.navigate(Screen.PinEntry.createRoute("confirm"))
                         }
                         PinMode.CONFIRM -> {
-                            // Pop confirm, then try to pop setup. popBackStack returns false
-                            // if setup is the startDestination (mandatory PIN flow) — in that
-                            // case, clear the graph and land on Main.
+                            // Pop back past both PinEntry screens (confirm + setup) to whichever
+                            // screen opened PIN setup (SecuritySettings or SecurityChecklist).
+                            // The mandatory-PIN flow does NOT reach here — it uses
+                            // InitialPinSetupScreen instead.
                             navController.popBackStack() // pop confirm
-                            val poppedSetup = navController.popBackStack()
-                            if (!poppedSetup) {
-                                navController.navigate(Screen.Main.route) {
-                                    popUpTo(navController.graph.id) { inclusive = true }
-                                    launchSingleTop = true
-                                }
-                            }
+                            navController.popBackStack() // pop setup
                         }
                         PinMode.VERIFY -> {
                             val previousRoute = navController.previousBackStackEntry
@@ -434,6 +431,17 @@ fun CkbNavGraph(
                     navController.navigate(Screen.PinEntry.createRoute("verify"))
                 },
                 viewModel = viewModel
+            )
+        }
+
+        composable(Screen.InitialPinSetup.route) {
+            InitialPinSetupScreen(
+                onPinCreated = {
+                    navController.navigate(Screen.Main.route) {
+                        popUpTo(navController.graph.id) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
             )
         }
 
