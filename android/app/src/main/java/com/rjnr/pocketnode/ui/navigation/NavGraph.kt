@@ -182,10 +182,8 @@ fun CkbNavGraph(
                             navController.navigate(Screen.PinEntry.createRoute("confirm"))
                         }
                         PinMode.CONFIRM -> {
-                            // Pop back past both PinEntry screens (confirm + setup) to whichever
-                            // screen opened PIN setup (SecuritySettings or SecurityChecklist).
-                            // The mandatory-PIN flow does NOT reach here — it uses
-                            // InitialPinSetupScreen instead.
+                            // Pop back past both PinEntry screens (confirm + setup)
+                            // to wherever the user came from (SecuritySettings or SecurityChecklist)
                             navController.popBackStack() // pop confirm
                             navController.popBackStack() // pop setup
                         }
