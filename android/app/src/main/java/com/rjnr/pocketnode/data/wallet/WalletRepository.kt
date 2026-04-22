@@ -88,13 +88,16 @@ class WalletRepository @Inject constructor(
         wordCount: MnemonicManager.WordCount = MnemonicManager.WordCount.TWELVE
     ): Pair<WalletEntity, List<String>> {
         validateUniqueName(name)
-        val (info, words) = keyManager.generateWalletWithMnemonic(wordCount)
+        // Derive everything locally. Going through keyManager.generateWalletWithMnemonic
+        // would overwrite the legacy "default" Room key slot (and fire a PIN backup for
+        // "default") on every M3 create, polluting legacy single-wallet fallback paths.
+        val words = mnemonicManager.generateMnemonic(wordCount)
+        val privateKey = mnemonicManager.mnemonicToPrivateKey(words)
+        val info = keyManager.deriveWalletInfo(privateKey)
         val walletId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         val colorIndex = walletDao.count() % 8
 
-        // Derive private key from mnemonic — never read back from global prefs
-        val privateKey = mnemonicManager.mnemonicToPrivateKey(words)
         keyManager.storeKeysForWallet(walletId, privateKey, words)
 
         val entity = WalletEntity(
@@ -129,14 +132,16 @@ class WalletRepository @Inject constructor(
         passphrase: String = ""
     ): WalletEntity {
         validateUniqueName(name)
-        val info = keyManager.importWalletFromMnemonic(words, passphrase)
+        // Derive locally — see comment in createWallet on why we bypass the legacy
+        // keyManager.importWalletFromMnemonic path.
+        require(mnemonicManager.validateMnemonic(words)) { "Invalid mnemonic" }
+        val privateKey = mnemonicManager.mnemonicToPrivateKey(words, passphrase)
+        val info = keyManager.deriveWalletInfo(privateKey)
         validateUniqueAddress(info.mainnetAddress, info.testnetAddress)
         val walletId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         val colorIndex = walletDao.count() % 8
 
-        // Derive private key from mnemonic — never read back from global prefs
-        val privateKey = mnemonicManager.mnemonicToPrivateKey(words, passphrase)
         keyManager.storeKeysForWallet(walletId, privateKey, words)
         keyManager.setMnemonicBackedUpForWallet(walletId, true)
 
@@ -170,14 +175,15 @@ class WalletRepository @Inject constructor(
         privateKeyHex: String
     ): WalletEntity {
         validateUniqueName(name)
-        val info = keyManager.importWallet(privateKeyHex)
+        // Parse and derive locally — see comment in createWallet.
+        val privateKeyBytes = Numeric.hexStringToByteArray(privateKeyHex)
+        require(privateKeyBytes.size == 32) { "Private key must be 32 bytes" }
+        val info = keyManager.deriveWalletInfo(privateKeyBytes)
         validateUniqueAddress(info.mainnetAddress, info.testnetAddress)
         val walletId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         val colorIndex = walletDao.count() % 8
 
-        // Use the hex directly — never read back from global prefs
-        val privateKeyBytes = Numeric.hexStringToByteArray(privateKeyHex)
         keyManager.storeKeysForWallet(walletId, privateKeyBytes, null)
         keyManager.setMnemonicBackedUpForWallet(walletId, true)
 
@@ -304,6 +310,8 @@ class WalletRepository @Inject constructor(
             }
         }
         keyManager.deleteWalletKeys(walletId)
+        // VACUUM must run outside the transaction above — SQLite rejects VACUUM
+        // when a transaction is open on the same connection.
         DatabaseMaintenanceUtil.vacuum(appDatabase)
         Log.d(TAG, "Deleted wallet and caches: $walletId")
     }

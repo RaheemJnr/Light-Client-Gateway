@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.fragment.app.FragmentActivity
 import androidx.navigation.compose.rememberNavController
+import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.wallet.KeyBackupManager
@@ -41,6 +42,9 @@ class MainActivity : FragmentActivity() {
 
     @Inject
     lateinit var keyBackupManager: KeyBackupManager
+
+    @Inject
+    lateinit var authManager: AuthManager
 
     private val _requireReauth = mutableStateOf(false)
 
@@ -110,6 +114,10 @@ class MainActivity : FragmentActivity() {
         // Use cached value — avoids blocking main thread on every onStop
         if (cachedHasWallet && pinManager.hasPin()) {
             _requireReauth.value = true
+            // Wipe the cached session PIN when the app backgrounds so the next
+            // foregrounding forces a fresh unlock before any PIN-gated action.
+            authManager.clearSession()
+            keyManager.clearSessionPin()
         }
     }
 }

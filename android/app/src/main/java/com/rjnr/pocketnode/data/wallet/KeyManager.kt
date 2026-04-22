@@ -537,6 +537,15 @@ class KeyManager @Inject constructor(
                 // Skip if already migrated (idempotent)
                 if (helper.readDecryptedKey(wallet.walletId) != null) continue
 
+                // Skip Room-only wallets whose ESP file doesn't exist on disk — calling
+                // getWalletPrefs for a non-existent file lazily creates an empty ESP file
+                // that deleteEspFilesIfSafe would then have to clean up.
+                val espFile = java.io.File(
+                    context.filesDir.parent,
+                    "shared_prefs/ckb_wallet_keys_${wallet.walletId}.xml"
+                )
+                if (!espFile.exists()) continue
+
                 val privKeyHex = try {
                     getPrivateKeyForWallet(wallet.walletId)
                         ?.joinToString("") { "%02x".format(it) }
@@ -545,12 +554,13 @@ class KeyManager @Inject constructor(
                     continue
                 } ?: continue
 
+                // Only consult ESP prefs now that we've confirmed ESP was authoritative.
+                val espPrefs = getWalletPrefs(wallet.walletId)
                 val mnemonic = getMnemonicForWallet(wallet.walletId)?.joinToString(" ")
                 // ESP stored the authoritative walletType via savePrivateKey/storeKeysForWallet.
                 // Fall back to the mnemonic-presence inference only when the pref is absent
                 // (e.g. corrupted prefs), so future wallet types round-trip unchanged.
-                val walletType = getWalletPrefs(wallet.walletId)
-                    .getString(KEY_WALLET_TYPE, null)
+                val walletType = espPrefs.getString(KEY_WALLET_TYPE, null)
                     ?: if (mnemonic != null) WALLET_TYPE_MNEMONIC else WALLET_TYPE_RAW_KEY
                 val backed = hasMnemonicBackupForWallet(wallet.walletId)
 

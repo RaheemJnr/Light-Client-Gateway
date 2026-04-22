@@ -124,6 +124,12 @@ class GatewayRepository @Inject constructor(
         _walletInfo.value = info
         _balance.value = null  // Clear old wallet's balance immediately
         _isRegistered.value = false
+        // Drop the previous wallet's sync samples so the new wallet's progress
+        // starts from its own baseline. Otherwise ACTIVE_ONLY switches can spuriously
+        // report progress / ETA / justReachedTip from the old wallet's syncing window.
+        syncProgressTracker.reset()
+        wasSyncing = false
+        _syncProgress.value = SyncProgress()
 
         val walletSyncMode = walletPreferences.getSyncMode(walletId = wallet.walletId)
         val walletCustomHeight = if (walletSyncMode == SyncMode.CUSTOM) {
@@ -1671,9 +1677,16 @@ class GatewayRepository @Inject constructor(
             throw Exception("Node initialization failed")
         }
 
-        val wallets = walletDao.getAll()
-            .sortedByDescending { it.lastActiveAt }
-            .take(3) // sync cap
+        val allWallets = walletDao.getAll().sortedByDescending { it.lastActiveAt }
+        val wallets = allWallets.take(MAX_CONCURRENT_WALLET_SCRIPTS)
+        if (allWallets.size > wallets.size) {
+            val droppedIds = allWallets.drop(wallets.size).map { it.walletId }
+            Log.i(
+                TAG,
+                "ALL_WALLETS: syncing top-${wallets.size} of ${allWallets.size} wallets " +
+                    "(dropped: $droppedIds)"
+            )
+        }
 
         val tipStr = LightClientNative.nativeGetTipHeader()
         val tipHeight = if (tipStr != null) {
@@ -1814,5 +1827,9 @@ class GatewayRepository @Inject constructor(
 
     companion object {
         private const val TAG = "GatewayRepository"
+        // Upper bound for wallets synced simultaneously under ALL_WALLETS. Wallets
+        // beyond this are dropped by lastActiveAt descending; the dropped ids are
+        // logged so support can diagnose "why isn't wallet X syncing".
+        private const val MAX_CONCURRENT_WALLET_SCRIPTS = 3
     }
 }

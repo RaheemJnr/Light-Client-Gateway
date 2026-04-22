@@ -331,12 +331,14 @@ private fun SendScreenUI(
                         onDismissRequest = { showMyWallets = false }
                     ) {
                         uiState.otherWallets.forEach { wallet ->
+                            val address = if (uiState.networkType == NetworkType.MAINNET)
+                                wallet.mainnetAddress else wallet.testnetAddress
                             DropdownMenuItem(
                                 text = { Text(wallet.name) },
-                                enabled = !uiState.isLoading,
+                                // Guard against wallet rows that haven't populated the address
+                                // for the current network yet (WalletEntity defaults to "").
+                                enabled = !uiState.isLoading && address.isNotBlank(),
                                 onClick = {
-                                    val address = if (uiState.networkType == NetworkType.MAINNET)
-                                        wallet.mainnetAddress else wallet.testnetAddress
                                     updateRecipient(address)
                                     showMyWallets = false
                                 }
