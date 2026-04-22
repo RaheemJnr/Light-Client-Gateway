@@ -27,6 +27,7 @@ data class SecuritySettingsUiState(
     val isBiometricAvailable: Boolean = false,
     val isBiometricEnabled: Boolean = false,
     val hasPin: Boolean = false,
+    val canRemovePin: Boolean = false,
     val biometricStatusText: String = "",
     val isAuthBeforeSendEnabled: Boolean = false,
     val error: String? = null
@@ -72,20 +73,24 @@ class SecuritySettingsViewModel @Inject constructor(
 
     fun refreshState() {
         val biometricStatus = authManager.isBiometricAvailable()
-        _uiState.update {
-            it.copy(
-                isBiometricAvailable = biometricStatus == AuthManager.BiometricStatus.AVAILABLE,
-                isBiometricEnabled = authManager.isBiometricEnabled(),
-                hasPin = pinManager.hasPin(),
-                biometricStatusText = when (biometricStatus) {
-                    AuthManager.BiometricStatus.AVAILABLE -> "Fingerprint hardware available"
-                    AuthManager.BiometricStatus.NO_HARDWARE -> "No biometric hardware detected"
-                    AuthManager.BiometricStatus.NOT_ENROLLED -> "No fingerprints enrolled in device settings"
-                    AuthManager.BiometricStatus.UNAVAILABLE -> "Biometric authentication unavailable"
-                },
-                isAuthBeforeSendEnabled = authManager.isAuthBeforeSendEnabled(),
-                error = null
-            )
+        viewModelScope.launch {
+            val walletCount = walletDao.count()
+            _uiState.update {
+                it.copy(
+                    isBiometricAvailable = biometricStatus == AuthManager.BiometricStatus.AVAILABLE,
+                    isBiometricEnabled = authManager.isBiometricEnabled(),
+                    hasPin = pinManager.hasPin(),
+                    canRemovePin = walletCount == 0 && !keyBackupManager.hasAnyBackups(),
+                    biometricStatusText = when (biometricStatus) {
+                        AuthManager.BiometricStatus.AVAILABLE -> "Fingerprint hardware available"
+                        AuthManager.BiometricStatus.NO_HARDWARE -> "No biometric hardware detected"
+                        AuthManager.BiometricStatus.NOT_ENROLLED -> "No fingerprints enrolled in device settings"
+                        AuthManager.BiometricStatus.UNAVAILABLE -> "Biometric authentication unavailable"
+                    },
+                    isAuthBeforeSendEnabled = authManager.isAuthBeforeSendEnabled(),
+                    error = null
+                )
+            }
         }
     }
 
@@ -108,17 +113,27 @@ class SecuritySettingsViewModel @Inject constructor(
     }
 
     private fun removePin() {
-        if (keyBackupManager.hasAnyBackups()) {
-            _uiState.update {
-                it.copy(error = "Cannot remove PIN while encrypted wallet backups exist. Back up your recovery phrase first, then you can remove the PIN.")
+        // Mandatory PIN: refuse removal as long as any wallet exists so every wallet
+        // always has a PIN-encrypted backup available for recovery.
+        viewModelScope.launch {
+            if (walletDao.count() > 0) {
+                _uiState.update {
+                    it.copy(error = "PIN is required while you have a wallet. Delete all wallets first to remove the PIN.")
+                }
+                return@launch
             }
-            return
-        }
-        pinManager.removePin()
-        authManager.setBiometricEnabled(false)
-        authManager.setAuthBeforeSendEnabled(false)
-        _uiState.update {
-            it.copy(hasPin = false, isBiometricEnabled = false, isAuthBeforeSendEnabled = false, error = null)
+            if (keyBackupManager.hasAnyBackups()) {
+                _uiState.update {
+                    it.copy(error = "Cannot remove PIN while encrypted wallet backups exist. Back up your recovery phrase first, then you can remove the PIN.")
+                }
+                return@launch
+            }
+            pinManager.removePin()
+            authManager.setBiometricEnabled(false)
+            authManager.setAuthBeforeSendEnabled(false)
+            _uiState.update {
+                it.copy(hasPin = false, isBiometricEnabled = false, isAuthBeforeSendEnabled = false, error = null)
+            }
         }
     }
 

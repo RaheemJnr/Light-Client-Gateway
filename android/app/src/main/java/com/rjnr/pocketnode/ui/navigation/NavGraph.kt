@@ -11,6 +11,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.ui.MainScreen
 import com.rjnr.pocketnode.ui.screens.auth.AuthScreen
 import com.rjnr.pocketnode.ui.screens.auth.PinEntryScreen
@@ -75,8 +76,15 @@ sealed class BottomTab(val route: String, val label: String) {
 @Composable
 fun CkbNavGraph(
     navController: NavHostController,
-    startDestination: String = Screen.Onboarding.route
+    startDestination: String = Screen.Onboarding.route,
+    pinManager: PinManager
 ) {
+    // PIN is mandatory: if the user doesn't have one yet, any "go to Main" action
+    // must first pass through PIN setup. See MainActivity startup gate for the
+    // cold-start path.
+    fun destinationAfterWalletReady(): String =
+        if (pinManager.hasPin()) Screen.Main.route else Screen.PinEntry.createRoute("setup")
+
     NavHost(
         navController = navController,
         startDestination = startDestination
@@ -84,7 +92,7 @@ fun CkbNavGraph(
         composable(Screen.Onboarding.route) {
             com.rjnr.pocketnode.ui.screens.onboarding.OnboardingScreen(
                 onNavigateToHome = {
-                    navController.navigate(Screen.Main.route) {
+                    navController.navigate(destinationAfterWalletReady()) {
                         popUpTo(Screen.Onboarding.route) { inclusive = true }
                     }
                 },
@@ -109,7 +117,7 @@ fun CkbNavGraph(
             MnemonicBackupScreen(
                 simplified = simplified,
                 onNavigateToHome = {
-                    navController.navigate(Screen.Main.route) {
+                    navController.navigate(destinationAfterWalletReady()) {
                         popUpTo(Screen.MnemonicBackup.BASE) { inclusive = true }
                         launchSingleTop = true
                     }
@@ -121,7 +129,7 @@ fun CkbNavGraph(
         composable(Screen.MnemonicImport.route) {
             MnemonicImportScreen(
                 onNavigateToHome = {
-                    navController.navigate(Screen.Main.route) {
+                    navController.navigate(destinationAfterWalletReady()) {
                         popUpTo(Screen.MnemonicImport.route) { inclusive = true }
                         launchSingleTop = true
                     }
@@ -172,10 +180,19 @@ fun CkbNavGraph(
                             navController.navigate(Screen.PinEntry.createRoute("confirm"))
                         }
                         PinMode.CONFIRM -> {
-                            // Pop back past both PinEntry screens (confirm + setup)
-                            // to wherever the user came from (SecuritySettings or SecurityChecklist)
+                            // Pop confirm. Then either pop setup back to origin
+                            // (SecuritySettings / SecurityChecklist) or — if setup was the
+                            // startDestination (mandatory PIN flow) — land on Main.
                             navController.popBackStack() // pop confirm
-                            navController.popBackStack() // pop setup
+                            val hasOriginBehindSetup =
+                                navController.previousBackStackEntry != null
+                            if (hasOriginBehindSetup) {
+                                navController.popBackStack() // pop setup
+                            } else {
+                                navController.navigate(Screen.Main.route) {
+                                    popUpTo(0) { inclusive = true }
+                                }
+                            }
                         }
                         PinMode.VERIFY -> {
                             val previousRoute = navController.previousBackStackEntry
@@ -335,7 +352,7 @@ fun CkbNavGraph(
         composable(Screen.Recovery.route) {
             RecoveryScreen(
                 onRecoveryComplete = { recoveredWallets ->
-                    navController.navigate(Screen.Main.route) {
+                    navController.navigate(destinationAfterWalletReady()) {
                         popUpTo(Screen.Recovery.route) { inclusive = true }
                     }
                 },
