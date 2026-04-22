@@ -1,0 +1,9 @@
+v1.6.0 (M3: Multi-Wallet):
+- Multiple wallets: create, import, and switch between separate mnemonic and raw-key wallets
+- HD sub-accounts derived from a parent mnemonic
+- Transaction history and balance cache scoped per wallet
+- PIN now mandatory while a wallet exists; existing users prompted once on upgrade
+- Key material moved from EncryptedSharedPreferences to Room, encrypted with Android Keystore AES-256-GCM
+- CSV transaction export
+- Infinite-scroll transaction list (Paging 3)
+- Guards against deleting the active wallet, deleting a parent wallet with sub-accounts, and importing a duplicate mnemonic or raw key
