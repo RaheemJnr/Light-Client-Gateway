@@ -143,6 +143,52 @@ class WalletRepositoryTest {
     }
 
     @Test
+    fun `deleteWallet refuses to delete active wallet`() = runTest {
+        val (wallet1, _) = repo.createWallet("Wallet 1")
+        // wallet1 is still active
+        val error = try {
+            repo.deleteWallet(wallet1.walletId)
+            null
+        } catch (e: IllegalStateException) {
+            e
+        }
+        assertNotNull("Expected IllegalStateException", error)
+        assertNotNull(walletDao.getById(wallet1.walletId))
+    }
+
+    @Test
+    fun `importWallet rejects duplicate mnemonic by address`() = runTest {
+        val (_, words) = repo.createWallet("Original")
+        // switch away so we can attempt to re-import
+        val (other, _) = repo.createWallet("Other")
+        repo.switchActiveWallet(other.walletId)
+
+        val error = try {
+            repo.importWallet("Duplicate", words)
+            null
+        } catch (e: IllegalArgumentException) {
+            e
+        }
+        assertNotNull("Expected IllegalArgumentException", error)
+        assertTrue(error!!.message!!.contains("already imported"))
+    }
+
+    @Test
+    fun `importRawKey rejects duplicate key by address`() = runTest {
+        @Suppress("SpellCheckingInspection")
+        val pk = "b".repeat(64)
+        repo.importRawKey("First", pk)
+
+        val error = try {
+            repo.importRawKey("Second", pk)
+            null
+        } catch (e: IllegalArgumentException) {
+            e
+        }
+        assertNotNull("Expected IllegalArgumentException", error)
+    }
+
+    @Test
     fun `only one wallet is active at a time`() = runTest {
         repo.createWallet("W1") // returns Pair but we don't need it
         repo.createWallet("W2")

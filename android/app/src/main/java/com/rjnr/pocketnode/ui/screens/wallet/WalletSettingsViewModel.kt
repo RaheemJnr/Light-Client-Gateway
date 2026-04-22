@@ -112,6 +112,17 @@ class WalletSettingsViewModel @Inject constructor(
                 return@launch
             }
 
+            // Parent wallet holds the mnemonic used to derive sub-accounts. Deleting it
+            // removes the seed, so user can no longer recover or derive more sub-accounts
+            // even though existing sub-accounts keep their own stored keys.
+            val subAccounts = walletDao.getSubAccountsList(walletId)
+            if (subAccounts.isNotEmpty()) {
+                _uiState.update {
+                    it.copy(error = "This wallet has ${subAccounts.size} sub-account${if (subAccounts.size > 1) "s" else ""}. Delete them first before removing the parent.")
+                }
+                return@launch
+            }
+
             // Check for active DAO deposits
             val network = walletPreferences.getSelectedNetwork().name
             val daoDeposits = daoCellDao.getActiveByWalletAndNetwork(walletId, network)

@@ -54,6 +54,21 @@ class WalletRepository @Inject constructor(
     }
 
     /**
+     * Reject imports that produce an address already tracked by another wallet.
+     * Prevents two WalletEntity rows pointing at the same keypair, which would split
+     * tx history, balance cache and DAO cells across duplicate records.
+     */
+    private suspend fun validateUniqueAddress(mainnetAddress: String, testnetAddress: String) {
+        val existing = walletDao.getAll()
+        val dup = existing.firstOrNull {
+            it.mainnetAddress == mainnetAddress || it.testnetAddress == testnetAddress
+        }
+        if (dup != null) {
+            throw IllegalArgumentException("This wallet is already imported as \"${dup.name}\"")
+        }
+    }
+
+    /**
      * Create a new mnemonic wallet. Stores keys in wallet-scoped encrypted prefs.
      */
     suspend fun createWallet(
@@ -102,6 +117,7 @@ class WalletRepository @Inject constructor(
     ): WalletEntity {
         validateUniqueName(name)
         val info = keyManager.importWalletFromMnemonic(words, passphrase)
+        validateUniqueAddress(info.mainnetAddress, info.testnetAddress)
         val walletId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         val colorIndex = walletDao.count() % 8
@@ -142,6 +158,7 @@ class WalletRepository @Inject constructor(
     ): WalletEntity {
         validateUniqueName(name)
         val info = keyManager.importWallet(privateKeyHex)
+        validateUniqueAddress(info.mainnetAddress, info.testnetAddress)
         val walletId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         val colorIndex = walletDao.count() % 8
@@ -249,8 +266,14 @@ class WalletRepository @Inject constructor(
 
     /**
      * Delete a wallet and its keys. Runs VACUUM afterward to reclaim freed pages.
+     * Refuses to delete the active wallet — callers must switch first.
      */
     suspend fun deleteWallet(walletId: String) {
+        val wallet = walletDao.getById(walletId)
+            ?: throw IllegalArgumentException("Wallet not found: $walletId")
+        if (wallet.isActive || walletPreferences.getActiveWalletId() == walletId) {
+            throw IllegalStateException("Cannot delete the active wallet. Switch to another wallet first.")
+        }
         keyManager.deleteWalletKeys(walletId)
         walletDao.delete(walletId)
         // Clean up wallet-scoped caches for both networks
