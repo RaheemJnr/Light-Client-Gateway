@@ -9,6 +9,7 @@ import com.rjnr.pocketnode.data.database.dao.TransactionDao
 import com.rjnr.pocketnode.data.database.dao.WalletDao
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
+import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import kotlinx.coroutines.flow.Flow
 import org.nervos.ckb.utils.Numeric
 import java.util.UUID
@@ -69,6 +70,16 @@ class WalletRepository @Inject constructor(
     }
 
     /**
+     * A newly generated wallet has no history, so default its sync mode to NEW_WALLET
+     * (start from current tip) on both networks. Imports keep whatever sync mode the
+     * import UI selected.
+     */
+    private fun markFreshWalletSyncMode(walletId: String) {
+        walletPreferences.setSyncMode(SyncMode.NEW_WALLET, NetworkType.MAINNET, walletId)
+        walletPreferences.setSyncMode(SyncMode.NEW_WALLET, NetworkType.TESTNET, walletId)
+    }
+
+    /**
      * Create a new mnemonic wallet. Stores keys in wallet-scoped encrypted prefs.
      */
     suspend fun createWallet(
@@ -103,6 +114,7 @@ class WalletRepository @Inject constructor(
         walletDao.deactivateAll()
         walletDao.insert(entity)
         walletPreferences.setActiveWalletId(walletId)
+        markFreshWalletSyncMode(walletId)
         Log.d(TAG, "Created wallet: ${entity.walletId} (${entity.name})")
         return Pair(entity, words)
     }
@@ -239,6 +251,7 @@ class WalletRepository @Inject constructor(
         walletDao.deactivateAll()
         walletDao.insert(entity)
         walletPreferences.setActiveWalletId(walletId)
+        markFreshWalletSyncMode(walletId)
         Log.d(TAG, "Created sub-account: $walletId (parent: $parentWalletId, index: $nextIndex)")
 
         return entity

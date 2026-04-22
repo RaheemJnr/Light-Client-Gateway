@@ -180,17 +180,15 @@ fun CkbNavGraph(
                             navController.navigate(Screen.PinEntry.createRoute("confirm"))
                         }
                         PinMode.CONFIRM -> {
-                            // Pop confirm. Then either pop setup back to origin
-                            // (SecuritySettings / SecurityChecklist) or — if setup was the
-                            // startDestination (mandatory PIN flow) — land on Main.
+                            // Pop confirm, then try to pop setup. popBackStack returns false
+                            // if setup is the startDestination (mandatory PIN flow) — in that
+                            // case, clear the graph and land on Main.
                             navController.popBackStack() // pop confirm
-                            val hasOriginBehindSetup =
-                                navController.previousBackStackEntry != null
-                            if (hasOriginBehindSetup) {
-                                navController.popBackStack() // pop setup
-                            } else {
+                            val poppedSetup = navController.popBackStack()
+                            if (!poppedSetup) {
                                 navController.navigate(Screen.Main.route) {
-                                    popUpTo(0) { inclusive = true }
+                                    popUpTo(navController.graph.id) { inclusive = true }
+                                    launchSingleTop = true
                                 }
                             }
                         }
