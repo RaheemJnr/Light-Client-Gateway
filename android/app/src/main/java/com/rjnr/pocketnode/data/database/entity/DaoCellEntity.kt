@@ -1,8 +1,18 @@
 package com.rjnr.pocketnode.data.database.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 
-@Entity(tableName = "dao_cells", primaryKeys = ["txHash", "index"])
+@Entity(
+    tableName = "dao_cells",
+    primaryKeys = ["txHash", "index"],
+    indices = [
+        Index(
+            value = ["walletId", "network"],
+            name = "idx_dao_wallet_network"
+        )
+    ]
+)
 data class DaoCellEntity(
     val txHash: String,
     val index: String,
@@ -18,5 +28,6 @@ data class DaoCellEntity(
     val unlockEpochHex: String?,
     val depositTimestamp: Long,
     val network: String,
-    val lastUpdatedAt: Long
+    val lastUpdatedAt: Long,
+    val walletId: String = ""
 )

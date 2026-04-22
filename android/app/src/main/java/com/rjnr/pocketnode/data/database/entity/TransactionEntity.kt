@@ -1,10 +1,20 @@
 package com.rjnr.pocketnode.data.database.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
 
-@Entity(tableName = "transactions")
+@Entity(
+    tableName = "transactions",
+    indices = [
+        Index(
+            value = ["walletId", "network", "timestamp"],
+            name = "idx_tx_wallet_network_time",
+            orders = [Index.Order.ASC, Index.Order.ASC, Index.Order.DESC]
+        )
+    ]
+)
 data class TransactionEntity(
     @PrimaryKey val txHash: String,
     val blockNumber: String,
@@ -18,7 +28,8 @@ data class TransactionEntity(
     val network: String,
     val status: String,       // "PENDING", "CONFIRMED", "FAILED"
     val isLocal: Boolean,     // true = broadcast but not yet synced
-    val cachedAt: Long
+    val cachedAt: Long,
+    val walletId: String = ""
 ) {
     fun toTransactionRecord(): TransactionRecord = TransactionRecord(
         txHash = txHash,
@@ -44,7 +55,8 @@ data class TransactionEntity(
             fee: String,
             confirmations: Int,
             blockTimestampHex: String?,
-            network: String
+            network: String,
+            walletId: String = ""
         ): TransactionEntity = TransactionEntity(
             txHash = txHash,
             blockNumber = blockNumber,
@@ -58,7 +70,8 @@ data class TransactionEntity(
             network = network,
             status = if (confirmations > 0) "CONFIRMED" else "PENDING",
             isLocal = false,
-            cachedAt = System.currentTimeMillis()
+            cachedAt = System.currentTimeMillis(),
+            walletId = walletId
         )
     }
 }

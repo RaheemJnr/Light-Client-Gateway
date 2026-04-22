@@ -35,6 +35,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -51,7 +53,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -74,6 +78,7 @@ import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.ScanLine
 import com.composables.icons.lucide.TriangleAlert
 import com.composables.icons.lucide.X
+import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.wallet.AddressUtils
 import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
@@ -185,13 +190,13 @@ fun SendScreen(
     }
 
     SendScreenUI(
-        onNavigateBack,
-        uiState,
-        onNavigateToScanner,
-        viewModel::updateRecipient,
-        viewModel::updateAmount,
-        viewModel::setMaxAmount,
-        viewModel::sendTransaction
+        onNavigateBack = onNavigateBack,
+        uiState = uiState,
+        onNavigateToScanner = onNavigateToScanner,
+        updateRecipient = viewModel::updateRecipient,
+        updateAmount = viewModel::updateAmount,
+        setMaxAmount = viewModel::setMaxAmount,
+        sendTransaction = viewModel::sendTransaction
     )
 }
 
@@ -309,6 +314,38 @@ private fun SendScreenUI(
                     contentDescription = "Scan",
                     modifier = Modifier.clickable{onNavigateToScanner()}
                 )
+            }
+
+            // "My Wallets" shortcut
+            if (uiState.otherWallets.isNotEmpty()) {
+                var showMyWallets by remember { mutableStateOf(false) }
+                Box {
+                    TextButton(
+                        onClick = { showMyWallets = true },
+                        enabled = !uiState.isLoading
+                    ) {
+                        Text("My Wallets", style = MaterialTheme.typography.labelSmall)
+                    }
+                    DropdownMenu(
+                        expanded = showMyWallets,
+                        onDismissRequest = { showMyWallets = false }
+                    ) {
+                        uiState.otherWallets.forEach { wallet ->
+                            val address = if (uiState.networkType == NetworkType.MAINNET)
+                                wallet.mainnetAddress else wallet.testnetAddress
+                            DropdownMenuItem(
+                                text = { Text(wallet.name) },
+                                // Guard against wallet rows that haven't populated the address
+                                // for the current network yet (WalletEntity defaults to "").
+                                enabled = !uiState.isLoading && address.isNotBlank(),
+                                onClick = {
+                                    updateRecipient(address)
+                                    showMyWallets = false
+                                }
+                            )
+                        }
+                    }
+                }
             }
 
             // Inline address validation indicator

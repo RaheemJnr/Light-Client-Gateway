@@ -3,16 +3,25 @@ package com.rjnr.pocketnode.ui.screens.home
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rjnr.pocketnode.data.database.entity.WalletEntity
+import com.rjnr.pocketnode.data.gateway.CacheManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
+import com.rjnr.pocketnode.data.gateway.SyncProgress
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
+import com.rjnr.pocketnode.BuildConfig
+import com.rjnr.pocketnode.data.auth.AuthManager
+import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.price.PriceRepository
+import com.rjnr.pocketnode.data.update.UpdateDownloader
+import com.rjnr.pocketnode.data.update.UpdateInfo
+import com.rjnr.pocketnode.data.update.UpdateRepository
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.WalletInfo
+import com.rjnr.pocketnode.data.wallet.WalletRepository
+import com.rjnr.pocketnode.ui.components.WalletGroup
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -25,31 +34,46 @@ private const val TAG = "HomeViewModel"
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val repository: GatewayRepository,
-    private val priceRepository: PriceRepository
+    private val priceRepository: PriceRepository,
+    private val walletRepository: WalletRepository,
+    private val updateRepository: UpdateRepository,
+    private val updateDownloader: UpdateDownloader,
+    private val pinManager: PinManager,
+    private val authManager: AuthManager,
+    private val cacheManager: CacheManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
-    private var syncPollingJob: Job? = null
+    private var previousBalanceWasZero = true
 
     private fun formatFiat(ckb: Double, price: Double): String =
         String.format(Locale.US, "≈ $%.2f USD", ckb * price)
 
     init {
         checkBackupStatus()
+        refreshSecurityState()
+        checkForUpdate()
 
         viewModelScope.launch {
             initializeWallet()
         }
 
         viewModelScope.launch {
+            var previousWalletInfo: WalletInfo? = null
             repository.walletInfo.collect { info ->
-                _uiState.update { 
+                val walletChanged = previousWalletInfo != null && info != null && previousWalletInfo != info
+                previousWalletInfo = info
+                _uiState.update {
                     it.copy(
                         walletInfo = info,
                         address = repository.getCurrentAddress() ?: ""
-                    ) 
+                    )
+                }
+                // When wallet changes externally (e.g. from WalletManager), refresh data
+                if (walletChanged) {
+                    refresh()
                 }
             }
         }
@@ -65,6 +89,14 @@ class HomeViewModel @Inject constructor(
                         fiatBalance = fiat ?: current.fiatBalance
                     )
                 }
+                // Post-deposit reminder: trigger when balance goes from zero to non-zero
+                // and the wallet is not fully secured
+                val hasPin = _uiState.value.hasPinOrBiometrics
+                val hasBackup = _uiState.value.hasMnemonicBackup
+                if (previousBalanceWasZero && ckb > 0.0 && (!hasPin || !hasBackup)) {
+                    _uiState.update { it.copy(showPostDepositReminder = true) }
+                }
+                previousBalanceWasZero = (ckb == 0.0)
             }
         }
 
@@ -77,6 +109,21 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             repository.isSwitchingNetwork.collect { switching ->
                 _uiState.update { it.copy(isSwitchingNetwork = switching) }
+            }
+        }
+
+        viewModelScope.launch {
+            walletRepository.walletsFlow.collect { wallets ->
+                val parentWallets = wallets.filter { it.parentWalletId == null }
+                val groups = parentWallets.map { parent ->
+                    WalletGroup(
+                        wallet = parent,
+                        subAccounts = wallets.filter { it.parentWalletId == parent.walletId }
+                    )
+                }
+                _uiState.update { it.copy(wallets = wallets, walletGroups = groups) }
+                // Fetch cached balances for all wallets
+                refreshWalletBalances(wallets)
             }
         }
     }
@@ -118,6 +165,19 @@ class HomeViewModel @Inject constructor(
     }
 
     private suspend fun registerAndRefresh() {
+        // Always refresh saved sync preferences for UI display
+        val savedSyncModeForUi = repository.getSavedSyncMode()
+        val savedCustomBlockHeightForUi = repository.getSavedCustomBlockHeight()
+        _uiState.update { it.copy(currentSyncMode = savedSyncModeForUi, savedCustomBlockHeight = savedCustomBlockHeightForUi) }
+
+        // If already registered (e.g., ViewModel recreated by tab navigation),
+        // skip re-registration to avoid resetting sync progress
+        if (repository.isRegistered.value) {
+            Log.d(TAG, "Already registered, skipping re-registration")
+            checkSyncStatusAndRefresh()
+            return
+        }
+
         // Load saved sync preferences
         val savedSyncMode = repository.getSavedSyncMode()
         val savedCustomBlockHeight = repository.getSavedCustomBlockHeight()
@@ -125,7 +185,7 @@ class HomeViewModel @Inject constructor(
 
         Log.d(TAG, "Loading saved sync preferences: mode=$savedSyncMode, customBlock=$savedCustomBlockHeight, completedSync=$hasCompletedInitialSync")
 
-        _uiState.update { it.copy(currentSyncMode = savedSyncMode) }
+        _uiState.update { it.copy(currentSyncMode = savedSyncMode, savedCustomBlockHeight = savedCustomBlockHeight) }
 
         // Use saved settings, or network-appropriate default for first-time users.
         // Testnet defaults to NEW_WALLET (start from tip — testnet is small, no need for history).
@@ -137,7 +197,7 @@ class HomeViewModel @Inject constructor(
 
         Log.d(TAG, "Registering account with sync mode: $syncMode")
 
-        repository.registerAccount(
+        repository.registerAccountWithStrategy(
             syncMode = syncMode,
             customBlockHeight = customBlockHeight,
             savePreference = !hasCompletedInitialSync // Only save if first time
@@ -154,73 +214,32 @@ class HomeViewModel @Inject constructor(
     }
 
     private suspend fun checkSyncStatusAndRefresh() {
-        // Check sync status
-        repository.getAccountStatus()
-            .onSuccess { status ->
-                Log.d(TAG, "Account sync status: synced=${status.isSynced}, progress=${status.syncProgress}")
-                _uiState.update {
-                    it.copy(
-                        syncProgress = status.syncProgress,
-                        isSyncing = !status.isSynced,
-                        syncedToBlock = status.syncedToBlock,
-                        tipBlockNumber = status.tipNumber
-                    )
-                }
-
-                if (!status.isSynced) {
-                    Log.d(TAG, "Account still syncing (${(status.syncProgress * 100).toInt()}%), starting fast poll")
-                }
-                startSyncPolling()
-            }
-            .onFailure { error ->
-                Log.e(TAG, "Failed to get account status", error)
-            }
-
+        observeSyncProgress()
         // Refresh data regardless of sync status
         refresh()
     }
 
-    private fun startSyncPolling() {
-        if (syncPollingJob?.isActive == true) return
-        
-        syncPollingJob = viewModelScope.launch {
-            Log.d(TAG, "🚀 Starting indefinite sync polling")
-            var isFullySynced = false
+    private fun observeSyncProgress() {
+        viewModelScope.launch {
+            repository.syncProgress.collect { progress ->
+                _uiState.update {
+                    it.copy(
+                        syncProgress = progress.percentage / 100.0,
+                        isSyncing = progress.isSyncing,
+                        syncedToBlock = progress.syncedToBlock.toString(),
+                        tipBlockNumber = progress.tipBlockNumber.toString()
+                    )
+                }
 
-            while (true) {
-                val delayMs = if (isFullySynced) 30_000L else 5_000L
-                delay(delayMs)
-
-                repository.getAccountStatus()
-                    .onSuccess { status ->
-                        val wasSynced = isFullySynced
-                        isFullySynced = status.isSynced
-                        
-                        _uiState.update {
-                            it.copy(
-                                syncProgress = status.syncProgress,
-                                isSyncing = !status.isSynced,
-                                syncedToBlock = status.syncedToBlock,
-                                tipBlockNumber = status.tipNumber
-                            )
-                        }
-
-                        if (isFullySynced && !wasSynced) {
-                            Log.d(TAG, "✨ Account just reached full sync! Refreshing all data...")
-                            refresh()
-                        } else if (isFullySynced) {
-                            // Periodically check for new transactions even when synced
-                            Log.d(TAG, "📡 Periodic background refresh (Synced)")
-                            refresh()
-                        } else {
-                            Log.d(TAG, "📈 Sync progress: ${(status.syncProgress * 100).toInt()}%")
-                            // Refresh transactions periodically during active sync
-                            refreshTransactionsOnly(silent = true)
-                        }
-                    }
-                    .onFailure {
-                        Log.e(TAG, "❌ Failed to check sync status during polling", it)
-                    }
+                if (progress.justReachedTip) {
+                    Log.d(TAG, "Sync just reached tip -- refreshing all data")
+                    refresh()
+                } else if (!progress.isSyncing && progress.tipBlockNumber > 0) {
+                    // Periodically refresh when synced (the flow emits on each poll)
+                    refresh()
+                } else if (progress.isSyncing) {
+                    refreshTransactionsOnly(silent = true)
+                }
             }
         }
     }
@@ -260,6 +279,23 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    private suspend fun refreshWalletBalances(wallets: List<WalletEntity>) {
+        val network = _uiState.value.currentNetwork.name
+        val balanceMap = mutableMapOf<String, String>()
+        for (wallet in wallets) {
+            try {
+                val cached = cacheManager.getCachedBalance(network, walletId = wallet.walletId)
+                if (cached != null) {
+                    val ckb = cached.capacityAsCkb()
+                    balanceMap[wallet.walletId] = String.format(Locale.US, "%,.2f CKB", ckb)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to get cached balance for ${wallet.walletId}", e)
+            }
+        }
+        _uiState.update { it.copy(walletBalances = balanceMap) }
+    }
+
     private suspend fun refreshTransactionsOnly(silent: Boolean = false) {
         Log.d(TAG, "Fetching transactions (limit=50)...")
         repository.getTransactions(limit = 50)
@@ -294,8 +330,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             Log.d(TAG, "Changing sync mode to: $syncMode, customBlock: $customBlockHeight")
 
-            // Cancel any existing sync polling
-            syncPollingJob?.cancel()
+            repository.stopSyncPolling()
 
             _uiState.update {
                 it.copy(
@@ -303,7 +338,8 @@ class HomeViewModel @Inject constructor(
                     isSyncing = true,
                     syncProgress = 0.0,
                     transactions = emptyList(),
-                    currentSyncMode = syncMode
+                    currentSyncMode = syncMode,
+                    savedCustomBlockHeight = customBlockHeight
                 )
             }
 
@@ -346,24 +382,55 @@ class HomeViewModel @Inject constructor(
      */
     fun showBackup() {
         if (isMnemonicWallet()) return // handled by navigation in HomeScreen
-        try {
-            val privateKey = repository.getPrivateKey()
-            val hex = org.nervos.ckb.utils.Numeric.toHexStringNoPrefix(privateKey)
-            _uiState.update { it.copy(privateKeyHex = hex, showBackupDialog = true) }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to get private key for backup", e)
-            _uiState.update { it.copy(error = "Failed to access wallet keys") }
+        viewModelScope.launch {
+            try {
+                val privateKey = repository.getPrivateKey()
+                val hex = org.nervos.ckb.utils.Numeric.toHexStringNoPrefix(privateKey)
+                _uiState.update { it.copy(privateKeyHex = hex, showBackupDialog = true) }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to get private key for backup", e)
+                _uiState.update { it.copy(error = "Failed to access wallet keys") }
+            }
         }
     }
 
     private fun checkBackupStatus() {
-        val type = repository.getWalletType()
-        val needsBackup = type == KeyManager.WALLET_TYPE_MNEMONIC && !repository.hasMnemonicBackup()
-        _uiState.update { it.copy(walletType = type, showBackupReminder = needsBackup) }
+        viewModelScope.launch {
+            val type = repository.getWalletType()
+            // Sub-accounts (parentWalletId != null) don't hold their own mnemonic —
+            // the parent wallet's backup covers them. Don't show backup reminder.
+            val activeWallet = _uiState.value.wallets.find { it.isActive }
+            val isSubAccount = activeWallet?.parentWalletId != null
+            val needsBackup = type == KeyManager.WALLET_TYPE_MNEMONIC
+                && !isSubAccount
+                && !repository.hasMnemonicBackupForActiveWallet()
+            _uiState.update { it.copy(walletType = type, showBackupReminder = needsBackup) }
+        }
+    }
+
+    fun refreshSecurityState() {
+        viewModelScope.launch {
+            val hasPin = pinManager.hasPin()
+            val hasBiometrics = authManager.isBiometricEnabled()
+            // Sub-accounts inherit parent's backup status — treat as backed up
+            val activeWallet = _uiState.value.wallets.find { it.isActive }
+            val isSubAccount = activeWallet?.parentWalletId != null
+            val hasMnemonicBackup = isSubAccount || repository.hasMnemonicBackupForActiveWallet()
+            _uiState.update {
+                it.copy(
+                    hasPinOrBiometrics = hasPin || hasBiometrics,
+                    hasMnemonicBackup = hasMnemonicBackup
+                )
+            }
+        }
     }
 
     fun dismissBackupReminder() {
         _uiState.update { it.copy(showBackupReminder = false) }
+    }
+
+    fun dismissPostDepositReminder() {
+        _uiState.update { it.copy(showPostDepositReminder = false) }
     }
 
     fun toggleBalanceVisibility() {
@@ -429,6 +496,34 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    fun switchWallet(walletId: String) {
+        viewModelScope.launch {
+            try {
+                _uiState.update { it.copy(isSwitchingWallet = true) }
+                walletRepository.switchActiveWallet(walletId)
+                val wallet = walletRepository.getById(walletId) ?: return@launch
+                repository.onActiveWalletChanged(wallet)
+                // Refresh per-wallet sync preferences for UI
+                val newSyncMode = repository.getSavedSyncMode()
+                val newCustomHeight = repository.getSavedCustomBlockHeight()
+                checkBackupStatus()
+                refreshSecurityState()
+                refreshWalletBalances(_uiState.value.wallets)
+                // Clear stale transactions and refresh from new wallet
+                _uiState.update { it.copy(
+                    isSwitchingWallet = false,
+                    transactions = emptyList(),
+                    currentSyncMode = newSyncMode,
+                    savedCustomBlockHeight = newCustomHeight
+                ) }
+                refresh()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to switch wallet", e)
+                _uiState.update { it.copy(isSwitchingWallet = false, error = "Failed to switch wallet: ${e.message}") }
+            }
+        }
+    }
+
     fun requestNetworkSwitch(target: NetworkType) {
         _uiState.update { it.copy(showNetworkSwitchDialog = true, pendingNetworkSwitch = target) }
     }
@@ -443,8 +538,7 @@ class HomeViewModel @Inject constructor(
 
         viewModelScope.launch {
             // Cancel active polling before switching
-            syncPollingJob?.cancel()
-            syncPollingJob = null
+            repository.stopSyncPolling()
 
             // Clear UI state for fresh network
             _uiState.update {
@@ -483,9 +577,42 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    private fun checkForUpdate() {
+        viewModelScope.launch {
+            updateRepository.checkForUpdate(BuildConfig.VERSION_NAME)
+                .onSuccess { info ->
+                    if (info != null) {
+                        Log.d(TAG, "Update available: ${info.latestVersion}")
+                        _uiState.update { it.copy(updateInfo = info, showUpdateDialog = true) }
+                    }
+                }
+                .onFailure { error ->
+                    Log.w(TAG, "Update check failed (non-critical): ${error.message}")
+                }
+        }
+    }
+
+    fun dismissUpdate() {
+        _uiState.update { it.copy(showUpdateDialog = false) }
+    }
+
+    fun startUpdate() {
+        val info = _uiState.value.updateInfo ?: return
+        _uiState.update { it.copy(showUpdateDialog = false) }
+
+        if (info.apkDownloadUrl != null && updateDownloader.canInstallPackages()) {
+            updateDownloader.downloadAndInstall(info.apkDownloadUrl)
+        } else if (info.apkDownloadUrl != null) {
+            _uiState.update { it.copy(showInstallPermissionNeeded = true) }
+        } else {
+            // No APK asset — open the GitHub release page in browser
+            _uiState.update { it.copy(showUpdateDialog = false) }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
-        syncPollingJob?.cancel()
+        updateDownloader.cleanup()
     }
 }
 
@@ -516,5 +643,16 @@ data class HomeUiState(
     val isSwitchingNetwork: Boolean = false,
     val showNetworkSwitchDialog: Boolean = false,
     val pendingNetworkSwitch: NetworkType? = null,
-    val isBalanceHidden: Boolean = false
+    val isBalanceHidden: Boolean = false,
+    val wallets: List<WalletEntity> = emptyList(),
+    val walletGroups: List<WalletGroup> = emptyList(),
+    val updateInfo: UpdateInfo? = null,
+    val showUpdateDialog: Boolean = false,
+    val showInstallPermissionNeeded: Boolean = false,
+    val hasPinOrBiometrics: Boolean = false,
+    val hasMnemonicBackup: Boolean = false,
+    val showPostDepositReminder: Boolean = false,
+    val isSwitchingWallet: Boolean = false,
+    val savedCustomBlockHeight: Long? = null,
+    val walletBalances: Map<String, String> = emptyMap()
 )

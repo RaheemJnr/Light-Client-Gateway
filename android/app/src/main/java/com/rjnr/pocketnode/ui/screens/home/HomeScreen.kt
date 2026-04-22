@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +46,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -69,6 +71,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.ExternalLink
 import com.composables.icons.lucide.FileText
+import com.composables.icons.lucide.Info
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.TriangleAlert
 import com.composables.icons.lucide.X
@@ -76,7 +79,14 @@ import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
 import com.rjnr.pocketnode.data.gateway.models.displayName
+import com.composables.icons.lucide.ChevronDown
+import com.rjnr.pocketnode.ui.components.SecurityBanner
+import com.rjnr.pocketnode.ui.components.SecurityBannerState
 import com.rjnr.pocketnode.ui.components.SyncOptionsDialog
+import com.rjnr.pocketnode.ui.components.UpdateDialog
+import com.rjnr.pocketnode.ui.components.AccountSelectorSheet
+import com.rjnr.pocketnode.ui.components.WalletAvatar
+import androidx.compose.material3.rememberModalBottomSheetState
 import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
 import com.rjnr.pocketnode.ui.theme.ErrorRed
 import com.rjnr.pocketnode.ui.theme.SuccessGreen
@@ -94,6 +104,8 @@ fun HomeScreen(
     onNavigateToBackup: () -> Unit = {},
     onNavigateToDao: () -> Unit = {},
     onNavigateToActivity: () -> Unit = {},
+    onNavigateToWalletManager: () -> Unit = {},
+    onNavigateToSecurityChecklist: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -101,7 +113,20 @@ fun HomeScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedTransaction by remember { mutableStateOf<TransactionRecord?>(null) }
+    var showAccountSelector by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    // Refresh security state (PIN, backup) when returning from setup screens
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshSecurityState()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Sync options dialog (settings path)
     if (uiState.showSyncOptionsDialog) {
@@ -111,7 +136,8 @@ fun HomeScreen(
             onSelectMode = { mode, customBlock ->
                 viewModel.hideSyncOptions()
                 viewModel.changeSyncMode(mode, customBlock)
-            }
+            },
+            savedCustomBlockHeight = uiState.savedCustomBlockHeight
         )
     }
 
@@ -181,6 +207,40 @@ fun HomeScreen(
         )
     }
 
+    // Update dialog
+    if (uiState.showUpdateDialog && uiState.updateInfo != null) {
+        UpdateDialog(
+            updateInfo = uiState.updateInfo!!,
+            onUpdate = { viewModel.startUpdate() },
+            onDismiss = { viewModel.dismissUpdate() }
+        )
+    }
+
+    // Post-deposit security reminder
+    if (uiState.showPostDepositReminder) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissPostDepositReminder() },
+            title = { Text("Protect your funds") },
+            text = {
+                Text(
+                    "You now have funds in this wallet. Set up a PIN and write down " +
+                        "your recovery phrase to protect them."
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.dismissPostDepositReminder()
+                    onNavigateToSecurityChecklist()
+                }) { Text("Secure now") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissPostDepositReminder() }) {
+                    Text("Later")
+                }
+            }
+        )
+    }
+
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
             snackbarHostState.showSnackbar(error)
@@ -214,17 +274,54 @@ fun HomeScreen(
         )
     }
 
+    // Account selector bottom sheet
+    if (showAccountSelector) {
+        AccountSelectorSheet(
+            sheetState = rememberModalBottomSheetState(),
+            walletGroups = uiState.walletGroups,
+            activeWalletId = uiState.wallets.find { it.isActive }?.walletId ?: "",
+            onSelectAccount = { viewModel.switchWallet(it) },
+            onManageWallets = onNavigateToWalletManager,
+            onDismiss = { showAccountSelector = false },
+            balances = uiState.walletBalances
+        )
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
                 title = {
+                    val activeWallet = uiState.wallets.find { it.isActive }
                     Row(
-                        modifier = Modifier.padding(8.dp),
+                        modifier = Modifier
+                            .padding(8.dp)
+                            .clickable { showAccountSelector = true },
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text("Pocket Node", fontWeight = FontWeight.SemiBold)
+                        WalletAvatar(
+                            name = activeWallet?.name ?: "P",
+                            colorIndex = activeWallet?.colorIndex ?: 0,
+                            size = 32.dp
+                        )
+                        Column {
+                            Text(
+                                text = "wallet",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = activeWallet?.name ?: "Pocket Node",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Icon(
+                            Lucide.ChevronDown,
+                            contentDescription = "Switch",
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 },
                 actions = {
@@ -280,22 +377,33 @@ fun HomeScreen(
                 }
             }
         } else {
-            HomeScreenUI(
-                uiState = uiState,
-                refresh = { viewModel.refresh() },
-                padding = padding,
-                onNavigateToBackup = onNavigateToBackup,
-                onNavigateToSend = onNavigateToSend,
-                onNavigateToReceive = onNavigateToReceive,
-                onNavigateToDao = onNavigateToDao,
-                onNavigateToActivity = onNavigateToActivity,
-                dismissBackupReminder = { viewModel.dismissBackupReminder() },
-                onToggleBalanceVisibility = { viewModel.toggleBalanceVisibility() },
-                clipboardManager = clipboardManager,
-                snackbarHostState = snackbarHostState,
-                scope = scope,
-                selectedTransaction = { selectedTransaction = it }
-            )
+            Box(modifier = Modifier.fillMaxSize()) {
+                HomeScreenUI(
+                    uiState = uiState,
+                    refresh = { viewModel.refresh() },
+                    padding = padding,
+                    onNavigateToBackup = onNavigateToBackup,
+                    onNavigateToSend = onNavigateToSend,
+                    onNavigateToReceive = onNavigateToReceive,
+                    onNavigateToDao = onNavigateToDao,
+                    onNavigateToActivity = onNavigateToActivity,
+                    onNavigateToSecurityChecklist = onNavigateToSecurityChecklist,
+                    dismissBackupReminder = { viewModel.dismissBackupReminder() },
+                    onToggleBalanceVisibility = { viewModel.toggleBalanceVisibility() },
+                    clipboardManager = clipboardManager,
+                    snackbarHostState = snackbarHostState,
+                    scope = scope,
+                    selectedTransaction = { selectedTransaction = it }
+                )
+                if (uiState.isSwitchingWallet) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = padding.calculateTopPadding()),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
     }
 }
@@ -310,6 +418,7 @@ fun HomeScreenUI(
     onNavigateToReceive: () -> Unit,
     onNavigateToDao: () -> Unit = {},
     onNavigateToActivity: () -> Unit = {},
+    onNavigateToSecurityChecklist: () -> Unit = {},
     dismissBackupReminder: () -> Unit,
     onToggleBalanceVisibility: () -> Unit,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
@@ -330,6 +439,17 @@ fun HomeScreenUI(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Security Banner (PIN/biometrics + backup status)
+            item {
+                SecurityBanner(
+                    state = SecurityBannerState(
+                        hasPinOrBiometrics = uiState.hasPinOrBiometrics,
+                        hasMnemonicBackup = uiState.hasMnemonicBackup
+                    ),
+                    onActionClick = onNavigateToSecurityChecklist
+                )
+            }
+
             // Mnemonic Backup Reminder
             if (uiState.showBackupReminder) {
                 item {
@@ -364,6 +484,36 @@ fun HomeScreenUI(
                         }
                     }
                 )
+            }
+
+            // Sync warning banner
+            if (uiState.isSyncing) {
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Lucide.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                "Finish syncing before making transactions",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                }
             }
 
             // Quick Actions Row

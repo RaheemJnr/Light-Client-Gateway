@@ -10,6 +10,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import com.rjnr.pocketnode.data.database.entity.KeyMaterialEntity
 
 /**
  * Verifies that the v2 database schema is correct and all four tables
@@ -30,7 +31,7 @@ class MigrationTest {
     fun setup() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
     }
@@ -92,5 +93,89 @@ class MigrationTest {
         assertNotNull(result)
         assertEquals("DEPOSITED", result!!.status)
         assertEquals(10_200_000_000L, result.capacity)
+    }
+
+    @Test
+    fun `v5 database has key_material table accessible`() = runTest {
+        assertEquals(0, db.keyMaterialDao().count())
+    }
+
+    @Test
+    fun `v5 key_material entity round-trip`() = runTest {
+        val entity = KeyMaterialEntity(
+            walletId = "test-wallet",
+            encryptedPrivateKey = byteArrayOf(1, 2, 3),
+            encryptedMnemonic = byteArrayOf(4, 5, 6),
+            iv = byteArrayOf(7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18),
+            walletType = "mnemonic",
+            mnemonicBackedUp = true,
+            updatedAt = System.currentTimeMillis()
+        )
+        db.keyMaterialDao().upsert(entity)
+
+        val loaded = db.keyMaterialDao().getByWalletId("test-wallet")
+        assertNotNull(loaded)
+        assertEquals("test-wallet", loaded!!.walletId)
+        assertArrayEquals(byteArrayOf(1, 2, 3), loaded.encryptedPrivateKey)
+        assertArrayEquals(byteArrayOf(4, 5, 6), loaded.encryptedMnemonic)
+        assertEquals("mnemonic", loaded.walletType)
+        assertTrue(loaded.mnemonicBackedUp)
+    }
+
+    @Test
+    fun `v5 key_material nullable mnemonic`() = runTest {
+        val entity = KeyMaterialEntity(
+            walletId = "raw-key-wallet",
+            encryptedPrivateKey = byteArrayOf(10, 20, 30),
+            encryptedMnemonic = null,
+            iv = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12),
+            walletType = "raw_key",
+            mnemonicBackedUp = false,
+            updatedAt = System.currentTimeMillis()
+        )
+        db.keyMaterialDao().upsert(entity)
+
+        val loaded = db.keyMaterialDao().getByWalletId("raw-key-wallet")
+        assertNotNull(loaded)
+        assertNull(loaded!!.encryptedMnemonic)
+        assertEquals("raw_key", loaded.walletType)
+    }
+
+    @Test
+    fun `v5 key_material updateMnemonicBackedUp`() = runTest {
+        val entity = KeyMaterialEntity(
+            walletId = "w1",
+            encryptedPrivateKey = byteArrayOf(1),
+            encryptedMnemonic = null,
+            iv = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12),
+            walletType = "mnemonic",
+            mnemonicBackedUp = false,
+            updatedAt = 100L
+        )
+        db.keyMaterialDao().upsert(entity)
+
+        db.keyMaterialDao().updateMnemonicBackedUp("w1", true, 200L)
+
+        val loaded = db.keyMaterialDao().getByWalletId("w1")
+        assertTrue(loaded!!.mnemonicBackedUp)
+        assertEquals(200L, loaded.updatedAt)
+    }
+
+    @Test
+    fun `v5 key_material delete`() = runTest {
+        val entity = KeyMaterialEntity(
+            walletId = "to-delete",
+            encryptedPrivateKey = byteArrayOf(1),
+            encryptedMnemonic = null,
+            iv = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12),
+            walletType = "raw_key",
+            mnemonicBackedUp = false,
+            updatedAt = 0L
+        )
+        db.keyMaterialDao().upsert(entity)
+        assertEquals(1, db.keyMaterialDao().count())
+
+        db.keyMaterialDao().delete("to-delete")
+        assertEquals(0, db.keyMaterialDao().count())
     }
 }

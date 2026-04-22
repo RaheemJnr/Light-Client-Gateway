@@ -18,6 +18,22 @@ class AuthManager @Inject constructor(
     @VisibleForTesting
     internal var testPrefs: SharedPreferences? = null
 
+    private var sessionPin: CharArray? = null
+
+    fun setSessionPin(pin: CharArray) {
+        clearSession()
+        sessionPin = pin.copyOf()
+    }
+
+    fun getSessionPin(): CharArray? = sessionPin?.copyOf()
+
+    fun hasSessionPin(): Boolean = sessionPin != null
+
+    fun clearSession() {
+        sessionPin?.let { java.util.Arrays.fill(it, '\u0000') }
+        sessionPin = null
+    }
+
     private val prefs: SharedPreferences
         get() = testPrefs ?: defaultPrefs
 

@@ -6,8 +6,10 @@ import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
+import com.rjnr.pocketnode.data.wallet.SyncStrategy
 import com.rjnr.pocketnode.data.wallet.ThemeMode
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
+import com.rjnr.pocketnode.data.wallet.WalletRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,15 +22,20 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val repository: GatewayRepository,
     private val walletPrefs: WalletPreferences,
-    private val pinManager: PinManager
+    private val pinManager: PinManager,
+    private val walletRepository: WalletRepository
 ) : ViewModel() {
 
     data class UiState(
         val isPinEnabled: Boolean = false,
         val syncMode: SyncMode = SyncMode.RECENT,
+        val savedCustomBlockHeight: Long? = null,
+        val syncStrategy: SyncStrategy = SyncStrategy.ALL_WALLETS,
         val currentNetwork: NetworkType = NetworkType.MAINNET,
         val themeMode: ThemeMode = ThemeMode.SYSTEM,
+        val isBackgroundSyncEnabled: Boolean = true,
         val showSyncDialog: Boolean = false,
+        val showSyncStrategyDialog: Boolean = false,
         val showNetworkSwitchDialog: Boolean = false,
         val showThemeDialog: Boolean = false,
         val pendingNetworkSwitch: NetworkType? = null,
@@ -47,15 +54,33 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update { it.copy(currentNetwork = network) }
             }
         }
+
+        // Reload sync preferences when active wallet changes
+        viewModelScope.launch {
+            walletRepository.getActiveWallet().collect { wallet ->
+                val walletId = wallet?.walletId
+                _uiState.update {
+                    it.copy(
+                        syncMode = walletPrefs.getSyncMode(walletId = walletId),
+                        savedCustomBlockHeight = walletPrefs.getCustomBlockHeight(walletId = walletId),
+                        syncStrategy = walletPrefs.getSyncStrategy()
+                    )
+                }
+            }
+        }
     }
 
     private fun loadState() {
+        val walletId = walletPrefs.getActiveWalletId()
         _uiState.update {
             it.copy(
                 isPinEnabled = pinManager.hasPin(),
-                syncMode = walletPrefs.getSyncMode(),
+                syncMode = walletPrefs.getSyncMode(walletId = walletId),
+                savedCustomBlockHeight = walletPrefs.getCustomBlockHeight(walletId = walletId),
+                syncStrategy = walletPrefs.getSyncStrategy(),
                 currentNetwork = repository.currentNetwork,
-                themeMode = walletPrefs.getThemeMode()
+                themeMode = walletPrefs.getThemeMode(),
+                isBackgroundSyncEnabled = walletPrefs.isBackgroundSyncEnabled()
             )
         }
     }
@@ -66,6 +91,19 @@ class SettingsViewModel @Inject constructor(
 
     fun hideSyncDialog() {
         _uiState.update { it.copy(showSyncDialog = false) }
+    }
+
+    fun showSyncStrategyDialog() {
+        _uiState.update { it.copy(showSyncStrategyDialog = true) }
+    }
+
+    fun hideSyncStrategyDialog() {
+        _uiState.update { it.copy(showSyncStrategyDialog = false) }
+    }
+
+    fun setSyncStrategy(strategy: SyncStrategy) {
+        walletPrefs.setSyncStrategy(strategy)
+        _uiState.update { it.copy(syncStrategy = strategy, showSyncStrategyDialog = false) }
     }
 
     fun setSyncMode(mode: SyncMode, customBlockHeight: Long? = null) {
@@ -112,6 +150,16 @@ class SettingsViewModel @Inject constructor(
     fun setThemeMode(mode: ThemeMode) {
         walletPrefs.setThemeMode(mode)
         _uiState.update { it.copy(themeMode = mode, showThemeDialog = false) }
+    }
+
+    fun toggleBackgroundSync(enabled: Boolean) {
+        walletPrefs.setBackgroundSyncEnabled(enabled)
+        _uiState.update { it.copy(isBackgroundSyncEnabled = enabled) }
+        if (enabled) {
+            repository.startBackgroundSync()
+        } else {
+            repository.stopBackgroundSync()
+        }
     }
 
     fun clearError() {

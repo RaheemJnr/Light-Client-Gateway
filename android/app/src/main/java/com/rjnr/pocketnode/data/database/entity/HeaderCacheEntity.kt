@@ -1,10 +1,19 @@
 package com.rjnr.pocketnode.data.database.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.rjnr.pocketnode.data.gateway.models.JniHeaderView
 
-@Entity(tableName = "header_cache")
+@Entity(
+    tableName = "header_cache",
+    indices = [
+        Index(
+            value = ["network", "number"],
+            name = "idx_header_network_number"
+        )
+    ]
+)
 data class HeaderCacheEntity(
     @PrimaryKey val blockHash: String,
     val number: String,

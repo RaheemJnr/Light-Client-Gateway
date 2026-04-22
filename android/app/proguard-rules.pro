@@ -57,3 +57,6 @@
 
 # Keep Room database entities (annotations + field names used by Room codegen)
 -keep class com.rjnr.pocketnode.data.database.entity.** { *; }
+
+# Keep KeystoreEncryptionManager (Android Keystore + JCE crypto)
+-keep class com.rjnr.pocketnode.data.crypto.KeystoreEncryptionManager { *; }

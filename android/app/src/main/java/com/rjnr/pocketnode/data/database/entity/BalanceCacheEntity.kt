@@ -1,12 +1,15 @@
 package com.rjnr.pocketnode.data.database.entity
 
 import androidx.room.Entity
-import androidx.room.PrimaryKey
 import com.rjnr.pocketnode.data.gateway.models.BalanceResponse
 
-@Entity(tableName = "balance_cache")
+@Entity(
+    tableName = "balance_cache",
+    primaryKeys = ["walletId", "network"]
+)
 data class BalanceCacheEntity(
-    @PrimaryKey val network: String,
+    val walletId: String,
+    val network: String,
     val address: String,
     val capacity: String,
     val capacityCkb: String,
@@ -24,8 +27,9 @@ data class BalanceCacheEntity(
         System.currentTimeMillis() - cachedAt < ttlMs
 
     companion object {
-        fun from(response: BalanceResponse, network: String): BalanceCacheEntity =
+        fun from(response: BalanceResponse, network: String, walletId: String): BalanceCacheEntity =
             BalanceCacheEntity(
+                walletId = walletId,
                 network = network,
                 address = response.address,
                 capacity = response.capacity,

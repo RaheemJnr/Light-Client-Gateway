@@ -40,6 +40,8 @@ fun MainScreen(
     onNavigateToSecuritySettings: () -> Unit,
     onNavigateToImport: () -> Unit,
     onNavigateToPinVerify: () -> Unit = {},
+    onNavigateToSecurityChecklist: () -> Unit = {},
+    onNavigateToWalletManager: () -> Unit = {},
     daoPinVerified: Boolean = false,
 ) {
     val innerNav = rememberNavController()
@@ -87,6 +89,8 @@ fun MainScreen(
                     onNavigateToSend = onNavigateToSend,
                     onNavigateToReceive = onNavigateToReceive,
                     onNavigateToBackup = onNavigateToBackup,
+                    onNavigateToSecurityChecklist = onNavigateToSecurityChecklist,
+                    onNavigateToWalletManager = onNavigateToWalletManager,
                     onNavigateToDao = {
                         innerNav.navigate(BottomTab.DAO.route) {
                             popUpTo(innerNav.graph.findStartDestination().id) {
@@ -123,6 +127,7 @@ fun MainScreen(
                     onNavigateToBackup = onNavigateToBackup,
                     onNavigateToSecuritySettings = onNavigateToSecuritySettings,
                     onNavigateToImport = onNavigateToImport,
+                    onNavigateToWalletManager = onNavigateToWalletManager,
                 )
             }
         }

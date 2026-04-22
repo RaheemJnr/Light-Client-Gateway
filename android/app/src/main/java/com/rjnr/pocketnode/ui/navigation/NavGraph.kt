@@ -11,8 +11,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.ui.MainScreen
 import com.rjnr.pocketnode.ui.screens.auth.AuthScreen
+import com.rjnr.pocketnode.ui.screens.auth.InitialPinSetupScreen
 import com.rjnr.pocketnode.ui.screens.auth.PinEntryScreen
 import com.rjnr.pocketnode.ui.screens.auth.PinMode
 import com.rjnr.pocketnode.ui.screens.onboarding.MnemonicBackupScreen
@@ -22,6 +24,15 @@ import com.rjnr.pocketnode.ui.screens.scanner.QrScannerScreen
 import com.rjnr.pocketnode.ui.screens.send.SendScreen
 import com.rjnr.pocketnode.ui.screens.settings.SecuritySettingsScreen
 import com.rjnr.pocketnode.ui.screens.settings.SecuritySettingsViewModel
+import com.rjnr.pocketnode.ui.screens.recovery.RecoveryScreen
+import androidx.compose.runtime.collectAsState
+import com.rjnr.pocketnode.ui.screens.security.SecurityChecklistScreen
+import com.rjnr.pocketnode.ui.screens.security.SecurityChecklistViewModel
+import com.rjnr.pocketnode.ui.screens.security.MnemonicVerifyScreen
+import com.rjnr.pocketnode.ui.screens.wallet.AddWalletScreen
+import com.rjnr.pocketnode.ui.screens.wallet.WalletManagerScreen
+import com.rjnr.pocketnode.ui.screens.wallet.WalletSettingsScreen
+import com.rjnr.pocketnode.ui.screens.wallet.WalletSettingsViewModel
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
@@ -31,13 +42,26 @@ sealed class Screen(val route: String) {
     object Scanner : Screen("scanner")
     object NodeStatus : Screen("node_status")
     object Onboarding : Screen("onboarding")
-    object MnemonicBackup : Screen("mnemonic_backup")
+    object MnemonicBackup : Screen("mnemonic_backup?simplified={simplified}") {
+        const val BASE = "mnemonic_backup"
+        fun createRoute(simplified: Boolean = false) =
+            if (simplified) "mnemonic_backup?simplified=true" else "mnemonic_backup?simplified=false"
+    }
     object MnemonicImport : Screen("mnemonic_import")
     object Auth : Screen("auth")
     object PinEntry : Screen("pin_entry/{mode}") {
         fun createRoute(mode: String) = "pin_entry/$mode"
     }
     object SecuritySettings : Screen("security_settings")
+    object Recovery : Screen("recovery")
+    object SecurityChecklist : Screen("security_checklist")
+    object MnemonicVerify : Screen("mnemonic_verify")
+    object WalletManager : Screen("wallet_manager")
+    object WalletDetail : Screen("wallet_detail/{walletId}") {
+        fun createRoute(walletId: String) = "wallet_detail/$walletId"
+    }
+    object AddWallet : Screen("add_wallet")
+    object InitialPinSetup : Screen("initial_pin_setup")
 }
 
 sealed class BottomTab(val route: String, val label: String) {
@@ -54,8 +78,15 @@ sealed class BottomTab(val route: String, val label: String) {
 @Composable
 fun CkbNavGraph(
     navController: NavHostController,
-    startDestination: String = Screen.Onboarding.route
+    startDestination: String = Screen.Onboarding.route,
+    pinManager: PinManager
 ) {
+    // PIN is mandatory: if the user doesn't have one yet, any "go to Main" action
+    // must first pass through PIN setup. See MainActivity startup gate for the
+    // cold-start path.
+    fun destinationAfterWalletReady(): String =
+        if (pinManager.hasPin()) Screen.Main.route else Screen.InitialPinSetup.route
+
     NavHost(
         navController = navController,
         startDestination = startDestination
@@ -63,12 +94,12 @@ fun CkbNavGraph(
         composable(Screen.Onboarding.route) {
             com.rjnr.pocketnode.ui.screens.onboarding.OnboardingScreen(
                 onNavigateToHome = {
-                    navController.navigate(Screen.Main.route) {
+                    navController.navigate(destinationAfterWalletReady()) {
                         popUpTo(Screen.Onboarding.route) { inclusive = true }
                     }
                 },
                 onNavigateToBackup = {
-                    navController.navigate(Screen.MnemonicBackup.route) {
+                    navController.navigate(Screen.MnemonicBackup.createRoute()) {
                         popUpTo(Screen.Onboarding.route) { inclusive = true }
                     }
                 },
@@ -80,11 +111,16 @@ fun CkbNavGraph(
             )
         }
 
-        composable(Screen.MnemonicBackup.route) {
+        composable(
+            route = Screen.MnemonicBackup.route,
+            arguments = listOf(navArgument("simplified") { defaultValue = false; type = NavType.BoolType })
+        ) { backStackEntry ->
+            val simplified = backStackEntry.arguments?.getBoolean("simplified") ?: false
             MnemonicBackupScreen(
+                simplified = simplified,
                 onNavigateToHome = {
-                    navController.navigate(Screen.Main.route) {
-                        popUpTo(Screen.MnemonicBackup.route) { inclusive = true }
+                    navController.navigate(destinationAfterWalletReady()) {
+                        popUpTo(Screen.MnemonicBackup.BASE) { inclusive = true }
                         launchSingleTop = true
                     }
                 },
@@ -95,7 +131,7 @@ fun CkbNavGraph(
         composable(Screen.MnemonicImport.route) {
             MnemonicImportScreen(
                 onNavigateToHome = {
-                    navController.navigate(Screen.Main.route) {
+                    navController.navigate(destinationAfterWalletReady()) {
                         popUpTo(Screen.MnemonicImport.route) { inclusive = true }
                         launchSingleTop = true
                     }
@@ -146,10 +182,10 @@ fun CkbNavGraph(
                             navController.navigate(Screen.PinEntry.createRoute("confirm"))
                         }
                         PinMode.CONFIRM -> {
-                            navController.popBackStack(
-                                Screen.SecuritySettings.route,
-                                inclusive = false
-                            )
+                            // Pop back past both PinEntry screens (confirm + setup)
+                            // to wherever the user came from (SecuritySettings or SecurityChecklist)
+                            navController.popBackStack() // pop confirm
+                            navController.popBackStack() // pop setup
                         }
                         PinMode.VERIFY -> {
                             val previousRoute = navController.previousBackStackEntry
@@ -171,6 +207,12 @@ fun CkbNavGraph(
                                     navController.previousBackStackEntry
                                         ?.savedStateHandle
                                         ?.set("dao_pin_verified", true)
+                                    navController.popBackStack()
+                                }
+                                Screen.WalletDetail.route -> {
+                                    navController.previousBackStackEntry
+                                        ?.savedStateHandle
+                                        ?.set("pin_verified", true)
                                     navController.popBackStack()
                                 }
                                 else -> {
@@ -239,11 +281,17 @@ fun CkbNavGraph(
                 onNavigateToSend = { navController.navigate(Screen.Send.route) },
                 onNavigateToReceive = { navController.navigate(Screen.Receive.route) },
                 onNavigateToNodeStatus = { navController.navigate(Screen.NodeStatus.route) },
-                onNavigateToBackup = { navController.navigate(Screen.MnemonicBackup.route) },
+                onNavigateToBackup = { navController.navigate(Screen.MnemonicBackup.createRoute()) },
                 onNavigateToSecuritySettings = { navController.navigate(Screen.SecuritySettings.route) },
                 onNavigateToImport = { navController.navigate(Screen.MnemonicImport.route) },
                 onNavigateToPinVerify = {
                     navController.navigate(Screen.PinEntry.createRoute("verify"))
+                },
+                onNavigateToSecurityChecklist = {
+                    navController.navigate(Screen.SecurityChecklist.route)
+                },
+                onNavigateToWalletManager = {
+                    navController.navigate(Screen.WalletManager.route)
                 },
                 daoPinVerified = daoPinVerified,
             )
@@ -291,6 +339,121 @@ fun CkbNavGraph(
         composable(Screen.NodeStatus.route) {
             com.rjnr.pocketnode.ui.screens.status.NodeStatusScreen(
                 navController = navController
+            )
+        }
+
+        composable(Screen.Recovery.route) {
+            RecoveryScreen(
+                onRecoveryComplete = { recoveredWallets ->
+                    navController.navigate(destinationAfterWalletReady()) {
+                        popUpTo(Screen.Recovery.route) { inclusive = true }
+                    }
+                },
+                onMnemonicRestore = {
+                    navController.navigate(Screen.Onboarding.route) {
+                        popUpTo(Screen.Recovery.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        composable(Screen.SecurityChecklist.route) {
+            val viewModel: SecurityChecklistViewModel = hiltViewModel()
+            val state = viewModel.uiState.collectAsState().value
+
+            // Refresh state when returning from PIN setup or mnemonic backup
+            DisposableEffect(Unit) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_RESUME) {
+                        viewModel.refreshState()
+                    }
+                }
+                val lifecycle = it.lifecycle
+                lifecycle.addObserver(observer)
+                onDispose { lifecycle.removeObserver(observer) }
+            }
+
+            SecurityChecklistScreen(
+                hasPinOrBiometrics = state.hasPinOrBiometrics,
+                hasMnemonicBackup = state.hasMnemonicBackup,
+                isMnemonicWallet = state.isMnemonicWallet,
+                onSetupPin = {
+                    navController.navigate(Screen.PinEntry.createRoute("setup"))
+                },
+                onBackupMnemonic = {
+                    navController.navigate(Screen.MnemonicBackup.createRoute())
+                },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.MnemonicVerify.route) {
+            MnemonicVerifyScreen(
+                mnemonicWords = emptyList(), // TODO: wire from KeyManager via ViewModel
+                onVerified = {
+                    navController.popBackStack()
+                },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.WalletManager.route) {
+            WalletManagerScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToAddWallet = { navController.navigate(Screen.AddWallet.route) },
+                onNavigateToWalletDetail = { walletId ->
+                    navController.navigate(Screen.WalletDetail.createRoute(walletId))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.WalletDetail.route,
+            arguments = listOf(navArgument("walletId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val viewModel: WalletSettingsViewModel = hiltViewModel()
+
+            // Observe pin_verified result from PinEntry screen
+            val pinVerified = backStackEntry.savedStateHandle
+                .get<Boolean>("pin_verified") == true
+            if (pinVerified) {
+                LaunchedEffect(Unit) {
+                    backStackEntry.savedStateHandle.remove<Boolean>("pin_verified")
+                    viewModel.onPinVerified()
+                }
+            }
+
+            WalletSettingsScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToPinVerify = {
+                    navController.navigate(Screen.PinEntry.createRoute("verify"))
+                },
+                viewModel = viewModel
+            )
+        }
+
+        composable(Screen.InitialPinSetup.route) {
+            InitialPinSetupScreen(
+                onPinCreated = {
+                    navController.navigate(Screen.Main.route) {
+                        popUpTo(navController.graph.id) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        composable(Screen.AddWallet.route) {
+            AddWalletScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onWalletCreated = {
+                    navController.popBackStack(Screen.Main.route, inclusive = false)
+                },
+                onNewMnemonicWalletCreated = {
+                    navController.navigate(Screen.MnemonicBackup.createRoute(simplified = true)) {
+                        popUpTo(Screen.Main.route) { inclusive = false }
+                    }
+                }
             )
         }
     }

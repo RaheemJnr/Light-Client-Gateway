@@ -48,3 +48,125 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         )
     }
 }
+
+/**
+ * v2 -> v3: Add wallets table and walletId column to existing tables for multi-wallet support (M3).
+ */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // 1. Create wallets table
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `wallets` (
+                `walletId` TEXT NOT NULL,
+                `name` TEXT NOT NULL,
+                `type` TEXT NOT NULL,
+                `derivationPath` TEXT,
+                `parentWalletId` TEXT,
+                `accountIndex` INTEGER NOT NULL DEFAULT 0,
+                `mainnetAddress` TEXT NOT NULL DEFAULT '',
+                `testnetAddress` TEXT NOT NULL DEFAULT '',
+                `isActive` INTEGER NOT NULL DEFAULT 0,
+                `createdAt` INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(`walletId`)
+            )
+            """.trimIndent()
+        )
+
+        // 2. Add walletId column to transactions
+        db.execSQL(
+            "ALTER TABLE `transactions` ADD COLUMN `walletId` TEXT NOT NULL DEFAULT ''"
+        )
+        // Create the index Room expects
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `idx_tx_wallet_network_time` ON `transactions` (`walletId`, `network`, `timestamp` DESC)"
+        )
+
+        // 3. Recreate balance_cache with composite PK (walletId, network)
+        // SQLite can't alter primary keys, so we must recreate the table
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `balance_cache_new` (
+                `walletId` TEXT NOT NULL DEFAULT '',
+                `network` TEXT NOT NULL,
+                `address` TEXT NOT NULL DEFAULT '',
+                `capacity` TEXT NOT NULL DEFAULT '0',
+                `capacityCkb` TEXT NOT NULL DEFAULT '0',
+                `blockNumber` TEXT NOT NULL DEFAULT '0',
+                `cachedAt` INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(`walletId`, `network`)
+            )
+            """.trimIndent()
+        )
+        db.execSQL("INSERT INTO `balance_cache_new` SELECT '', `network`, `address`, `capacity`, `capacityCkb`, `blockNumber`, `cachedAt` FROM `balance_cache`")
+        db.execSQL("DROP TABLE `balance_cache`")
+        db.execSQL("ALTER TABLE `balance_cache_new` RENAME TO `balance_cache`")
+
+        // 4. Add walletId column to dao_cells
+        db.execSQL(
+            "ALTER TABLE `dao_cells` ADD COLUMN `walletId` TEXT NOT NULL DEFAULT ''"
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `idx_dao_wallet_network` ON `dao_cells` (`walletId`, `network`)"
+        )
+
+        // 5. Add index to header_cache (entity annotation added in M3 but never created in v1→v2)
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `idx_header_network_number` ON `header_cache` (`network`, `number`)"
+        )
+    }
+}
+
+/**
+ * v3 → v4: Fix balance_cache PK for users who ran the broken v2→v3 migration,
+ * and add Phase 2 columns (lastActiveAt, colorIndex) to wallets table.
+ */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // 1. Fix balance_cache PK for users who ran broken v2→v3
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `balance_cache_new` (
+                `walletId` TEXT NOT NULL DEFAULT '',
+                `network` TEXT NOT NULL,
+                `address` TEXT NOT NULL DEFAULT '',
+                `capacity` TEXT NOT NULL DEFAULT '0',
+                `capacityCkb` TEXT NOT NULL DEFAULT '0',
+                `blockNumber` TEXT NOT NULL DEFAULT '0',
+                `cachedAt` INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(`walletId`, `network`)
+            )
+            """.trimIndent()
+        )
+        db.execSQL("INSERT OR IGNORE INTO `balance_cache_new` SELECT `walletId`, `network`, `address`, `capacity`, `capacityCkb`, `blockNumber`, `cachedAt` FROM `balance_cache`")
+        db.execSQL("DROP TABLE `balance_cache`")
+        db.execSQL("ALTER TABLE `balance_cache_new` RENAME TO `balance_cache`")
+
+        // 2. Add Phase 2 columns to wallets
+        db.execSQL("ALTER TABLE `wallets` ADD COLUMN `lastActiveAt` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `wallets` ADD COLUMN `colorIndex` INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+/**
+ * v4 -> v5: Add key_material table for encrypted key storage (Phase 2 of key storage redesign).
+ * Key material moves from EncryptedSharedPreferences to Room, encrypted with Android Keystore AES key.
+ */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `key_material` (
+                `walletId` TEXT NOT NULL,
+                `encryptedPrivateKey` BLOB NOT NULL,
+                `encryptedMnemonic` BLOB,
+                `iv` BLOB NOT NULL,
+                `walletType` TEXT NOT NULL,
+                `mnemonicBackedUp` INTEGER NOT NULL DEFAULT 0,
+                `updatedAt` INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(`walletId`)
+            )
+            """.trimIndent()
+        )
+    }
+}

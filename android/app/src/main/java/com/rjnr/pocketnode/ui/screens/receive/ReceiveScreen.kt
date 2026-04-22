@@ -40,8 +40,36 @@ import kotlinx.coroutines.withContext
 @Composable
 fun ReceiveScreen(
     onNavigateBack: () -> Unit,
+    hasMnemonicBackup: Boolean = true,
+    hasPinOrBiometrics: Boolean = true,
+    onNavigateToBackup: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
+    var showBackupWarning by remember { mutableStateOf(!hasMnemonicBackup || !hasPinOrBiometrics) }
+
+    if (showBackupWarning) {
+        AlertDialog(
+            onDismissRequest = { showBackupWarning = false },
+            title = { Text("Protect your wallet") },
+            text = {
+                Text("You haven't backed up your recovery phrase yet. If you lose this device, your funds will be unrecoverable.")
+            },
+            confirmButton = {
+                Button(onClick = {
+                    showBackupWarning = false
+                    onNavigateToBackup()
+                }) {
+                    Text("Back up now")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBackupWarning = false }) {
+                    Text("I understand the risk")
+                }
+            }
+        )
+    }
+
     val uiState by viewModel.uiState.collectAsState()
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current

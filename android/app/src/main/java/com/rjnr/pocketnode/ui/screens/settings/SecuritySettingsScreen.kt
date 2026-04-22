@@ -66,27 +66,43 @@ fun SecuritySettingsScreen(
     }
 
     if (showRemoveDialog) {
-        AlertDialog(
-            onDismissRequest = { showRemoveDialog = false },
-            title = { Text("Remove PIN?") },
-            text = {
-                Text("Your wallet will no longer be locked on launch. This also disables biometric unlock.")
-            },
-            confirmButton = {
-                Button(onClick = {
-                    showRemoveDialog = false
-                    viewModel.setPendingAction(PendingSecurityAction.REMOVE_PIN)
-                    onNavigateToPinVerify()
-                }) {
-                    Text("Remove")
+        if (!uiState.canRemovePin) {
+            AlertDialog(
+                onDismissRequest = { showRemoveDialog = false },
+                title = { Text("PIN is required") },
+                text = {
+                    Text(
+                        "A PIN is mandatory while you have a wallet. It protects your PIN-encrypted recovery backup.\n\n" +
+                        "To remove the PIN, first delete every wallet in Wallet Manager. Make sure you have your recovery phrase written down before deleting."
+                    )
+                },
+                confirmButton = {
+                    Button(onClick = { showRemoveDialog = false }) { Text("OK") }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRemoveDialog = false }) {
-                    Text("Cancel")
+            )
+        } else {
+            AlertDialog(
+                onDismissRequest = { showRemoveDialog = false },
+                title = { Text("Remove PIN?") },
+                text = {
+                    Text("Your wallet will no longer be locked on launch. This also disables biometric unlock.")
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        showRemoveDialog = false
+                        viewModel.setPendingAction(PendingSecurityAction.REMOVE_PIN)
+                        onNavigateToPinVerify()
+                    }) {
+                        Text("Remove")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showRemoveDialog = false }) {
+                        Text("Cancel")
+                    }
                 }
-            }
-        )
+            )
+        }
     }
 
     Scaffold(

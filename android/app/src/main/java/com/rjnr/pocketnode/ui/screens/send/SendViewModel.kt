@@ -5,11 +5,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.auth.PinManager
+import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.TransactionStatusResponse
 import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
+import com.rjnr.pocketnode.data.wallet.WalletRepository
 import com.rjnr.pocketnode.util.sanitizeAmount
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -44,7 +46,8 @@ data class SendUiState(
     val statusMessage: String = "",
     val burnWarning: String? = null,
     val requiresAuth: Boolean = false,
-    val authMethod: AuthMethod? = null
+    val authMethod: AuthMethod? = null,
+    val otherWallets: List<WalletEntity> = emptyList()
 )
 
 @HiltViewModel
@@ -53,7 +56,8 @@ class SendViewModel @Inject constructor(
     private val keyManager: KeyManager,
     private val transactionBuilder: TransactionBuilder,
     private val authManager: AuthManager,
-    private val pinManager: PinManager
+    private val pinManager: PinManager,
+    private val walletRepository: WalletRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SendUiState())
@@ -73,6 +77,15 @@ class SendViewModel @Inject constructor(
         viewModelScope.launch {
             repository.balance.collect { balance ->
                 _uiState.update { it.copy(availableBalance = balance?.capacityAsLong() ?: 0L) }
+            }
+        }
+
+        // Load other wallets for "My Wallets" shortcut (excludes active wallet)
+        viewModelScope.launch {
+            walletRepository.walletsFlow.collect { wallets ->
+                val active = wallets.find { it.isActive }
+                val others = wallets.filter { it.walletId != active?.walletId }
+                _uiState.update { it.copy(otherWallets = others) }
             }
         }
 
@@ -202,7 +215,20 @@ class SendViewModel @Inject constructor(
             return
         }
 
+        // Capture wallet identity upfront to prevent wallet-switch race conditions
+        val capturedAddress = repository.getCurrentAddress()
+        val capturedNetwork = repository.currentNetwork
+
+        if (capturedAddress == null) {
+            _uiState.update { it.copy(error = "Wallet not initialized") }
+            return
+        }
+
         sendJob = viewModelScope.launch {
+            val capturedKey = try { repository.getPrivateKey() } catch (e: Exception) {
+                _uiState.update { it.copy(error = "Failed to access wallet keys: ${e.message}") }
+                return@launch
+            }
             _uiState.update {
                 it.copy(
                     isLoading = true,
@@ -213,32 +239,29 @@ class SendViewModel @Inject constructor(
             }
 
             try {
-                Log.d(TAG, "📤 Starting send transaction flow")
+                Log.d(TAG, "Starting send transaction flow")
                 Log.d(TAG, "  Recipient: ${state.recipientAddress}")
                 Log.d(TAG, "  Amount: ${state.amountCkb} CKB ($amountShannons shannons)")
+                Log.d(TAG, "  From address: $capturedAddress")
 
-                val address = repository.getCurrentAddress()
-                    ?: throw Exception("Wallet not initialized")
-                Log.d(TAG, "  From address: $address")
-
-                Log.d(TAG, "🔍 Fetching available cells...")
-                val cellsResult = repository.getCells(address)
+                Log.d(TAG, "Fetching available cells...")
+                val cellsResult = repository.getCells(capturedAddress)
                 val cells = cellsResult.getOrThrow().items
-                Log.d(TAG, "✅ Got ${cells.size} cells")
+                Log.d(TAG, "Got ${cells.size} cells")
                 cells.forEachIndexed { i, cell ->
                     Log.d(TAG, "  Cell[$i]: ${cell.capacityAsLong()} shannons")
                 }
 
                 _uiState.update { it.copy(statusMessage = "Signing transaction...") }
-                Log.d(TAG, "✍️ Building and signing transaction...")
+                Log.d(TAG, "Building and signing transaction...")
 
                 val signedTx = transactionBuilder.buildTransfer(
-                    fromAddress = address,
+                    fromAddress = capturedAddress,
                     toAddress = state.recipientAddress,
                     amountShannons = amountShannons,
                     availableCells = cells,
-                    privateKey = keyManager.getPrivateKey(),
-                    network = repository.currentNetwork
+                    privateKey = capturedKey,
+                    network = capturedNetwork
                 )
                 Log.d(TAG, "✅ Transaction built: ${signedTx.cellInputs.size} inputs, ${signedTx.cellOutputs.size} outputs")
 
@@ -259,8 +282,8 @@ class SendViewModel @Inject constructor(
                     )
                 }
 
-                // Start polling for transaction status
-                startPollingTransactionStatus(txHash, address)
+                // Start polling for transaction status using the captured address
+                startPollingTransactionStatus(txHash, capturedAddress)
 
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Transaction failed", e)
@@ -444,10 +467,9 @@ class SendViewModel @Inject constructor(
                 val newBalance = balance.capacityAsLong()
                 Log.d(TAG, "💰 Balance poll #$balanceAttempts: $newBalance shannons (${balance.capacityCkb} CKB)")
 
-                // Balance updated successfully if:
-                // 1. It's non-zero (change output synced), OR
-                // 2. It's different from the previous balance
-                if (newBalance > 0 || newBalance != previousBalance) {
+                // Balance updated when it differs from pre-send value
+                // (for self-transfers, change is just the fee)
+                if (newBalance != previousBalance) {
                     Log.d(TAG, "✅ Balance updated: $newBalance shannons")
                     return
                 }

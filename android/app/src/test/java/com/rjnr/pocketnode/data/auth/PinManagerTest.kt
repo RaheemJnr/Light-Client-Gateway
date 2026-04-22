@@ -207,4 +207,66 @@ class PinManagerTest {
 
         assertTrue(newPinManager.isLockedOut())
     }
+
+    // -- removePin backup guard --
+
+    @Test
+    fun `removePin throws if backups exist and force is false`() {
+        pinManager.setPin("123456")
+        pinManager.setBackupChecker { true }
+
+        try {
+            pinManager.removePin(force = false)
+            fail("Should have thrown")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message!!.contains("backup"))
+        }
+    }
+
+    @Test
+    fun `removePin succeeds if no backups exist`() {
+        pinManager.setPin("123456")
+        pinManager.setBackupChecker { false }
+
+        pinManager.removePin(force = false)
+        assertFalse(pinManager.hasPin())
+    }
+
+    @Test
+    fun `removePin with force bypasses backup check`() {
+        pinManager.setPin("123456")
+        pinManager.setBackupChecker { true }
+
+        pinManager.removePin(force = true)
+        assertFalse(pinManager.hasPin())
+    }
+
+    @Test
+    fun `removePin without backup checker works normally`() {
+        pinManager.setPin("123456")
+        // No backup checker set — backupChecker is null
+        pinManager.removePin()
+        assertFalse(pinManager.hasPin())
+    }
+
+    // -- CharArray overloads --
+
+    @Test
+    fun `setPinFromChars and verifyPinFromChars work correctly`() {
+        pinManager.setPinFromChars("123456".toCharArray())
+        assertTrue(pinManager.verifyPinFromChars("123456".toCharArray()))
+        assertFalse(pinManager.verifyPinFromChars("654321".toCharArray()))
+    }
+
+    @Test
+    fun `setPinFromChars is compatible with verifyPin String`() {
+        pinManager.setPinFromChars("123456".toCharArray())
+        assertTrue(pinManager.verifyPin("123456"))
+    }
+
+    @Test
+    fun `setPin String is compatible with verifyPinFromChars`() {
+        pinManager.setPin("123456")
+        assertTrue(pinManager.verifyPinFromChars("123456".toCharArray()))
+    }
 }

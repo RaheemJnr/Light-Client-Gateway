@@ -13,13 +13,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.fragment.app.FragmentActivity
 import androidx.navigation.compose.rememberNavController
+import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
+import com.rjnr.pocketnode.data.wallet.KeyBackupManager
+import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.ui.navigation.CkbNavGraph
 import com.rjnr.pocketnode.ui.navigation.Screen
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
 import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -33,17 +37,39 @@ class MainActivity : FragmentActivity() {
     @Inject
     lateinit var walletPreferences: WalletPreferences
 
+    @Inject
+    lateinit var keyManager: KeyManager
+
+    @Inject
+    lateinit var keyBackupManager: KeyBackupManager
+
+    @Inject
+    lateinit var authManager: AuthManager
+
     private val _requireReauth = mutableStateOf(false)
+
+    // Cached at startup — updated when wallet state changes
+    private var cachedHasWallet = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val startDestination = when {
-            !repository.hasWallet() -> Screen.Onboarding.route
-            repository.needsMnemonicBackup() -> Screen.MnemonicBackup.route
-            pinManager.hasPin() -> Screen.Auth.route
-            else -> Screen.Main.route
+        // Clean up any orphaned .tmp files from interrupted PIN re-encryption
+        keyBackupManager.cleanupOrphanedTmpFiles()
+
+        // Startup gate: must resolve synchronously to determine start destination.
+        // This is the ONE acceptable runBlocking site — it runs once during cold start
+        // on the main thread before any UI is shown.
+        val startDestination = runBlocking {
+            cachedHasWallet = repository.hasWallet()
+            when {
+                keyManager.wasResetDueToCorruption() -> Screen.Recovery.route
+                !cachedHasWallet -> Screen.Onboarding.route
+                repository.needsMnemonicBackup() -> Screen.MnemonicBackup.route
+                !pinManager.hasPin() -> Screen.InitialPinSetup.route
+                else -> Screen.Auth.route
+            }
         }
 
         setContent {
@@ -75,7 +101,8 @@ class MainActivity : FragmentActivity() {
 
                     CkbNavGraph(
                         navController = navController,
-                        startDestination = startDestination
+                        startDestination = startDestination,
+                        pinManager = pinManager
                     )
                 }
             }
@@ -84,8 +111,13 @@ class MainActivity : FragmentActivity() {
 
     override fun onStop() {
         super.onStop()
-        if (repository.hasWallet() && pinManager.hasPin()) {
+        // Use cached value — avoids blocking main thread on every onStop
+        if (cachedHasWallet && pinManager.hasPin()) {
             _requireReauth.value = true
+            // Wipe the cached session PIN when the app backgrounds so the next
+            // foregrounding forces a fresh unlock before any PIN-gated action.
+            authManager.clearSession()
+            keyManager.clearSessionPin()
         }
     }
 }

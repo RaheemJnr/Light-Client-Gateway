@@ -2,15 +2,23 @@ package com.rjnr.pocketnode.di
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.RoomDatabase
 import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.crypto.Blake2b
 import com.rjnr.pocketnode.data.database.AppDatabase
+import com.rjnr.pocketnode.data.crypto.KeystoreEncryptionManager
 import com.rjnr.pocketnode.data.database.MIGRATION_1_2
+import com.rjnr.pocketnode.data.database.MIGRATION_2_3
+import com.rjnr.pocketnode.data.database.MIGRATION_3_4
+import com.rjnr.pocketnode.data.database.MIGRATION_4_5
 import com.rjnr.pocketnode.data.database.dao.BalanceCacheDao
 import com.rjnr.pocketnode.data.database.dao.DaoCellDao
 import com.rjnr.pocketnode.data.database.dao.HeaderCacheDao
+import com.rjnr.pocketnode.data.database.dao.KeyMaterialDao
 import com.rjnr.pocketnode.data.database.dao.TransactionDao
+import com.rjnr.pocketnode.data.database.dao.WalletDao
+import com.rjnr.pocketnode.data.migration.WalletMigrationHelper
 import com.rjnr.pocketnode.data.gateway.CacheManager
 import com.rjnr.pocketnode.data.gateway.DaoSyncManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
@@ -28,6 +36,11 @@ import io.ktor.client.engine.android.Android
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
+import com.rjnr.pocketnode.data.migration.KeyStoreMigrationHelper
+import com.rjnr.pocketnode.data.wallet.KeyBackupManager
+import android.content.SharedPreferences
+import java.io.File
+import javax.inject.Named
 import javax.inject.Singleton
 
 @Module
@@ -42,8 +55,21 @@ object AppModule {
     @Singleton
     fun provideKeyManager(
         @ApplicationContext context: Context,
-        mnemonicManager: MnemonicManager
-    ): KeyManager = KeyManager(context, mnemonicManager)
+        mnemonicManager: MnemonicManager,
+        keyBackupManager: KeyBackupManager,
+        keyStoreMigrationHelper: KeyStoreMigrationHelper,
+        authManager: AuthManager
+    ): KeyManager = KeyManager(context, mnemonicManager).also {
+        it.keyBackupManager = keyBackupManager
+        it.keyStoreMigrationHelper = keyStoreMigrationHelper
+        it.authManager = authManager
+    }
+
+    @Provides
+    @Singleton
+    fun provideKeyBackupManager(
+        @ApplicationContext context: Context
+    ): KeyBackupManager = KeyBackupManager(File(context.filesDir, "key_backups"))
 
     @Provides
     @Singleton
@@ -85,7 +111,8 @@ object AppModule {
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "pocket_node.db")
-            .addMigrations(MIGRATION_1_2)
+            .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .build()
 
     @Provides
@@ -99,6 +126,30 @@ object AppModule {
 
     @Provides
     fun provideDaoCellDao(db: AppDatabase): DaoCellDao = db.daoCellDao()
+
+    @Provides
+    fun provideWalletDao(db: AppDatabase): WalletDao = db.walletDao()
+
+    @Provides
+    fun provideKeyMaterialDao(db: AppDatabase): KeyMaterialDao = db.keyMaterialDao()
+
+    @Provides
+    @Singleton
+    fun provideKeystoreEncryptionManager(): KeystoreEncryptionManager = KeystoreEncryptionManager()
+
+    @Provides
+    @Singleton
+    @Named("migrationPrefs")
+    fun provideMigrationPrefs(@ApplicationContext context: Context): SharedPreferences =
+        context.getSharedPreferences("key_migration", Context.MODE_PRIVATE)
+
+    @Provides
+    @Singleton
+    fun provideKeyStoreMigrationHelper(
+        keyMaterialDao: KeyMaterialDao,
+        encryptionManager: KeystoreEncryptionManager,
+        @Named("migrationPrefs") migrationPrefs: SharedPreferences
+    ): KeyStoreMigrationHelper = KeyStoreMigrationHelper(keyMaterialDao, encryptionManager, migrationPrefs)
 
     @Provides
     @Singleton
@@ -123,6 +174,8 @@ object AppModule {
         json: Json,
         transactionBuilder: TransactionBuilder,
         cacheManager: CacheManager,
-        daoSyncManager: DaoSyncManager
-    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, transactionBuilder, cacheManager, daoSyncManager)
+        daoSyncManager: DaoSyncManager,
+        walletMigrationHelper: WalletMigrationHelper,
+        walletDao: WalletDao
+    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, transactionBuilder, cacheManager, daoSyncManager, walletMigrationHelper, walletDao)
 }
