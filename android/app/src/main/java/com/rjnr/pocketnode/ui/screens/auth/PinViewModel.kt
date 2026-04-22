@@ -2,6 +2,7 @@ package com.rjnr.pocketnode.ui.screens.auth
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.auth.PinManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -30,7 +31,8 @@ data class PinUiState(
 
 @HiltViewModel
 class PinViewModel @Inject constructor(
-    private val pinManager: PinManager
+    private val pinManager: PinManager,
+    private val authManager: AuthManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PinUiState())
@@ -98,6 +100,10 @@ class PinViewModel @Inject constructor(
             PinMode.CONFIRM -> {
                 if (pin == setupPin) {
                     pinManager.setPin(pin)
+                    // Seed the session PIN so KeyManager.writeBackupIfPinAvailable can
+                    // immediately encrypt KeyBackupManager material for any future
+                    // wallet create/import / mnemonic-backed-up writes.
+                    authManager.setSessionPin(pin.toCharArray())
                     _uiState.update { it.copy(pinComplete = true) }
                 } else {
                     showError("PINs don't match. Try again.")
@@ -106,6 +112,7 @@ class PinViewModel @Inject constructor(
 
             PinMode.VERIFY -> {
                 if (pinManager.verifyPin(pin)) {
+                    authManager.setSessionPin(pin.toCharArray())
                     _uiState.update { it.copy(pinComplete = true) }
                 } else {
                     val remaining = pinManager.getRemainingAttempts()

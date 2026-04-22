@@ -8,6 +8,7 @@ import com.rjnr.pocketnode.data.database.dao.DaoCellDao
 import com.rjnr.pocketnode.data.database.dao.TransactionDao
 import com.rjnr.pocketnode.data.database.dao.WalletDao
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
+import androidx.room.withTransaction
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import kotlinx.coroutines.flow.Flow
@@ -287,14 +288,18 @@ class WalletRepository @Inject constructor(
         if (wallet.isActive || walletPreferences.getActiveWalletId() == walletId) {
             throw IllegalStateException("Cannot delete the active wallet. Switch to another wallet first.")
         }
-        keyManager.deleteWalletKeys(walletId)
-        walletDao.delete(walletId)
-        // Clean up wallet-scoped caches for both networks
-        for (network in listOf("MAINNET", "TESTNET")) {
-            transactionDao.deleteByWalletAndNetwork(walletId, network)
-            balanceCacheDao.deleteByWalletAndNetwork(walletId, network)
-            daoCellDao.deleteByWalletAndNetwork(walletId, network)
+        // Delete the wallet row and wallet-scoped caches first, all in one transaction.
+        // Only destroy keys after the DB removal commits — otherwise a failure between
+        // key destruction and row deletion leaves an orphaned wallet whose keys are gone.
+        appDatabase.withTransaction {
+            walletDao.delete(walletId)
+            for (network in listOf("MAINNET", "TESTNET")) {
+                transactionDao.deleteByWalletAndNetwork(walletId, network)
+                balanceCacheDao.deleteByWalletAndNetwork(walletId, network)
+                daoCellDao.deleteByWalletAndNetwork(walletId, network)
+            }
         }
+        keyManager.deleteWalletKeys(walletId)
         DatabaseMaintenanceUtil.vacuum(appDatabase)
         Log.d(TAG, "Deleted wallet and caches: $walletId")
     }

@@ -19,6 +19,8 @@ class DaoSyncManagerTest {
     private lateinit var db: AppDatabase
     private lateinit var manager: DaoSyncManager
 
+    private val testWalletId = "test-wallet"
+
     @Before
     fun setup() {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -61,7 +63,7 @@ class DaoSyncManagerTest {
 
     @Test
     fun `insertPendingDeposit creates DEPOSITING entry`() = runTest {
-        manager.insertPendingDeposit("0xtx1", 10_200_000_000L, "MAINNET")
+        manager.insertPendingDeposit("0xtx1", 10_200_000_000L, "MAINNET", walletId = testWalletId)
 
         val cell = manager.getByOutPoint("0xtx1", "0x0")
         assertNotNull(cell)
@@ -71,11 +73,11 @@ class DaoSyncManagerTest {
 
     @Test
     fun `getActiveDeposits excludes COMPLETED`() = runTest {
-        manager.insertPendingDeposit("0x1", 100L, "MAINNET")
+        manager.insertPendingDeposit("0x1", 100L, "MAINNET", walletId = testWalletId)
         manager.updateStatus("0x1", "0x0", "COMPLETED")
-        manager.insertPendingDeposit("0x2", 200L, "MAINNET")
+        manager.insertPendingDeposit("0x2", 200L, "MAINNET", walletId = testWalletId)
 
-        val active = manager.getActiveDeposits("MAINNET")
+        val active = manager.getActiveDeposits("MAINNET", walletId = testWalletId)
         assertEquals(1, active.size)
         assertEquals("0x2", active[0].txHash)
     }
@@ -83,11 +85,18 @@ class DaoSyncManagerTest {
     @Test
     fun `clearAll removes everything`() = runTest {
         manager.cacheHeader(makeHeaderView(), "MAINNET")
-        manager.insertPendingDeposit("0x1", 100L, "MAINNET")
+        manager.insertPendingDeposit("0x1", 100L, "MAINNET", walletId = testWalletId)
 
         manager.clearAll()
 
         assertNull(manager.getCachedHeader("0xabc123"))
-        assertTrue(manager.getActiveDeposits("MAINNET").isEmpty())
+        assertTrue(manager.getActiveDeposits("MAINNET", walletId = testWalletId).isEmpty())
+    }
+
+    @Test
+    fun `getActiveDeposits rejects blank walletId`() = runTest {
+        assertThrows(IllegalArgumentException::class.java) {
+            kotlinx.coroutines.runBlocking { manager.getActiveDeposits("MAINNET", walletId = "") }
+        }
     }
 }

@@ -40,7 +40,8 @@ class DaoSyncManager @Inject constructor(
 
     // --- DAO cell lifecycle ---
 
-    suspend fun getActiveDeposits(network: String, walletId: String = ""): List<DaoCellEntity> {
+    suspend fun getActiveDeposits(network: String, walletId: String): List<DaoCellEntity> {
+        require(walletId.isNotBlank()) { "walletId is required" }
         return try {
             daoCellDao.getActiveByWalletAndNetwork(walletId, network)
         } catch (e: CancellationException) {
@@ -51,7 +52,8 @@ class DaoSyncManager @Inject constructor(
         }
     }
 
-    suspend fun getCompletedDeposits(network: String, walletId: String = ""): List<DaoCellEntity> {
+    suspend fun getCompletedDeposits(network: String, walletId: String): List<DaoCellEntity> {
+        require(walletId.isNotBlank()) { "walletId is required" }
         return try {
             daoCellDao.getCompletedByWalletAndNetwork(walletId, network)
         } catch (e: CancellationException) {
@@ -103,7 +105,8 @@ class DaoSyncManager @Inject constructor(
         }
     }
 
-    suspend fun insertPendingDeposit(txHash: String, capacity: Long, network: String, index: String = "0x0", walletId: String = "") {
+    suspend fun insertPendingDeposit(txHash: String, capacity: Long, network: String, index: String = "0x0", walletId: String) {
+        require(walletId.isNotBlank()) { "walletId is required" }
         try {
             daoCellDao.upsert(
                 DaoCellEntity(

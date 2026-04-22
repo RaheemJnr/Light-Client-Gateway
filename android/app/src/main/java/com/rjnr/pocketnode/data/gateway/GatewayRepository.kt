@@ -89,17 +89,24 @@ class GatewayRepository @Inject constructor(
         // Migrate old flat data/ directory to data/mainnet/ on first run
         migrateDataDirectoryIfNeeded()
 
-        // Initialize the embedded node for the persisted network
+        // Initialize the embedded node for the persisted network. Any unhandled
+        // failure in the startup sequence must flip _nodeReady to false so
+        // awaitNodeReady() can't suspend forever and callers see an error.
         scope.launch {
-            // Migrate single-wallet to multi-wallet schema (idempotent, no-op if already done)
-            walletMigrationHelper.migrateIfNeeded()
-            // Migrate key material from ESP to Room (one-time, for upgrading users)
-            keyManager.migrateEspToRoomIfNeeded(walletDao)
-            // Delete ESP files after successful migration
-            keyManager.deleteEspFilesIfSafe()
-            activeWalletId = walletPreferences.getActiveWalletId() ?: ""
+            try {
+                // Migrate single-wallet to multi-wallet schema (idempotent, no-op if already done)
+                walletMigrationHelper.migrateIfNeeded()
+                // Migrate key material from ESP to Room (one-time, for upgrading users)
+                keyManager.migrateEspToRoomIfNeeded(walletDao)
+                // Delete ESP files after successful migration
+                keyManager.deleteEspFilesIfSafe()
+                activeWalletId = walletPreferences.getActiveWalletId() ?: ""
 
-            initializeNode(currentNetwork)
+                initializeNode(currentNetwork)
+            } catch (e: Exception) {
+                Log.e(TAG, "Startup sequence failed before node init", e)
+                _nodeReady.value = false
+            }
         }
     }
 
@@ -876,29 +883,29 @@ class GatewayRepository @Inject constructor(
         cacheManager.insertPendingTransaction(txHash, currentNetwork.name, walletId = activeWalletId)
 
         // After sending, nudge the light client to rescan from a few blocks back
-        // so it picks up the new change output when the tx confirms.
+        // so it picks up the new change output when the tx confirms. Capture the
+        // sender's wallet info up front — if the user switches wallets during the
+        // 5s delay, we must still re-register the script that actually sent.
+        val senderInfo = _walletInfo.value
         scope.launch {
             try {
                 delay(5000) // Wait a bit for tx to propagate
                 val tipStr = LightClientNative.nativeGetTipHeader()
-                if (tipStr != null) {
+                if (tipStr != null && senderInfo != null) {
                     val tip = json.decodeFromString<JniHeaderView>(tipStr)
                     val tipNumber = tip.number.removePrefix("0x").toLong(16)
                     val rescanFrom = (tipNumber - 10).coerceAtLeast(0L)
                     Log.d(TAG, "🔄 Partial re-register from block $rescanFrom to catch change output")
 
-                    val info = _walletInfo.value
-                    if (info != null) {
-                        val blockNumberHex = "0x${rescanFrom.toString(16)}"
-                        // Only register lock script (not DAO type) with PARTIAL mode
-                        val lockStatus = JniScriptStatus(
-                            script = info.script,
-                            scriptType = "lock",
-                            blockNumber = blockNumberHex
-                        )
-                        val jsonStr = json.encodeToString(listOf(lockStatus))
-                        LightClientNative.nativeSetScripts(jsonStr, LightClientNative.CMD_SET_SCRIPTS_PARTIAL)
-                    }
+                    val blockNumberHex = "0x${rescanFrom.toString(16)}"
+                    // Only register lock script (not DAO type) with PARTIAL mode
+                    val lockStatus = JniScriptStatus(
+                        script = senderInfo.script,
+                        scriptType = "lock",
+                        blockNumber = blockNumberHex
+                    )
+                    val jsonStr = json.encodeToString(listOf(lockStatus))
+                    LightClientNative.nativeSetScripts(jsonStr, LightClientNative.CMD_SET_SCRIPTS_PARTIAL)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to re-register script after send: ${e.message}")

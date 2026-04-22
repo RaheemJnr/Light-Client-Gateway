@@ -57,10 +57,12 @@ object AppModule {
         @ApplicationContext context: Context,
         mnemonicManager: MnemonicManager,
         keyBackupManager: KeyBackupManager,
-        keyStoreMigrationHelper: KeyStoreMigrationHelper
+        keyStoreMigrationHelper: KeyStoreMigrationHelper,
+        authManager: AuthManager
     ): KeyManager = KeyManager(context, mnemonicManager).also {
         it.keyBackupManager = keyBackupManager
         it.keyStoreMigrationHelper = keyStoreMigrationHelper
+        it.authManager = authManager
     }
 
     @Provides

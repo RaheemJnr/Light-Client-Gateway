@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.Script
 import com.rjnr.pocketnode.data.migration.KeyStoreMigrationHelper
@@ -33,7 +34,16 @@ class KeyManager @Inject constructor(
     @VisibleForTesting
     internal var keyStoreMigrationHelper: KeyStoreMigrationHelper? = null
 
-    private var sessionPin: CharArray? = null
+    // AuthManager is the single source of truth for the session PIN used to encrypt
+    // KeyBackupManager material. Wired via provideKeyManager in AppModule (the
+    // @Provides factory — Hilt does not fire @Inject setters on @Provides builds).
+    @VisibleForTesting
+    internal var authManager: AuthManager? = null
+
+    // Fallback PIN holder, only used by unit tests that don't wire an AuthManager.
+    // Prefer authManager.getSessionPin() in production.
+    @VisibleForTesting
+    internal var sessionPin: CharArray? = null
 
     fun setSessionPin(pin: CharArray) {
         sessionPin?.let { java.util.Arrays.fill(it, '\u0000') }
@@ -594,7 +604,7 @@ class KeyManager @Inject constructor(
     }
 
     private fun writeBackupIfPinAvailable(walletId: String, buildMaterial: () -> KeyMaterial) {
-        val pin = sessionPin ?: return
+        val pin = authManager?.getSessionPin() ?: sessionPin ?: return
         val manager = keyBackupManager ?: return
         try {
             manager.writeBackup(walletId, buildMaterial(), pin)
