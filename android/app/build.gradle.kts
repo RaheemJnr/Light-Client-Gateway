@@ -63,6 +63,18 @@ android {
         }
     }
 
+    // Name release APKs like "PocketNode-v1.5.0.apk" so the file a user downloads
+    // from a GitHub Release matches the asset URL, and so the built artifact in
+    // app/release/ reflects the version without a manual rename step.
+    applicationVariants.all {
+        if (buildType.name == "release") {
+            outputs.all {
+                val impl = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+                impl.outputFileName = "PocketNode-v${defaultConfig.versionName}.apk"
+            }
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
