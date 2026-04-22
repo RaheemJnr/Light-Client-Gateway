@@ -87,12 +87,16 @@ fun ActivityScreen(
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/csv")
     ) { uri ->
-        if (uri != null && pendingCsvContent != null) {
+        val csv = pendingCsvContent
+        if (uri != null && csv != null) {
             context.contentResolver.openOutputStream(uri)?.use { stream ->
-                stream.write(pendingCsvContent!!.toByteArray())
+                // UTF-8 BOM so Excel on Windows renders non-ASCII wallet/memo data correctly.
+                stream.write("\uFEFF".toByteArray(Charsets.UTF_8))
+                stream.write(csv.toByteArray(Charsets.UTF_8))
             }
-            pendingCsvContent = null
         }
+        // Always clear so a dismissed picker doesn't leave the previous CSV in memory.
+        pendingCsvContent = null
     }
 
     val pagingItems = viewModel.transactionPagingFlow.collectAsLazyPagingItems()

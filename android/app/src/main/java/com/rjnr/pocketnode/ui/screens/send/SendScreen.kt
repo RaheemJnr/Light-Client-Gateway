@@ -320,7 +320,10 @@ private fun SendScreenUI(
             if (uiState.otherWallets.isNotEmpty()) {
                 var showMyWallets by remember { mutableStateOf(false) }
                 Box {
-                    TextButton(onClick = { showMyWallets = true }) {
+                    TextButton(
+                        onClick = { showMyWallets = true },
+                        enabled = !uiState.isLoading
+                    ) {
                         Text("My Wallets", style = MaterialTheme.typography.labelSmall)
                     }
                     DropdownMenu(
@@ -330,6 +333,7 @@ private fun SendScreenUI(
                         uiState.otherWallets.forEach { wallet ->
                             DropdownMenuItem(
                                 text = { Text(wallet.name) },
+                                enabled = !uiState.isLoading,
                                 onClick = {
                                     val address = if (uiState.networkType == NetworkType.MAINNET)
                                         wallet.mainnetAddress else wallet.testnetAddress

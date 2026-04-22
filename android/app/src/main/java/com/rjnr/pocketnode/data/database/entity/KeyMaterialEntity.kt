@@ -16,9 +16,14 @@ data class KeyMaterialEntity(
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is KeyMaterialEntity) return false
+        val mnemonicEqual = when {
+            encryptedMnemonic == null && other.encryptedMnemonic == null -> true
+            encryptedMnemonic == null || other.encryptedMnemonic == null -> false
+            else -> encryptedMnemonic.contentEquals(other.encryptedMnemonic)
+        }
         return walletId == other.walletId &&
             encryptedPrivateKey.contentEquals(other.encryptedPrivateKey) &&
-            (encryptedMnemonic?.contentEquals(other.encryptedMnemonic ?: byteArrayOf()) ?: (other.encryptedMnemonic == null)) &&
+            mnemonicEqual &&
             iv.contentEquals(other.iv) &&
             walletType == other.walletType &&
             mnemonicBackedUp == other.mnemonicBackedUp &&

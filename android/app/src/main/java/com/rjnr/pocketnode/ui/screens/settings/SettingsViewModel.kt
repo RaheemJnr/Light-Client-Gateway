@@ -9,6 +9,7 @@ import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.wallet.SyncStrategy
 import com.rjnr.pocketnode.data.wallet.ThemeMode
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
+import com.rjnr.pocketnode.data.wallet.WalletRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,7 +23,7 @@ class SettingsViewModel @Inject constructor(
     private val repository: GatewayRepository,
     private val walletPrefs: WalletPreferences,
     private val pinManager: PinManager,
-    private val walletRepository: com.rjnr.pocketnode.data.wallet.WalletRepository
+    private val walletRepository: WalletRepository
 ) : ViewModel() {
 
     data class UiState(

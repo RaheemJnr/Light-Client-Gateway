@@ -272,9 +272,13 @@ class WalletRepository @Inject constructor(
     }
 
     /**
-     * Rename a wallet.
+     * Rename a wallet. Rejects duplicates to stay consistent with create/import.
      */
     suspend fun renameWallet(walletId: String, newName: String) {
+        val existing = walletDao.getAll()
+        if (existing.any { it.walletId != walletId && it.name.equals(newName, ignoreCase = true) }) {
+            throw IllegalArgumentException("A wallet named \"$newName\" already exists")
+        }
         walletDao.updateName(walletId, newName)
     }
 

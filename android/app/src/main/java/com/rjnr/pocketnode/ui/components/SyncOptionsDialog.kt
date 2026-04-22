@@ -47,9 +47,16 @@ internal fun SyncOptionsDialog(
     availableModes: List<SyncMode> = SyncMode.entries.toList(),
     savedCustomBlockHeight: Long? = null
 ) {
-    var selectedMode by remember { mutableStateOf(currentMode) }
-    var customBlockHeight by remember { mutableStateOf(savedCustomBlockHeight?.toString() ?: "") }
-    var showCustomInput by remember { mutableStateOf(currentMode == SyncMode.CUSTOM) }
+    // If the parent hides currentMode from availableModes, fall back to the first
+    // shown option so the dialog never opens with an invisible selection.
+    val initialMode = remember(currentMode, availableModes) {
+        currentMode.takeIf { it in availableModes } ?: availableModes.firstOrNull() ?: currentMode
+    }
+    var selectedMode by remember(initialMode) { mutableStateOf(initialMode) }
+    var customBlockHeight by remember(savedCustomBlockHeight) {
+        mutableStateOf(savedCustomBlockHeight?.toString() ?: "")
+    }
+    var showCustomInput by remember(initialMode) { mutableStateOf(initialMode == SyncMode.CUSTOM) }
 
     AlertDialog(
         onDismissRequest = onDismiss,

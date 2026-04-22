@@ -546,7 +546,12 @@ class KeyManager @Inject constructor(
                 } ?: continue
 
                 val mnemonic = getMnemonicForWallet(wallet.walletId)?.joinToString(" ")
-                val walletType = if (mnemonic != null) WALLET_TYPE_MNEMONIC else WALLET_TYPE_RAW_KEY
+                // ESP stored the authoritative walletType via savePrivateKey/storeKeysForWallet.
+                // Fall back to the mnemonic-presence inference only when the pref is absent
+                // (e.g. corrupted prefs), so future wallet types round-trip unchanged.
+                val walletType = getWalletPrefs(wallet.walletId)
+                    .getString(KEY_WALLET_TYPE, null)
+                    ?: if (mnemonic != null) WALLET_TYPE_MNEMONIC else WALLET_TYPE_RAW_KEY
                 val backed = hasMnemonicBackupForWallet(wallet.walletId)
 
                 helper.migrateWallet(wallet.walletId, privKeyHex, mnemonic, walletType, backed)
@@ -607,7 +612,10 @@ class KeyManager @Inject constructor(
         val pin = authManager?.getSessionPin() ?: sessionPin ?: return
         val manager = keyBackupManager ?: return
         try {
-            manager.writeBackup(walletId, buildMaterial(), pin)
+            // Hand KeyBackupManager its own copy — if writeBackup defensively zeroes
+            // the PIN array after use, our cached session PIN must stay intact for
+            // later backup writes in the same session.
+            manager.writeBackup(walletId, buildMaterial(), pin.copyOf())
         } catch (e: Exception) {
             Log.w(TAG, "Backup write failed for $walletId", e)
         }

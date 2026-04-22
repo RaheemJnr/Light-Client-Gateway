@@ -10,6 +10,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -34,6 +35,9 @@ fun WalletAvatar(
     modifier: Modifier = Modifier
 ) {
     val color = WALLET_COLORS[colorIndex.coerceIn(0, WALLET_COLORS.lastIndex)]
+    // Pick black on light backgrounds so initials hit WCAG AA against the palette.
+    // 0.179 matches the standard sRGB luminance threshold for text contrast.
+    val textColor = if (color.luminance() > 0.179f) Color.Black else Color.White
     val initial = name.firstOrNull()?.uppercase() ?: "?"
     val fontSize = (size.value * 0.4f).sp
 
@@ -46,7 +50,7 @@ fun WalletAvatar(
     ) {
         Text(
             text = initial,
-            color = Color.White,
+            color = textColor,
             fontWeight = FontWeight.SemiBold,
             fontSize = fontSize
         )
