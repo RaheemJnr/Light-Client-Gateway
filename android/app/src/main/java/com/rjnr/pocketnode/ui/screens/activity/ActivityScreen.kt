@@ -32,6 +32,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -126,12 +127,6 @@ fun ActivityScreen(
                             contentDescription = "Export CSV"
                         )
                     }
-                    IconButton(onClick = { viewModel.refreshCache() }) {
-                        Icon(
-                            imageVector = Lucide.RefreshCw,
-                            contentDescription = "Refresh"
-                        )
-                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
@@ -150,8 +145,18 @@ fun ActivityScreen(
                 onFilterSelected = { viewModel.setFilter(it) }
             )
 
+            // Initial empty load → fullscreen spinner. Subsequent refreshes are
+            // surfaced through the PullToRefreshBox indicator instead.
+            val isInitialLoading = pagingItems.itemCount == 0 &&
+                (pagingItems.loadState.refresh is LoadState.Loading || uiState.isLoading)
+
+            PullToRefreshBox(
+                isRefreshing = uiState.isLoading && pagingItems.itemCount > 0,
+                onRefresh = { viewModel.refreshCache() },
+                modifier = Modifier.fillMaxSize()
+            ) {
             when {
-                pagingItems.loadState.refresh is LoadState.Loading || uiState.isLoading -> {
+                isInitialLoading -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -218,6 +223,7 @@ fun ActivityScreen(
                         }
                     }
                 }
+            }
             }
 
             selectedTransaction?.let { tx ->
