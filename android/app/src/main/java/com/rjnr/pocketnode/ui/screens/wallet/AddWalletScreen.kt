@@ -1,15 +1,20 @@
 package com.rjnr.pocketnode.ui.screens.wallet
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -28,6 +33,7 @@ import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -42,14 +48,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.composables.icons.lucide.ArrowLeft
+import com.composables.icons.lucide.ClipboardPaste
 import com.composables.icons.lucide.Key
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Plus
 import com.composables.icons.lucide.Users
 import com.composables.icons.lucide.Wallet
+import com.rjnr.pocketnode.ui.components.MnemonicWordInput
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -199,6 +208,8 @@ private fun NewWalletForm(uiState: AddWalletUiState, viewModel: AddWalletViewMod
 
 @Composable
 private fun ImportMnemonicForm(uiState: AddWalletUiState, viewModel: AddWalletViewModel) {
+    val clipboardManager = LocalClipboardManager.current
+
     OutlinedTextField(
         value = uiState.name,
         onValueChange = { viewModel.updateName(it) },
@@ -206,20 +217,44 @@ private fun ImportMnemonicForm(uiState: AddWalletUiState, viewModel: AddWalletVi
         modifier = Modifier.fillMaxWidth(),
         singleLine = true
     )
-    Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = uiState.importMnemonic,
-        onValueChange = { viewModel.updateImportMnemonic(it) },
-        label = { Text("Seed Phrase") },
-        modifier = Modifier.fillMaxWidth(),
-        minLines = 3,
-        placeholder = { Text("Enter your 12 or 24 word seed phrase") }
-    )
+    Spacer(Modifier.height(12.dp))
+
+    OutlinedButton(
+        onClick = {
+            clipboardManager.getText()?.text?.let { viewModel.pasteImportMnemonic(it) }
+        },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Icon(Lucide.ClipboardPaste, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text("Paste from Clipboard")
+    }
+    Spacer(Modifier.height(12.dp))
+
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 480.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(12) { index ->
+            MnemonicWordInput(
+                index = index,
+                value = uiState.importWords[index],
+                suggestions = uiState.importSuggestions[index] ?: emptyList(),
+                isError = uiState.importWordErrors.contains(index),
+                onValueChange = { viewModel.updateImportWord(index, it) },
+                onSuggestionSelected = { viewModel.selectImportSuggestion(index, it) }
+            )
+        }
+    }
     Spacer(Modifier.height(16.dp))
     Button(
         onClick = { viewModel.importMnemonic() },
         modifier = Modifier.fillMaxWidth(),
-        enabled = !uiState.isLoading
+        enabled = !uiState.isLoading && uiState.importWords.all { it.isNotBlank() }
     ) {
         if (uiState.isLoading) {
             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
