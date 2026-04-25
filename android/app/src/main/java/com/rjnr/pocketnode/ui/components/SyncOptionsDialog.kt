@@ -45,7 +45,8 @@ internal fun SyncOptionsDialog(
     title: String = "Sync Options",
     description: String = "Choose how much transaction history to sync:",
     availableModes: List<SyncMode> = SyncMode.entries.toList(),
-    savedCustomBlockHeight: Long? = null
+    savedCustomBlockHeight: Long? = null,
+    tipBlockNumber: Long = 0L
 ) {
     // If the parent hides currentMode from availableModes, fall back to the first
     // shown option so the dialog never opens with an invisible selection.
@@ -135,6 +136,8 @@ internal fun SyncOptionsDialog(
                     }
                     Spacer(Modifier.height(8.dp))
                     val parsedHeight = customBlockHeight.toLongOrNull()
+                    val exceedsTip = parsedHeight != null && tipBlockNumber > 0 && parsedHeight > tipBlockNumber
+                    val invalidNumber = customBlockHeight.isNotBlank() && parsedHeight == null
                     OutlinedTextField(
                         value = customBlockHeight,
                         onValueChange = { customBlockHeight = it.filter { c -> c.isDigit() } },
@@ -143,10 +146,14 @@ internal fun SyncOptionsDialog(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        isError = customBlockHeight.isNotBlank() && parsedHeight == null,
-                        supportingText = if (customBlockHeight.isNotBlank() && parsedHeight == null) {
-                            { Text("Invalid block height") }
-                        } else null
+                        isError = invalidNumber || exceedsTip,
+                        supportingText = when {
+                            invalidNumber -> { { Text("Invalid block height") } }
+                            exceedsTip -> { {
+                                Text("Exceeds current tip ($tipBlockNumber). Enter a lower value.")
+                            } }
+                            else -> null
+                        }
                     )
                 }
 
@@ -180,12 +187,15 @@ internal fun SyncOptionsDialog(
         },
         confirmButton = {
             val confirmParsedHeight = customBlockHeight.toLongOrNull()
+            val withinTip = tipBlockNumber <= 0L || confirmParsedHeight == null ||
+                confirmParsedHeight <= tipBlockNumber
             Button(
                 onClick = {
                     val custom = if (selectedMode == SyncMode.CUSTOM) confirmParsedHeight else null
                     onSelectMode(selectedMode, custom)
                 },
-                enabled = selectedMode != SyncMode.CUSTOM || (confirmParsedHeight != null && confirmParsedHeight > 0)
+                enabled = selectedMode != SyncMode.CUSTOM ||
+                    (confirmParsedHeight != null && confirmParsedHeight > 0 && withinTip)
             ) {
                 Text("Apply")
             }

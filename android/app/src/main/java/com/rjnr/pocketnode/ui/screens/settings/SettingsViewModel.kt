@@ -39,6 +39,7 @@ class SettingsViewModel @Inject constructor(
         val showNetworkSwitchDialog: Boolean = false,
         val showThemeDialog: Boolean = false,
         val pendingNetworkSwitch: NetworkType? = null,
+        val tipBlockNumber: Long = 0L,
         val error: String? = null
     )
 
@@ -52,6 +53,13 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             repository.network.collect { network ->
                 _uiState.update { it.copy(currentNetwork = network) }
+            }
+        }
+
+        // Track tip block number so the sync options dialog can validate custom heights
+        viewModelScope.launch {
+            repository.syncProgress.collect { progress ->
+                _uiState.update { it.copy(tipBlockNumber = progress.tipBlockNumber) }
             }
         }
 
