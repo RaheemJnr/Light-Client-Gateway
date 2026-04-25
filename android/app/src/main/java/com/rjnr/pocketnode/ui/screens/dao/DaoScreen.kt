@@ -53,7 +53,7 @@ fun DaoScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = com.rjnr.pocketnode.ui.util.screenHorizontalPadding())
         ) {
             Spacer(modifier = Modifier.height(16.dp))
 

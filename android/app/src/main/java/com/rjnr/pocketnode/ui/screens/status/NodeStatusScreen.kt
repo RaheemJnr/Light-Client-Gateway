@@ -122,7 +122,7 @@ fun StatusTab(uiState: NodeStatusUiState, onCallRpc: (String) -> Unit) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(horizontal = com.rjnr.pocketnode.ui.util.screenHorizontalPadding(), vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Tip Header card
@@ -270,7 +270,7 @@ fun LogsTab(logs: List<String>, onClearLogs: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(horizontal = com.rjnr.pocketnode.ui.util.screenHorizontalPadding(), vertical = 16.dp)
     ) {
         Box(
             modifier = Modifier

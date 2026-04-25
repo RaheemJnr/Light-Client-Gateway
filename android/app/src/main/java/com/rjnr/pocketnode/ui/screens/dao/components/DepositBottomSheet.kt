@@ -48,6 +48,8 @@ fun DepositBottomSheet(
     ) {
         Column(
             modifier = Modifier
+                .widthIn(max = com.rjnr.pocketnode.ui.util.centredContentMaxWidth())
+                .align(Alignment.CenterHorizontally)
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 32.dp)
         ) {

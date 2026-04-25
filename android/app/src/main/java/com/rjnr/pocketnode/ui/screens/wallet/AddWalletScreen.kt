@@ -108,7 +108,7 @@ fun AddWalletScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = com.rjnr.pocketnode.ui.util.screenHorizontalPadding())
                 .verticalScroll(rememberScrollState())
         ) {
             Spacer(Modifier.height(8.dp))
