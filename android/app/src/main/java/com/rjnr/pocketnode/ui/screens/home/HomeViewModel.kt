@@ -24,6 +24,7 @@ import com.rjnr.pocketnode.ui.components.WalletGroup
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import java.util.Locale
@@ -42,6 +43,12 @@ class HomeViewModel @Inject constructor(
     private val authManager: AuthManager,
     private val cacheManager: CacheManager
 ) : ViewModel() {
+
+    // Skip-overlapping guard for refreshTransactionsOnly. The fn is called from
+    // refresh(), the syncProgress observer (silent), and wallet switches; under
+    // load these can fire within milliseconds. tryLock means we never queue a
+    // duplicate JNI/Room round-trip — the second caller bails immediately.
+    private val txRefreshMutex = Mutex()
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -297,25 +304,33 @@ class HomeViewModel @Inject constructor(
     }
 
     private suspend fun refreshTransactionsOnly(silent: Boolean = false) {
-        Log.d(TAG, "Fetching transactions (limit=50)...")
-        repository.getTransactions(limit = 50)
-            .onSuccess { response ->
-                Log.d(TAG, "Fetched ${response.items.size} transactions")
-                response.items.forEachIndexed { index, tx ->
-                    Log.d(TAG, "  [$index] ${tx.txHash.take(16)}... dir=${tx.direction} amount=${tx.balanceChange} conf=${tx.confirmations}")
-                }
-                _uiState.update {
-                    it.copy(transactions = response.items)
-                }
-            }
-            .onFailure { error ->
-                Log.e(TAG, "Failed to fetch transactions", error)
-                if (!silent) {
+        if (!txRefreshMutex.tryLock()) {
+            Log.d(TAG, "refreshTransactionsOnly skipped — already in flight")
+            return
+        }
+        try {
+            Log.d(TAG, "Fetching transactions (limit=50)...")
+            repository.getTransactions(limit = 50)
+                .onSuccess { response ->
+                    Log.d(TAG, "Fetched ${response.items.size} transactions")
+                    response.items.forEachIndexed { index, tx ->
+                        Log.d(TAG, "  [$index] ${tx.txHash.take(16)}... dir=${tx.direction} amount=${tx.balanceChange} conf=${tx.confirmations}")
+                    }
                     _uiState.update {
-                        it.copy(error = "Failed to load transactions: ${error.message}")
+                        it.copy(transactions = response.items)
                     }
                 }
-            }
+                .onFailure { error ->
+                    Log.e(TAG, "Failed to fetch transactions", error)
+                    if (!silent) {
+                        _uiState.update {
+                            it.copy(error = "Failed to load transactions: ${error.message}")
+                        }
+                    }
+                }
+        } finally {
+            txRefreshMutex.unlock()
+        }
     }
 
     fun clearError() {
