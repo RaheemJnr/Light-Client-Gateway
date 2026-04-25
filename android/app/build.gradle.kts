@@ -27,18 +27,21 @@ android {
     }
 
     testOptions {
-        unitTests.all {
-            // MockK + ByteBuddy on JDK 21+ can fail to self-attach mid-suite,
-            // producing "Could not initialize class io.mockk.impl.JvmMockKGateway"
-            // for tests that run after the first MockK test in a single JVM fork.
-            // Forking per test class gives each MockK test a fresh JVM where
-            // ByteBuddy can attach cleanly. The JVM args silence/allow agent loading
-            // on JDK 21+.
-            it.jvmArgs(
-                "-Djdk.attach.allowAttachSelf=true",
-                "-XX:+EnableDynamicAgentLoading"
-            )
-            it.setForkEvery(1L)
+        unitTests.all { test ->
+            // MockK uses ByteBuddy. On JDK 21+ self-attach is restricted (JEP 451)
+            // and once one MockK test runs in a fork the second one fails with
+            // "Could not initialize class io.mockk.impl.JvmMockKGateway".
+            // The robust fix is to preload byte-buddy-agent as a -javaagent
+            // instead of relying on dynamic attach.
+            test.doFirst {
+                val agentJar = configurations["byteBuddyAgent"]
+                    .resolvedConfiguration.resolvedArtifacts
+                    .map { it.file }
+                    .firstOrNull { it.name.startsWith("byte-buddy-agent") }
+                if (agentJar != null) {
+                    test.jvmArgs("-javaagent:${agentJar.absolutePath}")
+                }
+            }
         }
     }
 
@@ -118,7 +121,13 @@ android {
 
 }
 
+// Pinned to the version mockk transitively brings in. Preloaded as a -javaagent
+// for unit tests so MockK works on JDK 21+ without self-attach.
+val byteBuddyAgent: Configuration by configurations.creating
+
 dependencies {
+    byteBuddyAgent("net.bytebuddy:byte-buddy-agent:1.14.17")
+
     // Core
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
