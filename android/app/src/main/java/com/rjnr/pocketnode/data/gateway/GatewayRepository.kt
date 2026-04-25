@@ -20,6 +20,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -1707,43 +1710,50 @@ class GatewayRepository @Inject constructor(
             tip.number.removePrefix("0x").toLong(16)
         } else 0L
 
-        val scriptStatuses = wallets.mapNotNull { wallet ->
-            val privateKey = keyManager.getPrivateKeyForWallet(wallet.walletId) ?: run {
-                Log.w(TAG, "No key for wallet ${wallet.walletId}, skipping script registration")
-                return@mapNotNull null
-            }
-            val publicKey = keyManager.derivePublicKey(privateKey)
-            val lockScript = keyManager.deriveLockScript(publicKey)
+        // Per-wallet derivation is independent CPU+IO work (Room read for the
+        // private key, blake2b hash for the lock script). Run them concurrently
+        // so a 5-wallet ALL_WALLETS sync doesn't pay the cost serially.
+        val scriptStatuses = coroutineScope {
+            wallets.map { wallet ->
+                async(Dispatchers.IO) {
+                    val privateKey = keyManager.getPrivateKeyForWallet(wallet.walletId) ?: run {
+                        Log.w(TAG, "No key for wallet ${wallet.walletId}, skipping script registration")
+                        return@async null
+                    }
+                    val publicKey = keyManager.derivePublicKey(privateKey)
+                    val lockScript = keyManager.deriveLockScript(publicKey)
 
-            // Resume from saved per-wallet progress, or calculate from sync mode if first sync
-            val savedBlock = walletPreferences.getLastSyncedBlock(walletId = wallet.walletId)
-            val blockNum: String
-            if (savedBlock > 0) {
-                blockNum = savedBlock.toString()
-            } else {
-                val syncMode = walletPreferences.getSyncMode(walletId = wallet.walletId)
-                val customHeight = walletPreferences.getCustomBlockHeight(walletId = wallet.walletId)
-                val calculated = syncMode.toFromBlock(
-                    if (syncMode == SyncMode.CUSTOM) customHeight else null,
-                    tipHeight,
-                    currentNetwork
-                )
-                val calculatedLong = calculated.toLongOrNull() ?: 0L
-                // Safety: don't start from block 0 — use checkpoint if available
-                val checkpoint = getCheckpoint(currentNetwork)
-                blockNum = if (calculatedLong == 0L && syncMode != SyncMode.FULL_HISTORY && checkpoint > 0) {
-                    checkpoint.toString()
-                } else {
-                    calculated
+                    // Resume from saved per-wallet progress, or calculate from sync mode if first sync
+                    val savedBlock = walletPreferences.getLastSyncedBlock(walletId = wallet.walletId)
+                    val blockNum: String
+                    if (savedBlock > 0) {
+                        blockNum = savedBlock.toString()
+                    } else {
+                        val syncMode = walletPreferences.getSyncMode(walletId = wallet.walletId)
+                        val customHeight = walletPreferences.getCustomBlockHeight(walletId = wallet.walletId)
+                        val calculated = syncMode.toFromBlock(
+                            if (syncMode == SyncMode.CUSTOM) customHeight else null,
+                            tipHeight,
+                            currentNetwork
+                        )
+                        val calculatedLong = calculated.toLongOrNull() ?: 0L
+                        // Safety: don't start from block 0 — use checkpoint if available
+                        val checkpoint = getCheckpoint(currentNetwork)
+                        blockNum = if (calculatedLong == 0L && syncMode != SyncMode.FULL_HISTORY && checkpoint > 0) {
+                            checkpoint.toString()
+                        } else {
+                            calculated
+                        }
+                    }
+                    val blockNumberHex = "0x${blockNum.toLongOrNull()?.toString(16) ?: "0"}"
+
+                    JniScriptStatus(
+                        script = lockScript,
+                        scriptType = "lock",
+                        blockNumber = blockNumberHex
+                    )
                 }
-            }
-            val blockNumberHex = "0x${blockNum.toLongOrNull()?.toString(16) ?: "0"}"
-
-            JniScriptStatus(
-                script = lockScript,
-                scriptType = "lock",
-                blockNumber = blockNumberHex
-            )
+            }.awaitAll().filterNotNull()
         }
 
         if (scriptStatuses.isEmpty()) {
