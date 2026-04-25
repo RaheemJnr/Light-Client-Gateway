@@ -26,6 +26,22 @@ android {
         }
     }
 
+    testOptions {
+        unitTests.all {
+            // MockK + ByteBuddy on JDK 21+ can fail to self-attach mid-suite,
+            // producing "Could not initialize class io.mockk.impl.JvmMockKGateway"
+            // for tests that run after the first MockK test in a single JVM fork.
+            // Forking per test class gives each MockK test a fresh JVM where
+            // ByteBuddy can attach cleanly. The JVM args silence/allow agent loading
+            // on JDK 21+.
+            it.jvmArgs(
+                "-Djdk.attach.allowAttachSelf=true",
+                "-XX:+EnableDynamicAgentLoading"
+            )
+            it.setForkEvery(1L)
+        }
+    }
+
     signingConfigs {
         create("release") {
             val keystorePath = System.getenv("KEYSTORE_PATH")
