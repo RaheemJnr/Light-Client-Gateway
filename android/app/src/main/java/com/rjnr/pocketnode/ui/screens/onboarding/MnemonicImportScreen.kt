@@ -265,7 +265,7 @@ fun MnemonicImportScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp),
+                .padding(horizontal = com.rjnr.pocketnode.ui.util.screenHorizontalPadding(), vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
@@ -288,9 +288,10 @@ fun MnemonicImportScreen(
                 Text("Paste from Clipboard")
             }
 
-            // 2-column word grid
+            // Adaptive word grid: 2 columns at typical phone widths (≈160dp each),
+            // 3+ on Medium/Expanded so foldable inner displays don't waste space.
             LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+                columns = GridCells.Adaptive(minSize = 140.dp),
                 modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)

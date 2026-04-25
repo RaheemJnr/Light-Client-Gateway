@@ -275,7 +275,7 @@ private fun MnemonicDisplayStep(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(horizontal = com.rjnr.pocketnode.ui.util.screenHorizontalPadding(), vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Warning
@@ -303,9 +303,9 @@ private fun MnemonicDisplayStep(
             }
         }
 
-        // Word grid
+        // Word grid: 3 cols on phones (~110dp each), more on Medium/Expanded.
         LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
+            columns = GridCells.Adaptive(minSize = 110.dp),
             modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -388,7 +388,7 @@ private fun MnemonicVerifyStep(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(horizontal = com.rjnr.pocketnode.ui.util.screenHorizontalPadding(), vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
         Column(

@@ -465,7 +465,11 @@ private fun SettingsScreenUI(
 fun SectionHeader(title: String) {
     Text(
         text = title,
-        modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp),
+        modifier = Modifier.padding(
+            start = com.rjnr.pocketnode.ui.util.screenHorizontalPadding(),
+            top = 24.dp,
+            bottom = 8.dp
+        ),
         color = MaterialTheme.colorScheme.primary,
         style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.Bold,
@@ -523,7 +527,7 @@ fun SettingsLinkRow(
             .height(56.dp)
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable { onClick?.invoke() }
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = com.rjnr.pocketnode.ui.util.screenHorizontalPadding()),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -582,7 +586,7 @@ fun SettingsValueRow(
             .height(56.dp)
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable(onClick = { onClick?.invoke() })
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = com.rjnr.pocketnode.ui.util.screenHorizontalPadding()),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -623,7 +627,7 @@ fun SettingsSwitchRow(
             .fillMaxWidth()
             .height(56.dp)
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = com.rjnr.pocketnode.ui.util.screenHorizontalPadding()),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {

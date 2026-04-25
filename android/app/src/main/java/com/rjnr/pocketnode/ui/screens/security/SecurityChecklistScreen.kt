@@ -45,7 +45,10 @@ fun SecurityChecklistScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(24.dp),
+                .padding(
+                    horizontal = com.rjnr.pocketnode.ui.util.responsiveDp(16.dp, 24.dp, 32.dp),
+                    vertical = 24.dp
+                ),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -60,7 +61,12 @@ fun AccountSelectorSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {
-        Column(modifier = Modifier.padding(bottom = 16.dp)) {
+        Column(
+            modifier = Modifier
+                .padding(bottom = 16.dp)
+                .widthIn(max = com.rjnr.pocketnode.ui.util.centredContentMaxWidth())
+                .align(Alignment.CenterHorizontally)
+        ) {
             // Title row
             Row(
                 modifier = Modifier

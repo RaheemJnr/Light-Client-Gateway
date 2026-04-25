@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -440,7 +441,7 @@ fun HomeScreenUI(
     {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = PaddingValues(horizontal = com.rjnr.pocketnode.ui.util.screenHorizontalPadding(), vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Security Banner (PIN/biometrics + backup status)
@@ -856,6 +857,8 @@ private fun TransactionDetailSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .widthIn(max = com.rjnr.pocketnode.ui.util.centredContentMaxWidth())
+                .align(Alignment.CenterHorizontally)
                 .padding(24.dp)
                 .padding(bottom = 32.dp)
         ) {
