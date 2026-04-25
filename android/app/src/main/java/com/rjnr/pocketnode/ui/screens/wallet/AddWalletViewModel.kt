@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
+import com.rjnr.pocketnode.data.wallet.MnemonicManager
 import com.rjnr.pocketnode.data.wallet.WalletRepository
+import com.rjnr.pocketnode.ui.util.Bip39WordList
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,7 +18,9 @@ import javax.inject.Inject
 data class AddWalletUiState(
     val isLoading: Boolean = false,
     val name: String = "",
-    val importMnemonic: String = "",
+    val importWords: List<String> = List(12) { "" },
+    val importSuggestions: Map<Int, List<String>> = emptyMap(),
+    val importWordErrors: Set<Int> = emptySet(),
     val importPrivateKey: String = "",
     val createdWallet: WalletEntity? = null,
     val isNewlyGenerated: Boolean = false,
@@ -29,7 +33,8 @@ data class AddWalletUiState(
 @HiltViewModel
 class AddWalletViewModel @Inject constructor(
     private val walletRepository: WalletRepository,
-    private val gatewayRepository: GatewayRepository
+    private val gatewayRepository: GatewayRepository,
+    private val mnemonicManager: MnemonicManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AddWalletUiState())
@@ -78,8 +83,59 @@ class AddWalletViewModel @Inject constructor(
         _uiState.update { it.copy(name = name) }
     }
 
-    fun updateImportMnemonic(mnemonic: String) {
-        _uiState.update { it.copy(importMnemonic = mnemonic) }
+    fun updateImportWord(index: Int, text: String) {
+        val trimmed = text.trim().lowercase()
+        val newWords = _uiState.value.importWords.toMutableList().apply { set(index, trimmed) }
+        val newSuggestions = _uiState.value.importSuggestions.toMutableMap()
+        val newErrors = _uiState.value.importWordErrors.toMutableSet()
+
+        if (trimmed.length >= 2) {
+            newSuggestions[index] = Bip39WordList.getSuggestions(trimmed)
+        } else {
+            newSuggestions.remove(index)
+        }
+
+        if (trimmed.isNotEmpty() && !Bip39WordList.isValidWord(trimmed)) {
+            newErrors.add(index)
+        } else {
+            newErrors.remove(index)
+        }
+
+        _uiState.update {
+            it.copy(
+                importWords = newWords,
+                importSuggestions = newSuggestions,
+                importWordErrors = newErrors
+            )
+        }
+    }
+
+    fun selectImportSuggestion(index: Int, word: String) {
+        val newWords = _uiState.value.importWords.toMutableList().apply { set(index, word) }
+        val newSuggestions = _uiState.value.importSuggestions.toMutableMap().apply { remove(index) }
+        val newErrors = _uiState.value.importWordErrors.toMutableSet().apply { remove(index) }
+        _uiState.update {
+            it.copy(
+                importWords = newWords,
+                importSuggestions = newSuggestions,
+                importWordErrors = newErrors
+            )
+        }
+    }
+
+    fun pasteImportMnemonic(text: String) {
+        val parts = text.trim().lowercase().split("\\s+".toRegex()).take(12)
+        val newWords = List(12) { i -> parts.getOrElse(i) { "" } }
+        val newErrors = newWords.mapIndexedNotNull { i, w ->
+            if (w.isNotEmpty() && !Bip39WordList.isValidWord(w)) i else null
+        }.toSet()
+        _uiState.update {
+            it.copy(
+                importWords = newWords,
+                importSuggestions = emptyMap(),
+                importWordErrors = newErrors
+            )
+        }
     }
 
     fun updateImportPrivateKey(key: String) {
@@ -116,14 +172,22 @@ class AddWalletViewModel @Inject constructor(
     fun importMnemonic() {
         if (_uiState.value.isLoading) return // prevent double-tap
         val name = _uiState.value.name.trim()
-        val words = _uiState.value.importMnemonic.trim().split("\\s+".toRegex())
+        val words = _uiState.value.importWords.map { it.trim().lowercase() }
 
         if (name.isBlank()) {
             _uiState.update { it.copy(error = "Please enter a wallet name") }
             return
         }
-        if (words.size !in listOf(12, 15, 18, 21, 24)) {
-            _uiState.update { it.copy(error = "Mnemonic must be 12, 15, 18, 21, or 24 words") }
+        if (words.any { it.isEmpty() }) {
+            _uiState.update { it.copy(error = "Please fill in all 12 words") }
+            return
+        }
+        if (words.any { !Bip39WordList.isValidWord(it) }) {
+            _uiState.update { it.copy(error = "One or more words are not in the BIP39 wordlist") }
+            return
+        }
+        if (!mnemonicManager.validateMnemonic(words)) {
+            _uiState.update { it.copy(error = "Invalid mnemonic. Please check your words and try again.") }
             return
         }
 
