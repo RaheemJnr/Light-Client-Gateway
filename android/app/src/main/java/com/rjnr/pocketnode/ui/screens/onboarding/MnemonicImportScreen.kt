@@ -42,6 +42,7 @@ data class MnemonicImportUiState(
     val importSuccess: Boolean = false,
     val showPrivateKeyDialog: Boolean = false,
     val showSyncModeDialog: Boolean = false,
+    val tipBlockNumber: Long = 0L,
     val error: String? = null
 )
 
@@ -56,6 +57,14 @@ class MnemonicImportViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(MnemonicImportUiState())
     val uiState: StateFlow<MnemonicImportUiState> = _uiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            repository.syncProgress.collect { progress ->
+                _uiState.update { it.copy(tipBlockNumber = progress.tipBlockNumber) }
+            }
+        }
+    }
 
     fun updateWord(index: Int, text: String) {
         val trimmed = text.trim().lowercase()
@@ -230,7 +239,8 @@ fun MnemonicImportScreen(
             description = "Select how far back to sync your wallet history. If your wallet is older than 30 days, choose Custom to enter a specific block height.",
             availableModes = listOf(SyncMode.RECENT, SyncMode.CUSTOM),
             onDismiss = { viewModel.skipSyncSelection() },
-            onSelectMode = { mode, height -> viewModel.onSyncModeSelected(mode, height) }
+            onSelectMode = { mode, height -> viewModel.onSyncModeSelected(mode, height) },
+            tipBlockNumber = uiState.tipBlockNumber
         )
     }
 

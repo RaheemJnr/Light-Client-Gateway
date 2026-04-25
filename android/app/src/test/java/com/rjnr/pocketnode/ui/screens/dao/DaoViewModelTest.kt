@@ -4,12 +4,14 @@ import com.rjnr.pocketnode.data.auth.AuthManager
 import com.rjnr.pocketnode.data.auth.PinManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.models.*
+import com.rjnr.pocketnode.data.wallet.WalletInfo
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -20,7 +22,7 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class DaoViewModelTest {
 
-    private val testDispatcher = UnconfinedTestDispatcher()
+    private val testDispatcher = StandardTestDispatcher()
     private lateinit var repository: GatewayRepository
     private lateinit var authManager: AuthManager
     private lateinit var pinManager: PinManager
@@ -47,7 +49,9 @@ class DaoViewModelTest {
         repository = mockk(relaxed = true) {
             every { balance } returns MutableStateFlow<BalanceResponse?>(null)
             every { network } returns MutableStateFlow(NetworkType.TESTNET)
+            every { walletInfo } returns MutableStateFlow<WalletInfo?>(null)
         }
+        coEvery { repository.getDaoDeposits() } returns Result.success<List<DaoDeposit>>(emptyList())
         authManager = mockk(relaxed = true) {
             every { isAuthBeforeSendEnabled() } returns false
         }
