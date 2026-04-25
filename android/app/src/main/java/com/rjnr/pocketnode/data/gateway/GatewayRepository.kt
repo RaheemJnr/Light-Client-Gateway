@@ -4,7 +4,9 @@ import android.content.Context
 import android.util.Log
 import com.rjnr.pocketnode.data.database.AppDatabase
 import com.rjnr.pocketnode.data.database.DatabaseMaintenanceUtil
+import com.rjnr.pocketnode.data.database.dao.HeaderCacheDao
 import com.rjnr.pocketnode.data.database.dao.WalletDao
+import com.rjnr.pocketnode.data.database.entity.HeaderCacheEntity
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.gateway.models.*
 import com.rjnr.pocketnode.data.sync.SyncForegroundService
@@ -58,7 +60,8 @@ class GatewayRepository @Inject constructor(
     private val daoSyncManager: DaoSyncManager,
     private val walletMigrationHelper: WalletMigrationHelper,
     private val walletDao: WalletDao,
-    private val appDatabase: AppDatabase
+    private val appDatabase: AppDatabase,
+    private val headerCacheDao: HeaderCacheDao
 ) {
     private val _walletInfo = MutableStateFlow<WalletInfo?>(null)
     val walletInfo: StateFlow<WalletInfo?> = _walletInfo.asStateFlow()
@@ -988,26 +991,40 @@ class GatewayRepository @Inject constructor(
             val amount = if (netChangeShannons < 0) -netChangeShannons else netChangeShannons
 
             // Attempt to fetch block header to get real timestamp and block hash.
-            // nativeGetTransaction gives us the blockHash, then nativeGetHeader gives the header.
+            // For a 50-tx page this used to do 50 native_get_header round-trips
+            // even when the same headers had been resolved seconds earlier.
+            // header_cache (Room) is consulted first; JNI is only invoked on miss
+            // and the result is persisted so the next page-load is free.
             data class HeaderInfo(val timestampHex: String?, val hash: String?)
             val headerInfo: HeaderInfo = runCatching {
                 val txWithStatus = LightClientNative.nativeGetTransaction(txHash)
                     ?.let { json.decodeFromString<JniTransactionWithStatus>(it) }
                 val blockHashFromStatus = txWithStatus?.txStatus?.blockHash
                 if (blockHashFromStatus != null) {
-                    // Try local lookup first, then trigger a fetch if not cached
-                    val headerJson = LightClientNative.nativeGetHeader(blockHashFromStatus)
-                    val header = headerJson?.let { json.decodeFromString<JniHeaderView>(it) }
-                    if (header != null) {
-                        HeaderInfo(timestampHex = header.timestamp, hash = header.hash)
+                    val cached = headerCacheDao.getByBlockHash(blockHashFromStatus)
+                    if (cached != null) {
+                        HeaderInfo(timestampHex = cached.timestamp, hash = cached.blockHash)
                     } else {
-                        // Header not cached locally — ask light client to fetch it
-                        val fetchJson = LightClientNative.nativeFetchHeader(blockHashFromStatus)
-                        val fetchResult = fetchJson?.let { json.decodeFromString<JniFetchHeaderResponse>(it) }
-                        if (fetchResult?.status == "fetched" && fetchResult.data != null) {
-                            HeaderInfo(timestampHex = fetchResult.data.timestamp, hash = fetchResult.data.hash)
+                        // Try local JNI lookup first, then trigger a fetch if not cached
+                        val headerJson = LightClientNative.nativeGetHeader(blockHashFromStatus)
+                        val header = headerJson?.let { json.decodeFromString<JniHeaderView>(it) }
+                        if (header != null) {
+                            runCatching {
+                                headerCacheDao.upsert(HeaderCacheEntity.from(header, currentNetwork.name))
+                            }
+                            HeaderInfo(timestampHex = header.timestamp, hash = header.hash)
                         } else {
-                            HeaderInfo(null, null)
+                            // Header not cached locally — ask light client to fetch it
+                            val fetchJson = LightClientNative.nativeFetchHeader(blockHashFromStatus)
+                            val fetchResult = fetchJson?.let { json.decodeFromString<JniFetchHeaderResponse>(it) }
+                            if (fetchResult?.status == "fetched" && fetchResult.data != null) {
+                                runCatching {
+                                    headerCacheDao.upsert(HeaderCacheEntity.from(fetchResult.data, currentNetwork.name))
+                                }
+                                HeaderInfo(timestampHex = fetchResult.data.timestamp, hash = fetchResult.data.hash)
+                            } else {
+                                HeaderInfo(null, null)
+                            }
                         }
                     }
                 } else HeaderInfo(null, null)
