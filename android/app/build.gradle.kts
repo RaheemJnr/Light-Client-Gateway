@@ -26,6 +26,25 @@ android {
         }
     }
 
+    testOptions {
+        unitTests.all { test ->
+            // MockK uses ByteBuddy. On JDK 21+ self-attach is restricted (JEP 451)
+            // and once one MockK test runs in a fork the second one fails with
+            // "Could not initialize class io.mockk.impl.JvmMockKGateway".
+            // The robust fix is to preload byte-buddy-agent as a -javaagent
+            // instead of relying on dynamic attach.
+            test.doFirst {
+                val agentJar = configurations["byteBuddyAgent"]
+                    .resolvedConfiguration.resolvedArtifacts
+                    .map { it.file }
+                    .firstOrNull { it.name.startsWith("byte-buddy-agent") }
+                if (agentJar != null) {
+                    test.jvmArgs("-javaagent:${agentJar.absolutePath}")
+                }
+            }
+        }
+    }
+
     signingConfigs {
         create("release") {
             val keystorePath = System.getenv("KEYSTORE_PATH")
@@ -102,7 +121,13 @@ android {
 
 }
 
+// Pinned to the version mockk transitively brings in. Preloaded as a -javaagent
+// for unit tests so MockK works on JDK 21+ without self-attach.
+val byteBuddyAgent: Configuration by configurations.creating
+
 dependencies {
+    byteBuddyAgent("net.bytebuddy:byte-buddy-agent:1.14.17")
+
     // Core
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
