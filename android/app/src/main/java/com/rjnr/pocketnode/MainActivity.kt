@@ -6,6 +6,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -22,6 +25,7 @@ import com.rjnr.pocketnode.ui.navigation.CkbNavGraph
 import com.rjnr.pocketnode.ui.navigation.Screen
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
 import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
+import com.rjnr.pocketnode.ui.util.LocalWindowSizeClass
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
@@ -51,6 +55,7 @@ class MainActivity : FragmentActivity() {
     // Cached at startup — updated when wallet state changes
     private var cachedHasWallet = false
 
+    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -74,8 +79,10 @@ class MainActivity : FragmentActivity() {
 
         setContent {
             val themeMode by walletPreferences.themeModeFlow.collectAsState()
+            val windowSizeClass = calculateWindowSizeClass(this)
 
             CkbWalletTheme(themeMode = themeMode) {
+                CompositionLocalProvider(LocalWindowSizeClass provides windowSizeClass) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -104,6 +111,7 @@ class MainActivity : FragmentActivity() {
                         startDestination = startDestination,
                         pinManager = pinManager
                     )
+                }
                 }
             }
         }
