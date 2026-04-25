@@ -170,3 +170,26 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         )
     }
 }
+
+/**
+ * v5 -> v6: Partial index on PENDING transactions to speed up the
+ * "pending-first" sort used by ActivityScreen paging
+ * (TransactionDao.getTransactionsPaged / getByWalletAndNetwork).
+ *
+ * The existing composite index covers (walletId, network, timestamp DESC) but
+ * the `CASE WHEN status = 'PENDING'` ORDER BY clause forces a full scan when
+ * pending rows are sparse; a partial index keyed only on PENDING rows lets
+ * SQLite jump straight to them.
+ *
+ * Defined in raw SQL because Room's `@Index` annotation does not support
+ * WHERE clauses. Room schema validation ignores indices it didn't create.
+ */
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `idx_tx_pending` " +
+                "ON `transactions` (`walletId`, `network`, `timestamp` DESC) " +
+                "WHERE `status` = 'PENDING'"
+        )
+    }
+}

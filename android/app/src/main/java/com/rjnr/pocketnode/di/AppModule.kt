@@ -12,6 +12,7 @@ import com.rjnr.pocketnode.data.database.MIGRATION_1_2
 import com.rjnr.pocketnode.data.database.MIGRATION_2_3
 import com.rjnr.pocketnode.data.database.MIGRATION_3_4
 import com.rjnr.pocketnode.data.database.MIGRATION_4_5
+import com.rjnr.pocketnode.data.database.MIGRATION_5_6
 import com.rjnr.pocketnode.data.database.dao.BalanceCacheDao
 import com.rjnr.pocketnode.data.database.dao.DaoCellDao
 import com.rjnr.pocketnode.data.database.dao.HeaderCacheDao
@@ -112,7 +113,7 @@ object AppModule {
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "pocket_node.db")
             .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .build()
 
     @Provides
