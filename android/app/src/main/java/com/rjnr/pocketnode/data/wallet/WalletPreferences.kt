@@ -163,6 +163,14 @@ class WalletPreferences @Inject constructor(
         prefs.edit().putBoolean(KEY_BACKGROUND_SYNC, enabled).commit()
     }
 
+    // --- Database maintenance ---
+
+    fun getLastVacuumAt(): Long = prefs.getLong(KEY_LAST_VACUUM_AT, 0L)
+
+    fun setLastVacuumAt(timestampMs: Long) {
+        prefs.edit().putLong(KEY_LAST_VACUUM_AT, timestampMs).apply()
+    }
+
     // --- Active wallet (M3 multi-wallet) ---
 
     fun getActiveWalletId(): String? = prefs.getString(KEY_ACTIVE_WALLET_ID, null)
@@ -251,5 +259,6 @@ class WalletPreferences @Inject constructor(
         private const val KEY_SYNC_STRATEGY = "sync_strategy"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_BACKGROUND_SYNC = "background_sync_enabled"
+        private const val KEY_LAST_VACUUM_AT = "last_vacuum_at"
     }
 }

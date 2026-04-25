@@ -2,6 +2,8 @@ package com.rjnr.pocketnode.data.gateway
 
 import android.content.Context
 import android.util.Log
+import com.rjnr.pocketnode.data.database.AppDatabase
+import com.rjnr.pocketnode.data.database.DatabaseMaintenanceUtil
 import com.rjnr.pocketnode.data.database.dao.WalletDao
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.gateway.models.*
@@ -52,7 +54,8 @@ class GatewayRepository @Inject constructor(
     private val cacheManager: CacheManager,
     private val daoSyncManager: DaoSyncManager,
     private val walletMigrationHelper: WalletMigrationHelper,
-    private val walletDao: WalletDao
+    private val walletDao: WalletDao,
+    private val appDatabase: AppDatabase
 ) {
     private val _walletInfo = MutableStateFlow<WalletInfo?>(null)
     val walletInfo: StateFlow<WalletInfo?> = _walletInfo.asStateFlow()
@@ -101,6 +104,16 @@ class GatewayRepository @Inject constructor(
                 // Delete ESP files after successful migration
                 keyManager.deleteEspFilesIfSafe()
                 activeWalletId = walletPreferences.getActiveWalletId() ?: ""
+
+                // Periodic VACUUM (~monthly) to reclaim fragmented space from
+                // tombstoned tx/cell rows. Throttled so it doesn't run on
+                // every cold start.
+                runCatching {
+                    if (DatabaseMaintenanceUtil.vacuumIfDue(appDatabase, walletPreferences.getLastVacuumAt())) {
+                        walletPreferences.setLastVacuumAt(System.currentTimeMillis())
+                        Log.d(TAG, "Periodic VACUUM completed")
+                    }
+                }.onFailure { Log.w(TAG, "Periodic VACUUM failed (non-fatal)", it) }
 
                 initializeNode(currentNetwork)
             } catch (e: Exception) {
