@@ -232,7 +232,7 @@ private fun ImportMnemonicForm(uiState: AddWalletUiState, viewModel: AddWalletVi
     Spacer(Modifier.height(12.dp))
 
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        columns = GridCells.Adaptive(minSize = 140.dp),
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(max = 480.dp),

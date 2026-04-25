@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -527,6 +528,8 @@ private fun TransactionDetailSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .widthIn(max = com.rjnr.pocketnode.ui.util.centredContentMaxWidth())
+                .align(Alignment.CenterHorizontally)
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 40.dp)
         ) {
