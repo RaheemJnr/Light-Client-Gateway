@@ -128,6 +128,8 @@ fun HomeScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    val tipBlockNumberLong = uiState.tipBlockNumber.toLongOrNull() ?: 0L
+
     // Sync options dialog (settings path)
     if (uiState.showSyncOptionsDialog) {
         SyncOptionsDialog(
@@ -137,7 +139,8 @@ fun HomeScreen(
                 viewModel.hideSyncOptions()
                 viewModel.changeSyncMode(mode, customBlock)
             },
-            savedCustomBlockHeight = uiState.savedCustomBlockHeight
+            savedCustomBlockHeight = uiState.savedCustomBlockHeight,
+            tipBlockNumber = tipBlockNumberLong
         )
     }
 
@@ -154,7 +157,8 @@ fun HomeScreen(
                 if (mode != SyncMode.RECENT) {
                     viewModel.changeSyncMode(mode, customBlock)
                 }
-            }
+            },
+            tipBlockNumber = tipBlockNumberLong
         )
     }
 

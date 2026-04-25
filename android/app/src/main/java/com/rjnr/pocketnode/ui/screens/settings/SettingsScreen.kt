@@ -145,7 +145,8 @@ fun SettingsScreen(
             currentMode = uiState.syncMode,
             onDismiss = { viewModel.hideSyncDialog() },
             onSelectMode = { mode, customBlock -> viewModel.setSyncMode(mode, customBlock) },
-            savedCustomBlockHeight = uiState.savedCustomBlockHeight
+            savedCustomBlockHeight = uiState.savedCustomBlockHeight,
+            tipBlockNumber = uiState.tipBlockNumber
         )
     }
 
