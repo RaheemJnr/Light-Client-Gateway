@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
+import com.rjnr.pocketnode.data.wallet.MnemonicManager
 import com.rjnr.pocketnode.data.wallet.WalletRepository
 import com.rjnr.pocketnode.ui.util.Bip39WordList
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -32,7 +33,8 @@ data class AddWalletUiState(
 @HiltViewModel
 class AddWalletViewModel @Inject constructor(
     private val walletRepository: WalletRepository,
-    private val gatewayRepository: GatewayRepository
+    private val gatewayRepository: GatewayRepository,
+    private val mnemonicManager: MnemonicManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AddWalletUiState())
@@ -182,6 +184,10 @@ class AddWalletViewModel @Inject constructor(
         }
         if (words.any { !Bip39WordList.isValidWord(it) }) {
             _uiState.update { it.copy(error = "One or more words are not in the BIP39 wordlist") }
+            return
+        }
+        if (!mnemonicManager.validateMnemonic(words)) {
+            _uiState.update { it.copy(error = "Invalid mnemonic. Please check your words and try again.") }
             return
         }
 
