@@ -21,6 +21,7 @@ import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.SyncMode
 import com.rjnr.pocketnode.data.wallet.MnemonicManager
 import com.rjnr.pocketnode.data.wallet.WalletRepository
+import com.rjnr.pocketnode.ui.components.MnemonicWordInput
 import com.rjnr.pocketnode.ui.components.SyncOptionsDialog
 import com.rjnr.pocketnode.ui.util.Bip39WordList
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -295,7 +296,7 @@ fun MnemonicImportScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(12) { index ->
-                    WordInputField(
+                    MnemonicWordInput(
                         index = index,
                         value = uiState.words[index],
                         suggestions = uiState.suggestions[index] ?: emptyList(),
@@ -329,56 +330,6 @@ fun MnemonicImportScreen(
                     Spacer(Modifier.width(8.dp))
                 }
                 Text("Import Wallet")
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun WordInputField(
-    index: Int,
-    value: String,
-    suggestions: List<String>,
-    isError: Boolean,
-    onValueChange: (String) -> Unit,
-    onSuggestionSelected: (String) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    // Show dropdown when there are suggestions and value doesn't exactly match a suggestion
-    LaunchedEffect(suggestions, value) {
-        expanded = suggestions.isNotEmpty() && !Bip39WordList.isValidWord(value)
-    }
-
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { }
-    ) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            label = { Text("#${index + 1}") },
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(MenuAnchorType.PrimaryEditable),
-            singleLine = true,
-            isError = isError,
-            textStyle = MaterialTheme.typography.bodyMedium
-        )
-
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
-            suggestions.forEach { word ->
-                DropdownMenuItem(
-                    text = { Text(word) },
-                    onClick = {
-                        onSuggestionSelected(word)
-                        expanded = false
-                    }
-                )
             }
         }
     }
