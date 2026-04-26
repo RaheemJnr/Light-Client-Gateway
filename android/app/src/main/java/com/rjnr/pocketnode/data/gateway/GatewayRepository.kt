@@ -1768,6 +1768,41 @@ class GatewayRepository @Inject constructor(
     }
 
     /**
+     * BALANCED strategy filter: drop wallets whose localSavedBlockNumber lags the
+     * max-progress wallet by more than BALANCED_LAG_THRESHOLD blocks. Active wallet
+     * always passes regardless of its own lag (otherwise the user's current view stalls).
+     *
+     * Reference = max localSavedBlockNumber across the candidate set, NOT the active
+     * wallet's progress (Q3=B in design): survives wallet-switch correctly.
+     *
+     * Returns input unchanged when wallets.size <= 1.
+     *
+     * MUST stay pure — no cache writes. The lastBalancedEligibleSet cache is owned
+     * by registerAllWalletScripts (Task 14).
+     */
+    private suspend fun applyBalancedFilter(wallets: List<WalletEntity>): List<WalletEntity> {
+        if (wallets.size <= 1) return wallets
+
+        val progress = wallets.associate { wallet ->
+            wallet.walletId to (syncProgressDao.get(wallet.walletId, currentNetwork.name)
+                ?.localSavedBlockNumber ?: 0L)
+        }
+        val maxProgress = progress.values.max()
+        val activeId = activeWalletId
+
+        val (kept, dropped) = wallets.partition { wallet ->
+            val lag = maxProgress - (progress[wallet.walletId] ?: 0L)
+            wallet.walletId == activeId || lag <= BALANCED_LAG_THRESHOLD
+        }
+
+        if (dropped.isNotEmpty()) {
+            Log.i(TAG, "BALANCED: dropped ${dropped.size} laggards: " +
+                dropped.map { "${it.walletId}(lag=${maxProgress - (progress[it.walletId] ?: 0L)})" })
+        }
+        return kept
+    }
+
+    /**
      * Register lock scripts for ALL wallets with the light client simultaneously.
      * Used when SyncStrategy is ALL_WALLETS — enables balance/transaction tracking
      * across every wallet without requiring a wallet switch.
@@ -1941,5 +1976,13 @@ class GatewayRepository @Inject constructor(
         // beyond this are dropped by lastActiveAt descending; the dropped ids are
         // logged so support can diagnose "why isn't wallet X syncing".
         private const val MAX_CONCURRENT_WALLET_SCRIPTS = 3
+
+        /**
+         * Source: Neuron's THRESHOLD_BLOCK_NUMBER_IN_DIFF_WALLET, validated in production for years.
+         * Wallets lagging the max-progress wallet by more than this are dropped from the registered
+         * script set (BALANCED strategy) until the leader's tail catches up.
+         * https://github.com/nervosnetwork/neuron/blob/develop/packages/neuron-wallet/src/block-sync-renderer/sync/light-synchronizer.ts#L22
+         */
+        const val BALANCED_LAG_THRESHOLD = 100_000L
     }
 }
