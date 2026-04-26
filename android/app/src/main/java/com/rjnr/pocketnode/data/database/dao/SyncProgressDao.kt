@@ -21,6 +21,15 @@ interface SyncProgressDao {
     @Query("UPDATE sync_progress SET localSavedBlockNumber = :block, updatedAt = :ts WHERE walletId = :walletId AND network = :network")
     suspend fun updateLocalSaved(walletId: String, network: String, block: Long, ts: Long)
 
+    /**
+     * Atomic update of registration metadata only (preserves localSavedBlockNumber).
+     * Returns rows affected (0 = no row, caller falls back to upsert).
+     * Closes the get→upsert race window in setScriptsAndRecord vs concurrent
+     * setWalletSyncBlock writes from the sync poll.
+     */
+    @Query("UPDATE sync_progress SET lightStartBlockNumber = :lightStart, updatedAt = :ts WHERE walletId = :walletId AND network = :network")
+    suspend fun updateLightStart(walletId: String, network: String, lightStart: Long, ts: Long): Int
+
     @Query("DELETE FROM sync_progress WHERE walletId = :walletId")
     suspend fun deleteForWallet(walletId: String)
 }

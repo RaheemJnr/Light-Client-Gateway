@@ -91,6 +91,25 @@ class SyncProgressDaoTest {
     }
 
     @Test
+    fun `updateLightStart returns 0 when row absent`() = runTest {
+        val rows = dao.updateLightStart("missing", "MAINNET", 999L, 1L)
+        assertEquals(0, rows)
+    }
+
+    @Test
+    fun `updateLightStart updates only lightStartBlockNumber preserving localSavedBlockNumber`() = runTest {
+        dao.upsert(row(light = 100L, local = 500L, ts = 1L))
+
+        val rows = dao.updateLightStart("w-1", "MAINNET", 999L, 5L)
+        assertEquals(1, rows)
+
+        val r = dao.get("w-1", "MAINNET")!!
+        assertEquals(999L, r.lightStartBlockNumber)
+        assertEquals(500L, r.localSavedBlockNumber)   // preserved (closes the race)
+        assertEquals(5L, r.updatedAt)
+    }
+
+    @Test
     fun `deleteForWallet removes all networks for that walletId`() = runTest {
         dao.upsert(row(network = "MAINNET"))
         dao.upsert(row(network = "TESTNET"))

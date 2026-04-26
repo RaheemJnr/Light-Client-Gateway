@@ -51,6 +51,27 @@ data class SyncProgress(
     val justReachedTip: Boolean = false
 )
 
+/**
+ * Pure BALANCED filter algorithm — no I/O. Extracted from GatewayRepository
+ * so unit tests exercise the production implementation directly without
+ * having to construct a full GatewayRepository instance.
+ *
+ * Returns Pair(kept, dropped). Active wallet always lands in `kept`.
+ */
+internal fun balancedFilterAlgorithm(
+    wallets: List<WalletEntity>,
+    progressByWalletId: Map<String, Long>,
+    activeId: String,
+    threshold: Long
+): Pair<List<WalletEntity>, List<WalletEntity>> {
+    if (wallets.size <= 1) return wallets to emptyList()
+    val maxProgress = progressByWalletId.values.maxOrNull() ?: 0L
+    return wallets.partition { wallet ->
+        val lag = maxProgress - (progressByWalletId[wallet.walletId] ?: 0L)
+        wallet.walletId == activeId || lag <= threshold
+    }
+}
+
 @Singleton
 class GatewayRepository @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -1771,16 +1792,23 @@ class GatewayRepository @Inject constructor(
         statuses.zip(walletIds).forEach { (status, walletId) ->
             if (walletId.isEmpty()) return@forEach
             val startBlock = status.blockNumber.removePrefix("0x").toLong(16)
-            val existing = syncProgressDao.get(walletId, currentNetwork.name)
-            syncProgressDao.upsert(
-                SyncProgressEntity(
-                    walletId = walletId,
-                    network = currentNetwork.name,
-                    lightStartBlockNumber = startBlock,
-                    localSavedBlockNumber = existing?.localSavedBlockNumber ?: startBlock,
-                    updatedAt = now
-                )
+            // Atomic UPDATE preserves localSavedBlockNumber under concurrent writes
+            // from the sync poll's setWalletSyncBlock. Falls through to upsert only
+            // when no row exists yet (no race possible — nothing to overwrite).
+            val rowsUpdated = syncProgressDao.updateLightStart(
+                walletId, currentNetwork.name, startBlock, now
             )
+            if (rowsUpdated == 0) {
+                syncProgressDao.upsert(
+                    SyncProgressEntity(
+                        walletId = walletId,
+                        network = currentNetwork.name,
+                        lightStartBlockNumber = startBlock,
+                        localSavedBlockNumber = startBlock,
+                        updatedAt = now
+                    )
+                )
+            }
         }
         return true
     }
@@ -1797,23 +1825,27 @@ class GatewayRepository @Inject constructor(
      *
      * MUST stay pure — no cache writes. The lastBalancedEligibleSet cache is owned
      * by registerAllWalletScripts (Task 14).
+     *
+     * I/O wrapper — bulk-reads progress rows, delegates the partition logic to
+     * the top-level pure `balancedFilterAlgorithm` so tests can exercise it
+     * without constructing a full GatewayRepository.
      */
     private suspend fun applyBalancedFilter(wallets: List<WalletEntity>): List<WalletEntity> {
         if (wallets.size <= 1) return wallets
 
+        // Bulk read: one round-trip instead of N gets.
+        val rows = syncProgressDao.getAllForNetwork(currentNetwork.name)
+            .associateBy { it.walletId }
         val progress = wallets.associate { wallet ->
-            wallet.walletId to (syncProgressDao.get(wallet.walletId, currentNetwork.name)
-                ?.localSavedBlockNumber ?: 0L)
+            wallet.walletId to (rows[wallet.walletId]?.localSavedBlockNumber ?: 0L)
         }
-        val maxProgress = progress.values.max()
-        val activeId = activeWalletId
 
-        val (kept, dropped) = wallets.partition { wallet ->
-            val lag = maxProgress - (progress[wallet.walletId] ?: 0L)
-            wallet.walletId == activeId || lag <= BALANCED_LAG_THRESHOLD
-        }
+        val (kept, dropped) = balancedFilterAlgorithm(
+            wallets, progress, activeWalletId, BALANCED_LAG_THRESHOLD
+        )
 
         if (dropped.isNotEmpty()) {
+            val maxProgress = progress.values.maxOrNull() ?: 0L
             Log.i(TAG, "BALANCED: dropped ${dropped.size} laggards: " +
                 dropped.map { "${it.walletId}(lag=${maxProgress - (progress[it.walletId] ?: 0L)})" })
         }
