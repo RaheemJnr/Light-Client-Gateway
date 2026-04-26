@@ -835,7 +835,11 @@ class GatewayRepository @Inject constructor(
             0L
         }
 
-        // Save sync progress per-wallet if we've made progress
+        // Save sync progress per-wallet if we've made progress.
+        // No fallback to a global key by design: post-multi-wallet migration
+        // (#105 Part B) every progress row is keyed (walletId, network).
+        // If wId is empty (rare cold-start race before activeWalletId is set),
+        // we drop this poll's write — next poll catches up.
         val wId = activeWalletId
         if (wId.isNotEmpty() && scriptBlockNumber > getWalletSyncBlock(wId)) {
             setWalletSyncBlock(wId, scriptBlockNumber)
