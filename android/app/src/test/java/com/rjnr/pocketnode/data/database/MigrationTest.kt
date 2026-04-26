@@ -31,7 +31,7 @@ class MigrationTest {
     fun setup() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
             .allowMainThreadQueries()
             .build()
     }
@@ -177,5 +177,22 @@ class MigrationTest {
 
         db.keyMaterialDao().delete("to-delete")
         assertEquals(0, db.keyMaterialDao().count())
+    }
+
+    @Test
+    fun `v7 sync_progress table is accessible and round-trips`() = runTest {
+        val entity = com.rjnr.pocketnode.data.database.entity.SyncProgressEntity(
+            walletId = "w-mig",
+            network = "MAINNET",
+            lightStartBlockNumber = 1000L,
+            localSavedBlockNumber = 1500L,
+            updatedAt = System.currentTimeMillis()
+        )
+        db.syncProgressDao().upsert(entity)
+
+        val r = db.syncProgressDao().get("w-mig", "MAINNET")
+        assertNotNull(r)
+        assertEquals(1500L, r!!.localSavedBlockNumber)
+        assertEquals(1000L, r.lightStartBlockNumber)
     }
 }
