@@ -124,6 +124,21 @@ class GatewayRepository @Inject constructor(
     @Volatile
     private var lastBalancedEligibleSet: Set<String> = emptySet()
 
+    /**
+     * Reverse mapping: lock-script `args` → walletId, populated by setScriptsAndRecord.
+     *
+     * Lets the sync poll fan progress out to every registered wallet, not just the
+     * active one. Without this, non-active wallets' localSavedBlockNumber rows go
+     * stale under BALANCED — the filter then mis-classifies them as laggards based
+     * on stale data, drops them, and they actually fall behind.
+     *
+     * @Volatile because reads (sync poll) and writes (registration) happen on
+     * different coroutine dispatchers. Worst-case torn read = one poll cycle's
+     * progress for a newly-registered wallet is dropped — corrected on next poll.
+     */
+    @Volatile
+    private var scriptArgsToWalletId: Map<String, String> = emptyMap()
+
     // --- Sync progress tracking ---
     private val syncProgressTracker = SyncProgressTracker()
     private var syncPollingJob: Job? = null
@@ -185,10 +200,10 @@ class GatewayRepository @Inject constructor(
     suspend fun setWalletSyncBlock(walletId: String, block: Long, network: NetworkType = currentNetwork) {
         if (walletId.isEmpty()) return
         val now = System.currentTimeMillis()
-        val existing = syncProgressDao.get(walletId, network.name)
-        if (existing != null) {
-            syncProgressDao.updateLocalSaved(walletId, network.name, block, now)
-        } else {
+        // Atomic UPDATE first preserves any concurrently-written lightStartBlockNumber
+        // (e.g. setScriptsAndRecord landing between get and upsert).
+        val rowsUpdated = syncProgressDao.updateLocalSaved(walletId, network.name, block, now)
+        if (rowsUpdated == 0) {
             syncProgressDao.upsert(
                 SyncProgressEntity(
                     walletId = walletId,
@@ -841,36 +856,45 @@ class GatewayRepository @Inject constructor(
             0L
         }
 
-        // Fetch script status — match active wallet's script by lock args
+        // Fetch script status for ALL registered scripts.
         val scriptsJson = LightClientNative.nativeGetScripts()
-        val scriptBlockNumber = if (scriptsJson != null) {
-            val scripts = json.decodeFromString<List<JniScriptStatus>>(scriptsJson)
-            val activeArgs = _walletInfo.value?.script?.args
-            val match = if (activeArgs != null) {
-                scripts.find { it.script.args == activeArgs }
-            } else {
-                scripts.firstOrNull()
-            }
-            match?.blockNumber?.removePrefix("0x")?.toLong(16) ?: 0L
+        val scripts = if (scriptsJson != null) {
+            json.decodeFromString<List<JniScriptStatus>>(scriptsJson)
         } else {
-            0L
+            emptyList()
         }
 
-        // Save sync progress per-wallet if we've made progress.
-        // No fallback to a global key by design: post-multi-wallet migration
-        // (#105 Part B) every progress row is keyed (walletId, network).
-        // If wId is empty (rare cold-start race before activeWalletId is set),
-        // we drop this poll's write — next poll catches up.
-        val wId = activeWalletId
-        if (wId.isNotEmpty() && scriptBlockNumber > getWalletSyncBlock(wId)) {
-            setWalletSyncBlock(wId, scriptBlockNumber)
-            Log.d(TAG, "💾 Saved sync progress: block $scriptBlockNumber (wallet=$wId)")
-
-            // BALANCED: a previously-laggard wallet may now be within threshold.
-            // Re-evaluate eligible set cheaply; only re-register when it changed.
-            if (walletPreferences.getSyncStrategy() == SyncStrategy.BALANCED) {
-                maybeReregisterBalanced()
+        // Persist progress for EVERY registered wallet, not just the active one.
+        // Under BALANCED with 3 wallets registered, the light client advances all
+        // their scripts; if we only saved the active wallet's progress, the others'
+        // localSavedBlockNumber rows would go stale and applyBalancedFilter would
+        // mis-classify them as laggards based on stale data.
+        val mapping = scriptArgsToWalletId
+        var anyUpdated = false
+        scripts.forEach { script ->
+            val walletId = mapping[script.script.args] ?: return@forEach
+            val block = script.blockNumber.removePrefix("0x").toLong(16)
+            if (block > getWalletSyncBlock(walletId)) {
+                setWalletSyncBlock(walletId, block)
+                anyUpdated = true
+                if (walletId == activeWalletId) {
+                    Log.d(TAG, "💾 Saved sync progress: block $block (wallet=$walletId)")
+                }
             }
+        }
+
+        // BALANCED: re-evaluate eligible set once after all updates landed.
+        if (anyUpdated && walletPreferences.getSyncStrategy() == SyncStrategy.BALANCED) {
+            maybeReregisterBalanced()
+        }
+
+        // Active wallet's block for the sync-progress display below.
+        val activeArgs = _walletInfo.value?.script?.args
+        val scriptBlockNumber = if (activeArgs != null) {
+            scripts.find { it.script.args == activeArgs }
+                ?.blockNumber?.removePrefix("0x")?.toLong(16) ?: 0L
+        } else {
+            scripts.firstOrNull()?.blockNumber?.removePrefix("0x")?.toLong(16) ?: 0L
         }
 
         // Log sync progress for debugging
@@ -1789,8 +1813,10 @@ class GatewayRepository @Inject constructor(
         if (!ok) return false
 
         val now = System.currentTimeMillis()
+        val newMapping = mutableMapOf<String, String>()
         statuses.zip(walletIds).forEach { (status, walletId) ->
             if (walletId.isEmpty()) return@forEach
+            newMapping[status.script.args] = walletId
             val startBlock = status.blockNumber.removePrefix("0x").toLong(16)
             // Atomic UPDATE preserves localSavedBlockNumber under concurrent writes
             // from the sync poll's setWalletSyncBlock. Falls through to upsert only
@@ -1809,6 +1835,12 @@ class GatewayRepository @Inject constructor(
                     )
                 )
             }
+        }
+        // ALL replaces the entire registered set; PARTIAL adds to it.
+        scriptArgsToWalletId = if (cmd == LightClientNative.CMD_SET_SCRIPTS_ALL) {
+            newMapping
+        } else {
+            scriptArgsToWalletId + newMapping
         }
         return true
     }
@@ -1858,14 +1890,18 @@ class GatewayRepository @Inject constructor(
      * Caller must already be on a coroutine context.
      */
     private suspend fun maybeReregisterBalanced() {
-        val newSet = applyBalancedFilter(
-            walletDao.getAll().sortedByDescending { it.lastActiveAt }
-        ).map { it.walletId }.toSet()
+        val allWallets = walletDao.getAll().sortedByDescending { it.lastActiveAt }
+        val filtered = applyBalancedFilter(allWallets)
+        val newSet = filtered.map { it.walletId }.toSet()
 
         if (newSet == lastBalancedEligibleSet) return
 
         Log.i(TAG, "BALANCED set changed (was=$lastBalancedEligibleSet, now=$newSet): re-registering")
-        registerAllWalletScripts()  // refreshes lastBalancedEligibleSet via the filter step
+        // Pass through the snapshot we just computed so registerAllWalletScripts
+        // doesn't re-fetch + re-filter (avoids double I/O and a snapshot race
+        // where wallet add/delete between calls would update the cache against
+        // a different set than the comparison was made on).
+        registerAllWalletScripts(preFetchedWallets = allWallets, preFilteredCandidates = filtered)
     }
 
     /**
@@ -1874,22 +1910,29 @@ class GatewayRepository @Inject constructor(
      * across every wallet without requiring a wallet switch.
      *
      * Capped at the 3 most-recently-active wallets to bound resource usage.
+     *
+     * @param preFetchedWallets if non-null, skip the walletDao.getAll() round-trip.
+     * @param preFilteredCandidates if non-null, skip applyBalancedFilter and use this list as the post-filter candidate set.
      */
-    private suspend fun registerAllWalletScripts() {
+    private suspend fun registerAllWalletScripts(
+        preFetchedWallets: List<WalletEntity>? = null,
+        preFilteredCandidates: List<WalletEntity>? = null
+    ) {
         if (!awaitNodeReady()) {
             throw Exception("Node initialization failed")
         }
 
-        val allWallets = walletDao.getAll().sortedByDescending { it.lastActiveAt }
+        val allWallets = preFetchedWallets
+            ?: walletDao.getAll().sortedByDescending { it.lastActiveAt }
         val strategy = walletPreferences.getSyncStrategy()
 
         // Step 1: BALANCED filter runs BEFORE the cap (Q2=A in design).
-        val candidateWallets = if (strategy == SyncStrategy.BALANCED) {
-            val filtered = applyBalancedFilter(allWallets)
-            lastBalancedEligibleSet = filtered.map { it.walletId }.toSet()
-            filtered
-        } else {
-            allWallets
+        val candidateWallets = preFilteredCandidates ?: when (strategy) {
+            SyncStrategy.BALANCED -> applyBalancedFilter(allWallets)
+            else -> allWallets
+        }
+        if (strategy == SyncStrategy.BALANCED) {
+            lastBalancedEligibleSet = candidateWallets.map { it.walletId }.toSet()
         }
 
         // Step 2: Cap (unchanged behavior for ALL_WALLETS).

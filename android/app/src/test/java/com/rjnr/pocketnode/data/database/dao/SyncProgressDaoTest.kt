@@ -83,11 +83,18 @@ class SyncProgressDaoTest {
     @Test
     fun `updateLocalSaved updates only that field`() = runTest {
         dao.upsert(row(light = 100L, local = 100L, ts = 1L))
-        dao.updateLocalSaved("w-1", "MAINNET", 999L, 5L)
+        val rows = dao.updateLocalSaved("w-1", "MAINNET", 999L, 5L)
+        assertEquals(1, rows)
         val r = dao.get("w-1", "MAINNET")!!
         assertEquals(100L, r.lightStartBlockNumber)        // unchanged
         assertEquals(999L, r.localSavedBlockNumber)
         assertEquals(5L, r.updatedAt)
+    }
+
+    @Test
+    fun `updateLocalSaved returns 0 when row absent`() = runTest {
+        val rows = dao.updateLocalSaved("missing", "MAINNET", 999L, 1L)
+        assertEquals(0, rows)
     }
 
     @Test

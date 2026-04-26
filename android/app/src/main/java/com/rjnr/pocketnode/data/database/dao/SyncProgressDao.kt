@@ -18,8 +18,14 @@ interface SyncProgressDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: SyncProgressEntity)
 
+    /**
+     * Atomic update of progress only (preserves lightStartBlockNumber).
+     * Returns rows affected (0 = no row, caller falls back to upsert).
+     * Closes the get→upsert race window in setWalletSyncBlock vs concurrent
+     * inserts from setScriptsAndRecord during initial registration.
+     */
     @Query("UPDATE sync_progress SET localSavedBlockNumber = :block, updatedAt = :ts WHERE walletId = :walletId AND network = :network")
-    suspend fun updateLocalSaved(walletId: String, network: String, block: Long, ts: Long)
+    suspend fun updateLocalSaved(walletId: String, network: String, block: Long, ts: Long): Int
 
     /**
      * Atomic update of registration metadata only (preserves localSavedBlockNumber).
