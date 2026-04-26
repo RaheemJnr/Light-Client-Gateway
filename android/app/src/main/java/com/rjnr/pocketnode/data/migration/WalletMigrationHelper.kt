@@ -100,8 +100,7 @@ class WalletMigrationHelper @Inject constructor(
      * the original start block was never recorded.
      */
     suspend fun migrateSyncProgressToRoomIfNeeded(): Boolean {
-        val rawPrefs = walletPreferences.rawPrefs
-        if (rawPrefs.getBoolean(KEY_SYNC_PROGRESS_MIGRATED, false)) return false
+        if (walletPreferences.isSyncProgressMigratedToRoom()) return false
 
         val now = System.currentTimeMillis()
         val wallets = walletDao.getAll()
@@ -110,11 +109,8 @@ class WalletMigrationHelper @Inject constructor(
         database.withTransaction {
             for (wallet in wallets) {
                 for (net in networks) {
-                    val key = "${wallet.walletId}_${net.name.lowercase()}_last_synced_block"
-                    if (!rawPrefs.contains(key)) continue
-                    val block = rawPrefs.getLong(key, 0L)
-                    if (block <= 0L) continue
-
+                    val block = walletPreferences.getLegacySyncedBlock(wallet.walletId, net)
+                        ?: continue
                     syncProgressDao.upsert(
                         SyncProgressEntity(
                             walletId = wallet.walletId,
@@ -128,21 +124,15 @@ class WalletMigrationHelper @Inject constructor(
             }
         }
 
-        // Always remove every legacy key (even those skipped above for block <= 0):
-        // the entire `*_last_synced_block` prefs namespace is being retired.
-        val editor = rawPrefs.edit()
-        for (wallet in wallets) {
-            for (net in networks) {
-                editor.remove("${wallet.walletId}_${net.name.lowercase()}_last_synced_block")
-            }
-        }
-        editor.putBoolean(KEY_SYNC_PROGRESS_MIGRATED, true).commit()
+        // Atomic: removes every legacy key + sets the guard flag in one commit.
+        // Runs AFTER the Room txn commits so a crash mid-write leaves the guard
+        // unset and the migration retries safely on next launch.
+        walletPreferences.clearLegacySyncedBlocksAndMarkMigrated(
+            wallets.map { it.walletId },
+            networks
+        )
 
         Log.d(TAG, "sync_progress migration complete: ${wallets.size} wallets x ${networks.size} networks")
         return true
-    }
-
-    companion object {
-        private const val KEY_SYNC_PROGRESS_MIGRATED = "sync_progress_migrated_to_room_v7"
     }
 }
