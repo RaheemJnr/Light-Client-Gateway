@@ -128,6 +128,8 @@ class WalletMigrationHelper @Inject constructor(
             }
         }
 
+        // Always remove every legacy key (even those skipped above for block <= 0):
+        // the entire `*_last_synced_block` prefs namespace is being retired.
         val editor = rawPrefs.edit()
         for (wallet in wallets) {
             for (net in networks) {
