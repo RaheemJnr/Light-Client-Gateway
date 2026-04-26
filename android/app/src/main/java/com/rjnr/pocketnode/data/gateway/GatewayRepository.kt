@@ -194,19 +194,14 @@ class GatewayRepository @Inject constructor(
         } else null
 
         when (walletPreferences.getSyncStrategy()) {
-            SyncStrategy.ALL_WALLETS -> registerAllWalletScripts()
+            // BALANCED reads per-wallet syncMode/customBlockHeight inside the loop
+            // (registerAllWalletScripts at L1749), so the locals above are unused here.
+            SyncStrategy.ALL_WALLETS, SyncStrategy.BALANCED -> registerAllWalletScripts()
             SyncStrategy.ACTIVE_ONLY -> registerAccount(
                 syncMode = walletSyncMode,
                 customBlockHeight = walletCustomHeight,
                 savePreference = false
             )
-            SyncStrategy.BALANCED -> {
-                registerAccount(
-                    syncMode = walletSyncMode,
-                    customBlockHeight = walletCustomHeight,
-                    savePreference = false
-                )
-            }
         }
 
         // Emit cached data immediately
@@ -543,7 +538,7 @@ class GatewayRepository @Inject constructor(
         savePreference: Boolean = true
     ): Result<Unit> = runCatching {
         when (walletPreferences.getSyncStrategy()) {
-            SyncStrategy.ALL_WALLETS -> {
+            SyncStrategy.ALL_WALLETS, SyncStrategy.BALANCED -> {
                 registerAllWalletScripts()
                 if (savePreference) {
                     val wId = activeWalletId.ifEmpty { null }
@@ -554,7 +549,7 @@ class GatewayRepository @Inject constructor(
                     walletPreferences.setInitialSyncCompleted(true, walletId = wId)
                 }
             }
-            else -> {
+            SyncStrategy.ACTIVE_ONLY -> {
                 registerAccount(syncMode, customBlockHeight, savePreference).getOrThrow()
             }
         }
@@ -1815,12 +1810,22 @@ class GatewayRepository @Inject constructor(
         }
 
         val allWallets = walletDao.getAll().sortedByDescending { it.lastActiveAt }
-        val wallets = allWallets.take(MAX_CONCURRENT_WALLET_SCRIPTS)
-        if (allWallets.size > wallets.size) {
-            val droppedIds = allWallets.drop(wallets.size).map { it.walletId }
+        val strategy = walletPreferences.getSyncStrategy()
+
+        // Step 1: BALANCED filter runs BEFORE the cap (Q2=A in design).
+        val candidateWallets = if (strategy == SyncStrategy.BALANCED) {
+            applyBalancedFilter(allWallets)
+        } else {
+            allWallets
+        }
+
+        // Step 2: Cap (unchanged behavior for ALL_WALLETS).
+        val wallets = candidateWallets.take(MAX_CONCURRENT_WALLET_SCRIPTS)
+        if (candidateWallets.size > wallets.size) {
+            val droppedIds = candidateWallets.drop(wallets.size).map { it.walletId }
             Log.i(
                 TAG,
-                "ALL_WALLETS: syncing top-${wallets.size} of ${allWallets.size} wallets " +
+                "${strategy.name}: syncing top-${wallets.size} of ${candidateWallets.size} wallets " +
                     "(dropped: $droppedIds)"
             )
         }
