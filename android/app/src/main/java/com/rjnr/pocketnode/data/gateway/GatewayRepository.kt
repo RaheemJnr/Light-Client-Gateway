@@ -2026,6 +2026,17 @@ class GatewayRepository @Inject constructor(
         syncPollingJob = scope.launch {
             Log.d(TAG, "Starting centralized sync polling")
             while (true) {
+                // Skip the iteration when no wallet is loaded into repo state.
+                // Happens during normal lifecycle windows: lock screen (PIN not
+                // entered), brief startup race before wallet decryption, after
+                // session clear on background. Without this guard, getAccountStatus
+                // throws "No wallet" on every poll and floods logcat with stack
+                // traces that look like real errors.
+                if (_walletInfo.value == null) {
+                    delay(5_000L)
+                    continue
+                }
+
                 getAccountStatus()
                     .onSuccess { status ->
                         val syncedBlock = status.syncedToBlock.toLongOrNull() ?: 0L
