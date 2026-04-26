@@ -28,6 +28,14 @@ class WalletPreferences @Inject constructor(
         Context.MODE_PRIVATE
     )
 
+    /**
+     * Internal raw SharedPreferences accessor — DO NOT USE outside the migration package.
+     * Exists only so WalletMigrationHelper can read/delete legacy un-typed keys
+     * during the SharedPrefs → Room sync_progress migration (v6→v7).
+     * Remove this accessor once no migration helper depends on it.
+     */
+    internal val rawPrefs: SharedPreferences get() = prefs
+
     private val _themeMode = MutableStateFlow(readThemeMode())
     val themeModeFlow: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
