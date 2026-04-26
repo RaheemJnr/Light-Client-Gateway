@@ -6,12 +6,14 @@ import com.rjnr.pocketnode.data.database.dao.BalanceCacheDao
 import com.rjnr.pocketnode.data.database.dao.DaoCellDao
 import com.rjnr.pocketnode.data.database.dao.HeaderCacheDao
 import com.rjnr.pocketnode.data.database.dao.KeyMaterialDao
+import com.rjnr.pocketnode.data.database.dao.SyncProgressDao
 import com.rjnr.pocketnode.data.database.dao.TransactionDao
 import com.rjnr.pocketnode.data.database.dao.WalletDao
 import com.rjnr.pocketnode.data.database.entity.BalanceCacheEntity
 import com.rjnr.pocketnode.data.database.entity.DaoCellEntity
 import com.rjnr.pocketnode.data.database.entity.HeaderCacheEntity
 import com.rjnr.pocketnode.data.database.entity.KeyMaterialEntity
+import com.rjnr.pocketnode.data.database.entity.SyncProgressEntity
 import com.rjnr.pocketnode.data.database.entity.TransactionEntity
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
 
@@ -22,9 +24,10 @@ import com.rjnr.pocketnode.data.database.entity.WalletEntity
         HeaderCacheEntity::class,
         DaoCellEntity::class,
         WalletEntity::class,
-        KeyMaterialEntity::class
+        KeyMaterialEntity::class,
+        SyncProgressEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -34,4 +37,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun daoCellDao(): DaoCellDao
     abstract fun walletDao(): WalletDao
     abstract fun keyMaterialDao(): KeyMaterialDao
+    abstract fun syncProgressDao(): SyncProgressDao
 }

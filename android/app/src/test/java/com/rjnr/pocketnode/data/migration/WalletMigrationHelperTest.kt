@@ -9,7 +9,10 @@ import com.rjnr.pocketnode.data.database.MIGRATION_1_2
 import com.rjnr.pocketnode.data.database.MIGRATION_2_3
 import com.rjnr.pocketnode.data.database.MIGRATION_3_4
 import com.rjnr.pocketnode.data.database.MIGRATION_4_5
+import com.rjnr.pocketnode.data.database.MIGRATION_5_6
+import com.rjnr.pocketnode.data.database.MIGRATION_6_7
 import com.rjnr.pocketnode.data.database.dao.WalletDao
+import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.MnemonicManager
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
@@ -34,7 +37,7 @@ class WalletMigrationHelperTest {
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
             .allowMainThreadQueries()
             .build()
         walletDao = db.walletDao()
@@ -44,7 +47,7 @@ class WalletMigrationHelperTest {
         migrationPrefs.edit().clear().commit()
         keyManager.keyStoreMigrationHelper = KeyStoreMigrationHelper(db.keyMaterialDao(), encryptionManager, migrationPrefs)
         walletPreferences = WalletPreferences(context)
-        helper = WalletMigrationHelper(walletDao, keyManager, walletPreferences, db)
+        helper = WalletMigrationHelper(walletDao, keyManager, walletPreferences, db, db.syncProgressDao())
     }
 
     @After
@@ -115,5 +118,92 @@ class WalletMigrationHelperTest {
         val mnemonic = keyManager.getMnemonicForWallet(activeWalletId)
         assertNotNull(mnemonic)
         assertTrue(mnemonic!!.size >= 12)
+    }
+
+    @Test
+    fun `migrateSyncProgressToRoomIfNeeded copies prefs values to Room and deletes prefs keys`() = runTest {
+        // Seed: one wallet, two networks, both with progress in SharedPrefs
+        val walletId = "wallet-mig-1"
+        walletDao.insert(WalletEntity(
+            walletId = walletId, name = "X", type = "mnemonic",
+            derivationPath = "m/44'/309'/0'/0/0", parentWalletId = null,
+            accountIndex = 0, mainnetAddress = "ckb1x", testnetAddress = "ckt1x",
+            isActive = true, createdAt = 0L
+        ))
+        walletPreferences.rawPrefs.edit()
+            .putLong("${walletId}_mainnet_last_synced_block", 12345L)
+            .putLong("${walletId}_testnet_last_synced_block", 678L)
+            .commit()
+
+        // Run migration
+        val ran = helper.migrateSyncProgressToRoomIfNeeded()
+
+        // Assert
+        assertTrue(ran)
+        val mainnet = db.syncProgressDao().get(walletId, "MAINNET")
+        val testnet = db.syncProgressDao().get(walletId, "TESTNET")
+        assertEquals(12345L, mainnet!!.localSavedBlockNumber)
+        assertEquals(12345L, mainnet.lightStartBlockNumber)   // seed = local per Q4=i
+        assertEquals(678L, testnet!!.localSavedBlockNumber)
+        assertEquals(678L, testnet.lightStartBlockNumber)
+
+        // Prefs keys deleted
+        assertFalse(walletPreferences.rawPrefs.contains("${walletId}_mainnet_last_synced_block"))
+        assertFalse(walletPreferences.rawPrefs.contains("${walletId}_testnet_last_synced_block"))
+        // Guard flag set
+        assertTrue(walletPreferences.rawPrefs.getBoolean("sync_progress_migrated_to_room_v7", false))
+    }
+
+    @Test
+    fun `migrateSyncProgressToRoomIfNeeded is no-op on second run`() = runTest {
+        walletPreferences.rawPrefs.edit()
+            .putBoolean("sync_progress_migrated_to_room_v7", true)
+            .commit()
+
+        val ran = helper.migrateSyncProgressToRoomIfNeeded()
+        assertFalse(ran)
+    }
+
+    @Test
+    fun `migrateSyncProgressToRoomIfNeeded skips wallets with no prefs entry`() = runTest {
+        val walletId = "wallet-mig-2"
+        walletDao.insert(WalletEntity(
+            walletId = walletId, name = "Y", type = "mnemonic",
+            derivationPath = "m/44'/309'/0'/0/0", parentWalletId = null,
+            accountIndex = 0, mainnetAddress = "ckb1y", testnetAddress = "ckt1y",
+            isActive = true, createdAt = 0L
+        ))
+        // No prefs seeded
+
+        val ran = helper.migrateSyncProgressToRoomIfNeeded()
+        assertTrue(ran)  // ran (set guard flag), but no rows written
+
+        assertNull(db.syncProgressDao().get(walletId, "MAINNET"))
+        assertNull(db.syncProgressDao().get(walletId, "TESTNET"))
+    }
+
+    @Test
+    fun `migrateSyncProgressToRoomIfNeeded skips entries with non-positive block`() = runTest {
+        val walletId = "wallet-mig-3"
+        walletDao.insert(WalletEntity(
+            walletId = walletId, name = "Z", type = "mnemonic",
+            derivationPath = "m/44'/309'/0'/0/0", parentWalletId = null,
+            accountIndex = 0, mainnetAddress = "ckb1z", testnetAddress = "ckt1z",
+            isActive = true, createdAt = 0L
+        ))
+        walletPreferences.rawPrefs.edit()
+            .putLong("${walletId}_mainnet_last_synced_block", 0L)
+            .commit()
+
+        helper.migrateSyncProgressToRoomIfNeeded()
+        assertNull(db.syncProgressDao().get(walletId, "MAINNET"))
+    }
+
+    @Test
+    fun `migrateSyncProgressToRoomIfNeeded fresh install is no-op`() = runTest {
+        // No wallets, no prefs
+        val ran = helper.migrateSyncProgressToRoomIfNeeded()
+        assertTrue(ran)
+        assertTrue(walletPreferences.rawPrefs.getBoolean("sync_progress_migrated_to_room_v7", false))
     }
 }

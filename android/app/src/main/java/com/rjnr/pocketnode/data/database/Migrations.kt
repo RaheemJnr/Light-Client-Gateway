@@ -193,3 +193,26 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
         )
     }
 }
+
+/**
+ * v6 -> v7: Add sync_progress table for per-wallet sync block tracking (#105).
+ * Replaces SharedPreferences storage of lastSyncedBlock. The data copy from
+ * SharedPrefs to this table happens at app start via WalletMigrationHelper —
+ * this migration only creates the empty table.
+ */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `sync_progress` (
+                `walletId` TEXT NOT NULL,
+                `network` TEXT NOT NULL,
+                `lightStartBlockNumber` INTEGER NOT NULL,
+                `localSavedBlockNumber` INTEGER NOT NULL,
+                `updatedAt` INTEGER NOT NULL,
+                PRIMARY KEY(`walletId`, `network`)
+            )
+            """.trimIndent()
+        )
+    }
+}
