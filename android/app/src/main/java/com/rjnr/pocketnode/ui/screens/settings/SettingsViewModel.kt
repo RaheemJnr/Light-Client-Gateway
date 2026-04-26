@@ -116,6 +116,14 @@ class SettingsViewModel @Inject constructor(
 
     fun setSyncMode(mode: SyncMode, customBlockHeight: Long? = null) {
         val previousMode = _uiState.value.syncMode
+        val previousCustom = _uiState.value.savedCustomBlockHeight
+        // No-op when the user re-selects the currently-active mode (no change to
+        // resync against). Without this guard, re-selecting RECENT after a full
+        // sync would wipe progress and re-sync the last 200k blocks. (#108)
+        if (mode == previousMode && customBlockHeight == previousCustom) {
+            _uiState.update { it.copy(showSyncDialog = false) }
+            return
+        }
         _uiState.update { it.copy(syncMode = mode, showSyncDialog = false) }
         viewModelScope.launch {
             repository.resyncAccount(mode, customBlockHeight)

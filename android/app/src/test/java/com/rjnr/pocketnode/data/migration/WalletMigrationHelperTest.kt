@@ -33,6 +33,14 @@ class WalletMigrationHelperTest {
     private lateinit var walletPreferences: WalletPreferences
     private lateinit var helper: WalletMigrationHelper
 
+    /**
+     * Direct handle to the same SharedPreferences file WalletPreferences uses.
+     * Used only to seed legacy state (pre-v7 keys) and inspect post-migration
+     * state — production code goes through WalletPreferences' encapsulated API.
+     * Hardcoded name "ckb_wallet_prefs" matches PREFS_NAME in WalletPreferences.
+     */
+    private lateinit var legacyPrefs: android.content.SharedPreferences
+
     @Before
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -46,6 +54,8 @@ class WalletMigrationHelperTest {
         val migrationPrefs = context.getSharedPreferences("test_wallet_mig", Context.MODE_PRIVATE)
         migrationPrefs.edit().clear().commit()
         keyManager.keyStoreMigrationHelper = KeyStoreMigrationHelper(db.keyMaterialDao(), encryptionManager, migrationPrefs)
+        legacyPrefs = context.getSharedPreferences("ckb_wallet_prefs", Context.MODE_PRIVATE)
+        legacyPrefs.edit().clear().commit()
         walletPreferences = WalletPreferences(context)
         helper = WalletMigrationHelper(walletDao, keyManager, walletPreferences, db, db.syncProgressDao())
     }
@@ -130,7 +140,7 @@ class WalletMigrationHelperTest {
             accountIndex = 0, mainnetAddress = "ckb1x", testnetAddress = "ckt1x",
             isActive = true, createdAt = 0L
         ))
-        walletPreferences.rawPrefs.edit()
+        legacyPrefs.edit()
             .putLong("${walletId}_mainnet_last_synced_block", 12345L)
             .putLong("${walletId}_testnet_last_synced_block", 678L)
             .commit()
@@ -148,15 +158,15 @@ class WalletMigrationHelperTest {
         assertEquals(678L, testnet.lightStartBlockNumber)
 
         // Prefs keys deleted
-        assertFalse(walletPreferences.rawPrefs.contains("${walletId}_mainnet_last_synced_block"))
-        assertFalse(walletPreferences.rawPrefs.contains("${walletId}_testnet_last_synced_block"))
+        assertFalse(legacyPrefs.contains("${walletId}_mainnet_last_synced_block"))
+        assertFalse(legacyPrefs.contains("${walletId}_testnet_last_synced_block"))
         // Guard flag set
-        assertTrue(walletPreferences.rawPrefs.getBoolean("sync_progress_migrated_to_room_v7", false))
+        assertTrue(legacyPrefs.getBoolean("sync_progress_migrated_to_room_v7", false))
     }
 
     @Test
     fun `migrateSyncProgressToRoomIfNeeded is no-op on second run`() = runTest {
-        walletPreferences.rawPrefs.edit()
+        legacyPrefs.edit()
             .putBoolean("sync_progress_migrated_to_room_v7", true)
             .commit()
 
@@ -191,7 +201,7 @@ class WalletMigrationHelperTest {
             accountIndex = 0, mainnetAddress = "ckb1z", testnetAddress = "ckt1z",
             isActive = true, createdAt = 0L
         ))
-        walletPreferences.rawPrefs.edit()
+        legacyPrefs.edit()
             .putLong("${walletId}_mainnet_last_synced_block", 0L)
             .commit()
 
@@ -204,6 +214,6 @@ class WalletMigrationHelperTest {
         // No wallets, no prefs
         val ran = helper.migrateSyncProgressToRoomIfNeeded()
         assertTrue(ran)
-        assertTrue(walletPreferences.rawPrefs.getBoolean("sync_progress_migrated_to_room_v7", false))
+        assertTrue(legacyPrefs.getBoolean("sync_progress_migrated_to_room_v7", false))
     }
 }

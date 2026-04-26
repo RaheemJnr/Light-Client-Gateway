@@ -342,6 +342,14 @@ class HomeViewModel @Inject constructor(
      * This will re-register with the light client using the new sync settings.
      */
     fun changeSyncMode(syncMode: SyncMode, customBlockHeight: Long? = null) {
+        // No-op when the user re-selects the currently-active mode (no change to
+        // resync against). Without this guard, re-selecting RECENT after a full
+        // sync would wipe progress and re-sync the last 200k blocks. (#108)
+        val current = _uiState.value
+        if (syncMode == current.currentSyncMode && customBlockHeight == current.savedCustomBlockHeight) {
+            Log.d(TAG, "changeSyncMode: same mode + height already active — no-op")
+            return
+        }
         viewModelScope.launch {
             Log.d(TAG, "Changing sync mode to: $syncMode, customBlock: $customBlockHeight")
 

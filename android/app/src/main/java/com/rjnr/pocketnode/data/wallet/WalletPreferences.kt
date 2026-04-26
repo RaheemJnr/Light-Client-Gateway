@@ -28,13 +28,44 @@ class WalletPreferences @Inject constructor(
         Context.MODE_PRIVATE
     )
 
+    // --- sync_progress prefs → Room migration (#105 / #112) ---
+    // Self-contained API so SharedPreferences never escapes this class.
+    // Remove these three methods once the migration helper is retired.
+
+    /** True once `migrateSyncProgressToRoomIfNeeded` has run successfully. */
+    internal fun isSyncProgressMigratedToRoom(): Boolean =
+        prefs.getBoolean(KEY_SYNC_PROGRESS_MIGRATED, false)
+
     /**
-     * Internal raw SharedPreferences accessor — DO NOT USE outside the migration package.
-     * Exists only so WalletMigrationHelper can read/delete legacy un-typed keys
-     * during the SharedPrefs → Room sync_progress migration (v6→v7).
-     * Remove this accessor once no migration helper depends on it.
+     * Read a legacy `${walletId}_${network}_last_synced_block` value.
+     * Returns null when the key is absent OR the stored block is <= 0
+     * (placeholder values that should not be migrated).
      */
-    internal val rawPrefs: SharedPreferences get() = prefs
+    internal fun getLegacySyncedBlock(walletId: String, network: NetworkType): Long? {
+        val key = "${walletId}_${network.name.lowercase()}_last_synced_block"
+        if (!prefs.contains(key)) return null
+        val block = prefs.getLong(key, 0L)
+        return if (block > 0L) block else null
+    }
+
+    /**
+     * Atomically remove every legacy `*_last_synced_block` key for the supplied
+     * wallets/networks AND set the migration guard flag in a single commit.
+     * `commit()` (synchronous) so the guard is durable before this method returns —
+     * a crash mid-migration leaves the guard unset and the migration retries safely.
+     */
+    internal fun clearLegacySyncedBlocksAndMarkMigrated(
+        walletIds: List<String>,
+        networks: List<NetworkType>
+    ) {
+        val editor = prefs.edit()
+        for (walletId in walletIds) {
+            for (net in networks) {
+                editor.remove("${walletId}_${net.name.lowercase()}_last_synced_block")
+            }
+        }
+        editor.putBoolean(KEY_SYNC_PROGRESS_MIGRATED, true).commit()
+    }
 
     private val _themeMode = MutableStateFlow(readThemeMode())
     val themeModeFlow: StateFlow<ThemeMode> = _themeMode.asStateFlow()
@@ -244,5 +275,6 @@ class WalletPreferences @Inject constructor(
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_BACKGROUND_SYNC = "background_sync_enabled"
         private const val KEY_LAST_VACUUM_AT = "last_vacuum_at"
+        private const val KEY_SYNC_PROGRESS_MIGRATED = "sync_progress_migrated_to_room_v7"
     }
 }
