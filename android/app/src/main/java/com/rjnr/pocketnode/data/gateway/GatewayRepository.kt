@@ -1739,6 +1739,44 @@ class GatewayRepository @Inject constructor(
     }
 
     /**
+     * Wraps every nativeSetScripts call so lightStartBlockNumber is recorded atomically
+     * with the registration. Preserves existing localSavedBlockNumber when the row exists
+     * (we're updating registration metadata, not progress).
+     *
+     * walletIds must be parallel to statuses — same length, same order. For single-wallet
+     * PARTIAL paths, pass listOf(activeWalletId).
+     */
+    private suspend fun setScriptsAndRecord(
+        statuses: List<JniScriptStatus>,
+        walletIds: List<String>,
+        cmd: Int
+    ): Boolean {
+        require(statuses.size == walletIds.size) {
+            "setScriptsAndRecord: statuses (${statuses.size}) and walletIds (${walletIds.size}) must be parallel"
+        }
+        val jsonStr = json.encodeToString(statuses)
+        val ok = LightClientNative.nativeSetScripts(jsonStr, cmd)
+        if (!ok) return false
+
+        val now = System.currentTimeMillis()
+        statuses.zip(walletIds).forEach { (status, walletId) ->
+            if (walletId.isEmpty()) return@forEach
+            val startBlock = status.blockNumber.removePrefix("0x").toLong(16)
+            val existing = syncProgressDao.get(walletId, currentNetwork.name)
+            syncProgressDao.upsert(
+                SyncProgressEntity(
+                    walletId = walletId,
+                    network = currentNetwork.name,
+                    lightStartBlockNumber = startBlock,
+                    localSavedBlockNumber = existing?.localSavedBlockNumber ?: startBlock,
+                    updatedAt = now
+                )
+            )
+        }
+        return true
+    }
+
+    /**
      * Register lock scripts for ALL wallets with the light client simultaneously.
      * Used when SyncStrategy is ALL_WALLETS — enables balance/transaction tracking
      * across every wallet without requiring a wallet switch.
