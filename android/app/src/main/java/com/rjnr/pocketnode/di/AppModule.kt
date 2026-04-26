@@ -137,7 +137,6 @@ object AppModule {
     fun provideKeyMaterialDao(db: AppDatabase): KeyMaterialDao = db.keyMaterialDao()
 
     @Provides
-    @Singleton
     fun provideSyncProgressDao(db: AppDatabase): SyncProgressDao = db.syncProgressDao()
 
     @Provides
