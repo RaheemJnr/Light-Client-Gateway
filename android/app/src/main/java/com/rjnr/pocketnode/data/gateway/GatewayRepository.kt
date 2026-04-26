@@ -5,8 +5,10 @@ import android.util.Log
 import com.rjnr.pocketnode.data.database.AppDatabase
 import com.rjnr.pocketnode.data.database.DatabaseMaintenanceUtil
 import com.rjnr.pocketnode.data.database.dao.HeaderCacheDao
+import com.rjnr.pocketnode.data.database.dao.SyncProgressDao
 import com.rjnr.pocketnode.data.database.dao.WalletDao
 import com.rjnr.pocketnode.data.database.entity.HeaderCacheEntity
+import com.rjnr.pocketnode.data.database.entity.SyncProgressEntity
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
 import com.rjnr.pocketnode.data.gateway.models.*
 import com.rjnr.pocketnode.data.sync.SyncForegroundService
@@ -61,7 +63,8 @@ class GatewayRepository @Inject constructor(
     private val walletMigrationHelper: WalletMigrationHelper,
     private val walletDao: WalletDao,
     private val appDatabase: AppDatabase,
-    private val headerCacheDao: HeaderCacheDao
+    private val headerCacheDao: HeaderCacheDao,
+    private val syncProgressDao: SyncProgressDao
 ) {
     private val _walletInfo = MutableStateFlow<WalletInfo?>(null)
     val walletInfo: StateFlow<WalletInfo?> = _walletInfo.asStateFlow()
@@ -128,6 +131,41 @@ class GatewayRepository @Inject constructor(
                 Log.e(TAG, "Startup sequence failed before node init", e)
                 _nodeReady.value = false
             }
+        }
+    }
+
+    /**
+     * Read the last fully-processed block for a wallet on a given network.
+     * Returns 0L when no sync_progress row exists (wallet never synced).
+     * Replaces WalletPreferences.getLastSyncedBlock.
+     */
+    suspend fun getWalletSyncBlock(walletId: String, network: NetworkType = currentNetwork): Long {
+        if (walletId.isEmpty()) return 0L
+        return syncProgressDao.get(walletId, network.name)?.localSavedBlockNumber ?: 0L
+    }
+
+    /**
+     * Persist the last fully-processed block for a wallet on a given network.
+     * If no sync_progress row exists, creates one (lightStartBlockNumber seeded to `block`).
+     * If a row exists, updates only `localSavedBlockNumber` and `updatedAt`.
+     * Replaces WalletPreferences.setLastSyncedBlock.
+     */
+    suspend fun setWalletSyncBlock(walletId: String, block: Long, network: NetworkType = currentNetwork) {
+        if (walletId.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val existing = syncProgressDao.get(walletId, network.name)
+        if (existing != null) {
+            syncProgressDao.updateLocalSaved(walletId, network.name, block, now)
+        } else {
+            syncProgressDao.upsert(
+                SyncProgressEntity(
+                    walletId = walletId,
+                    network = network.name,
+                    lightStartBlockNumber = block,
+                    localSavedBlockNumber = block,
+                    updatedAt = now
+                )
+            )
         }
     }
 
