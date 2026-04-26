@@ -145,22 +145,6 @@ class WalletPreferences @Inject constructor(
         prefs.edit().putBoolean(key, completed).apply()
     }
 
-    // --- Last synced block ---
-
-    fun getLastSyncedBlock(network: NetworkType? = null, walletId: String? = null): Long {
-        val net = network ?: getSelectedNetwork()
-        val key = if (walletId != null) walletNetworkKey(walletId, net.name, KEY_LAST_SYNCED_BLOCK)
-                  else networkKey(KEY_LAST_SYNCED_BLOCK, net)
-        return prefs.getLong(key, 0L)
-    }
-
-    fun setLastSyncedBlock(blockNumber: Long, network: NetworkType? = null, walletId: String? = null) {
-        val net = network ?: getSelectedNetwork()
-        val key = if (walletId != null) walletNetworkKey(walletId, net.name, KEY_LAST_SYNCED_BLOCK)
-                  else networkKey(KEY_LAST_SYNCED_BLOCK, net)
-        prefs.edit().putLong(key, blockNumber).apply()
-    }
-
     // --- Background sync (global, not per-network) ---
 
     fun isBackgroundSyncEnabled(): Boolean {
@@ -243,13 +227,6 @@ class WalletPreferences @Inject constructor(
             editor.remove(KEY_INITIAL_SYNC_COMPLETED)
         }
 
-        // Migrate last_synced_block
-        if (prefs.contains(KEY_LAST_SYNCED_BLOCK)) {
-            val oldValue = prefs.getLong(KEY_LAST_SYNCED_BLOCK, 0L)
-            editor.putLong("${mainnetPrefix}$KEY_LAST_SYNCED_BLOCK", oldValue)
-            editor.remove(KEY_LAST_SYNCED_BLOCK)
-        }
-
         // Set default network (always, even if no old keys existed)
         editor.putString(KEY_SELECTED_NETWORK, NetworkType.MAINNET.name)
         editor.commit() // Synchronous to ensure migration guard persists before process death
@@ -262,7 +239,6 @@ class WalletPreferences @Inject constructor(
         private const val KEY_SYNC_MODE = "sync_mode"
         private const val KEY_CUSTOM_BLOCK_HEIGHT = "custom_block_height"
         private const val KEY_INITIAL_SYNC_COMPLETED = "initial_sync_completed"
-        private const val KEY_LAST_SYNCED_BLOCK = "last_synced_block"
         private const val KEY_ACTIVE_WALLET_ID = "active_wallet_id"
         private const val KEY_SYNC_STRATEGY = "sync_strategy"
         private const val KEY_THEME_MODE = "theme_mode"

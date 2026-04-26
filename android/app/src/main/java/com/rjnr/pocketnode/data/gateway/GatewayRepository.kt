@@ -137,7 +137,6 @@ class GatewayRepository @Inject constructor(
     /**
      * Read the last fully-processed block for a wallet on a given network.
      * Returns 0L when no sync_progress row exists (wallet never synced).
-     * Replaces WalletPreferences.getLastSyncedBlock.
      */
     suspend fun getWalletSyncBlock(walletId: String, network: NetworkType = currentNetwork): Long {
         if (walletId.isEmpty()) return 0L
@@ -148,7 +147,6 @@ class GatewayRepository @Inject constructor(
      * Persist the last fully-processed block for a wallet on a given network.
      * If no sync_progress row exists, creates one (lightStartBlockNumber seeded to `block`).
      * If a row exists, updates only `localSavedBlockNumber` and `updatedAt`.
-     * Replaces WalletPreferences.setLastSyncedBlock.
      */
     suspend fun setWalletSyncBlock(walletId: String, block: Long, network: NetworkType = currentNetwork) {
         if (walletId.isEmpty()) return
@@ -661,9 +659,8 @@ class GatewayRepository @Inject constructor(
     suspend fun forceResetSync(): Result<Unit> = runCatching {
         Log.w(TAG, "Forcing sync reset...")
         // Only clear sync-related preferences for the active wallet, not all preferences
-        val wId = activeWalletId.ifEmpty { null }
         setWalletSyncBlock(activeWalletId, 0L)
-        walletPreferences.setInitialSyncCompleted(false, walletId = wId)
+        walletPreferences.setInitialSyncCompleted(false, walletId = activeWalletId.ifEmpty { null })
         _isRegistered.value = false
         _balance.value = null
         registerAccount(SyncMode.RECENT)
@@ -1730,20 +1727,6 @@ class GatewayRepository @Inject constructor(
         val txHash = sendTransaction(tx).getOrThrow()
         Log.d(TAG, "DAO unlock (phase 2) sent: $txHash")
         txHash
-    }
-
-    /**
-     * Build the script status list for registration (lock script only).
-     * DAO cells are discovered via lock script query and filtered locally by type hash,
-     * following the same pattern as Neuron wallet.
-     */
-    private fun buildScriptStatusList(lockScript: Script, blockNumberHex: String): String {
-        val lockStatus = JniScriptStatus(
-            script = lockScript,
-            scriptType = "lock",
-            blockNumber = blockNumberHex
-        )
-        return json.encodeToString(listOf(lockStatus))
     }
 
     /**

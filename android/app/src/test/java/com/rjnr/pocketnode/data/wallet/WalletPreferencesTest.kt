@@ -103,18 +103,6 @@ class WalletPreferencesTest {
         assertFalse(prefs.hasCompletedInitialSync(NetworkType.TESTNET))
     }
 
-    // --- Per-network isolation: last synced block ---
-
-    @Test
-    fun `last synced block is independent between networks`() {
-        val prefs = newPrefs()
-        prefs.setLastSyncedBlock(18_300_000L, NetworkType.MAINNET)
-        prefs.setLastSyncedBlock(50_000L, NetworkType.TESTNET)
-
-        assertEquals(18_300_000L, prefs.getLastSyncedBlock(NetworkType.MAINNET))
-        assertEquals(50_000L, prefs.getLastSyncedBlock(NetworkType.TESTNET))
-    }
-
     // --- Migration: pre-testnet upgrade path ---
 
     @Test
@@ -151,18 +139,6 @@ class WalletPreferencesTest {
 
         assertTrue(prefs.hasCompletedInitialSync(NetworkType.MAINNET))
         assertFalse(rawPrefs().contains("initial_sync_completed"))
-    }
-
-    @Test
-    fun `migration moves old last_synced_block to mainnet namespace`() {
-        rawPrefs().edit()
-            .putLong("last_synced_block", 18_000_000L)
-            .commit()
-
-        val prefs = newPrefs()
-
-        assertEquals(18_000_000L, prefs.getLastSyncedBlock(NetworkType.MAINNET))
-        assertFalse(rawPrefs().contains("last_synced_block"))
     }
 
     @Test
