@@ -90,6 +90,19 @@ class GatewayRepository @Inject constructor(
     private var activeWalletId: String = walletPreferences.getActiveWalletId() ?: ""
     private var activeWalletType: String = KeyManager.WALLET_TYPE_MNEMONIC
 
+    /**
+     * Cache of the last BALANCED-eligible wallet ID set, so the periodic poll can
+     * cheaply detect whether the eligible set has changed and only re-issue
+     * nativeSetScripts when it actually has.
+     *
+     * @Volatile so concurrent reads (poll path) and writes (wallet switch) don't tear.
+     * Worst-case race = one extra nativeSetScripts call, which is benign.
+     *
+     * MUTATED ONLY BY registerAllWalletScripts. applyBalancedFilter stays pure.
+     */
+    @Volatile
+    private var lastBalancedEligibleSet: Set<String> = emptySet()
+
     // --- Sync progress tracking ---
     private val syncProgressTracker = SyncProgressTracker()
     private var syncPollingJob: Job? = null
@@ -827,6 +840,12 @@ class GatewayRepository @Inject constructor(
         if (wId.isNotEmpty() && scriptBlockNumber > getWalletSyncBlock(wId)) {
             setWalletSyncBlock(wId, scriptBlockNumber)
             Log.d(TAG, "💾 Saved sync progress: block $scriptBlockNumber (wallet=$wId)")
+
+            // BALANCED: a previously-laggard wallet may now be within threshold.
+            // Re-evaluate eligible set cheaply; only re-register when it changed.
+            if (walletPreferences.getSyncStrategy() == SyncStrategy.BALANCED) {
+                maybeReregisterBalanced()
+            }
         }
 
         // Log sync progress for debugging
@@ -1798,6 +1817,22 @@ class GatewayRepository @Inject constructor(
     }
 
     /**
+     * Cheap BALANCED re-evaluation: compute the eligible set, compare to the cached
+     * lastBalancedEligibleSet; only re-issue setScripts when the set changed.
+     * Caller must already be on a coroutine context.
+     */
+    private suspend fun maybeReregisterBalanced() {
+        val newSet = applyBalancedFilter(
+            walletDao.getAll().sortedByDescending { it.lastActiveAt }
+        ).map { it.walletId }.toSet()
+
+        if (newSet == lastBalancedEligibleSet) return
+
+        Log.i(TAG, "BALANCED set changed (was=$lastBalancedEligibleSet, now=$newSet): re-registering")
+        registerAllWalletScripts()  // refreshes lastBalancedEligibleSet via the filter step
+    }
+
+    /**
      * Register lock scripts for ALL wallets with the light client simultaneously.
      * Used when SyncStrategy is ALL_WALLETS — enables balance/transaction tracking
      * across every wallet without requiring a wallet switch.
@@ -1814,7 +1849,9 @@ class GatewayRepository @Inject constructor(
 
         // Step 1: BALANCED filter runs BEFORE the cap (Q2=A in design).
         val candidateWallets = if (strategy == SyncStrategy.BALANCED) {
-            applyBalancedFilter(allWallets)
+            val filtered = applyBalancedFilter(allWallets)
+            lastBalancedEligibleSet = filtered.map { it.walletId }.toSet()
+            filtered
         } else {
             allWallets
         }

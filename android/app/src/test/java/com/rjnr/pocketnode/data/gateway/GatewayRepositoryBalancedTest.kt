@@ -134,4 +134,16 @@ class GatewayRepositoryBalancedTest {
         val r = filter(listOf(wallet("a"), wallet("b")), activeId = "a")
         assertEquals(listOf("a"), r.map { it.walletId })
     }
+
+    @Test
+    fun `filter helper is deterministic - calling twice with same state returns same set`() = runTest {
+        seedProgress("a", "MAINNET", 1_000_000L)
+        seedProgress("b", "MAINNET", 950_000L)
+        val wallets = listOf(wallet("a"), wallet("b"))
+
+        val first = filter(wallets, activeId = "a")
+        val second = filter(wallets, activeId = "a")
+
+        assertEquals(first.map { it.walletId }, second.map { it.walletId })
+    }
 }
