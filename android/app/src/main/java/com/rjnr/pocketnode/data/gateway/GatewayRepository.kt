@@ -582,7 +582,7 @@ class GatewayRepository @Inject constructor(
         } else 0L
 
         // Check for existing sync progress to resume from (per-wallet)
-        val savedBlock = walletPreferences.getLastSyncedBlock(walletId = activeWalletId.ifEmpty { null })
+        val savedBlock = getWalletSyncBlock(activeWalletId)
         val existingScriptBlock = getExistingScriptBlock()
 
         val blockNum: String = when {
@@ -624,10 +624,15 @@ class GatewayRepository @Inject constructor(
         Log.d(TAG, "🔄 Sync mode $syncMode: tip=$tipHeight, targetBlock=$finalBlockNum")
 
         val blockNumberHex = "0x${finalBlockNum.toLongOrNull()?.toString(16) ?: "0"}"
-        val jsonStr = buildScriptStatusList(info.script, blockNumberHex)
+        val scriptStatuses = listOf(
+            JniScriptStatus(
+                script = info.script,
+                scriptType = "lock",
+                blockNumber = blockNumberHex
+            )
+        )
 
-        Log.d(TAG, "📡 Calling nativeSetScripts with: $jsonStr")
-        val result = LightClientNative.nativeSetScripts(jsonStr, LightClientNative.CMD_SET_SCRIPTS_ALL)
+        val result = setScriptsAndRecord(scriptStatuses, listOf(activeWalletId), LightClientNative.CMD_SET_SCRIPTS_ALL)
         if (!result) throw Exception("Failed to set scripts")
 
         _isRegistered.value = true
@@ -647,7 +652,7 @@ class GatewayRepository @Inject constructor(
     ): Result<Unit> {
         _isRegistered.value = false
         // Clear saved sync progress when explicitly resyncing (per-wallet)
-        walletPreferences.setLastSyncedBlock(0L, walletId = activeWalletId.ifEmpty { null })
+        setWalletSyncBlock(activeWalletId, 0L)
         return registerAccount(syncMode, customBlockHeight, savePreference = true, forceResync = true)
     }
 
@@ -657,7 +662,7 @@ class GatewayRepository @Inject constructor(
         Log.w(TAG, "Forcing sync reset...")
         // Only clear sync-related preferences for the active wallet, not all preferences
         val wId = activeWalletId.ifEmpty { null }
-        walletPreferences.setLastSyncedBlock(0L, walletId = wId)
+        setWalletSyncBlock(activeWalletId, 0L)
         walletPreferences.setInitialSyncCompleted(false, walletId = wId)
         _isRegistered.value = false
         _balance.value = null
@@ -761,14 +766,15 @@ class GatewayRepository @Inject constructor(
                         Log.d(TAG, "🔄 Rescan from block $rescanFrom (earliest tx at $earliestBlock)")
 
                         val blockNumberHex = "0x${rescanFrom.toString(16)}"
-                        val lockStatus = JniScriptStatus(
-                            script = info.script,
-                            scriptType = "lock",
-                            blockNumber = blockNumberHex
+                        val scriptStatuses = listOf(
+                            JniScriptStatus(
+                                script = info.script,
+                                scriptType = "lock",
+                                blockNumber = blockNumberHex
+                            )
                         )
-                        val jsonStr = json.encodeToString(listOf(lockStatus))
-                        LightClientNative.nativeSetScripts(jsonStr, LightClientNative.CMD_SET_SCRIPTS_PARTIAL)
-                        walletPreferences.setLastSyncedBlock(rescanFrom, walletId = activeWalletId.ifEmpty { null })
+                        setScriptsAndRecord(scriptStatuses, listOf(activeWalletId), LightClientNative.CMD_SET_SCRIPTS_PARTIAL)
+                        setWalletSyncBlock(activeWalletId, rescanFrom)
                         Log.d(TAG, "✅ Rescan triggered (partial) - balance should update on next refresh")
                     }
                 }
@@ -825,10 +831,10 @@ class GatewayRepository @Inject constructor(
         }
 
         // Save sync progress per-wallet if we've made progress
-        val wId = activeWalletId.ifEmpty { null }
-        if (scriptBlockNumber > walletPreferences.getLastSyncedBlock(walletId = wId)) {
-            walletPreferences.setLastSyncedBlock(scriptBlockNumber, walletId = wId)
-            Log.d(TAG, "💾 Saved sync progress: block $scriptBlockNumber (wallet=${wId ?: "global"})")
+        val wId = activeWalletId
+        if (wId.isNotEmpty() && scriptBlockNumber > getWalletSyncBlock(wId)) {
+            setWalletSyncBlock(wId, scriptBlockNumber)
+            Log.d(TAG, "💾 Saved sync progress: block $scriptBlockNumber (wallet=$wId)")
         }
 
         // Log sync progress for debugging
@@ -952,6 +958,7 @@ class GatewayRepository @Inject constructor(
         // sender's wallet info up front — if the user switches wallets during the
         // 5s delay, we must still re-register the script that actually sent.
         val senderInfo = _walletInfo.value
+        val senderWalletId = activeWalletId
         scope.launch {
             try {
                 delay(5000) // Wait a bit for tx to propagate
@@ -964,13 +971,14 @@ class GatewayRepository @Inject constructor(
 
                     val blockNumberHex = "0x${rescanFrom.toString(16)}"
                     // Only register lock script (not DAO type) with PARTIAL mode
-                    val lockStatus = JniScriptStatus(
-                        script = senderInfo.script,
-                        scriptType = "lock",
-                        blockNumber = blockNumberHex
+                    val scriptStatuses = listOf(
+                        JniScriptStatus(
+                            script = senderInfo.script,
+                            scriptType = "lock",
+                            blockNumber = blockNumberHex
+                        )
                     )
-                    val jsonStr = json.encodeToString(listOf(lockStatus))
-                    LightClientNative.nativeSetScripts(jsonStr, LightClientNative.CMD_SET_SCRIPTS_PARTIAL)
+                    setScriptsAndRecord(scriptStatuses, listOf(senderWalletId), LightClientNative.CMD_SET_SCRIPTS_PARTIAL)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to re-register script after send: ${e.message}")
@@ -1808,7 +1816,7 @@ class GatewayRepository @Inject constructor(
         // Per-wallet derivation is independent CPU+IO work (Room read for the
         // private key, blake2b hash for the lock script). Run them concurrently
         // so a 5-wallet ALL_WALLETS sync doesn't pay the cost serially.
-        val scriptStatuses = coroutineScope {
+        val pairs = coroutineScope {
             wallets.map { wallet ->
                 async(Dispatchers.IO) {
                     val privateKey = keyManager.getPrivateKeyForWallet(wallet.walletId) ?: run {
@@ -1819,7 +1827,7 @@ class GatewayRepository @Inject constructor(
                     val lockScript = keyManager.deriveLockScript(publicKey)
 
                     // Resume from saved per-wallet progress, or calculate from sync mode if first sync
-                    val savedBlock = walletPreferences.getLastSyncedBlock(walletId = wallet.walletId)
+                    val savedBlock = getWalletSyncBlock(wallet.walletId)
                     val blockNum: String
                     if (savedBlock > 0) {
                         blockNum = savedBlock.toString()
@@ -1842,7 +1850,7 @@ class GatewayRepository @Inject constructor(
                     }
                     val blockNumberHex = "0x${blockNum.toLongOrNull()?.toString(16) ?: "0"}"
 
-                    JniScriptStatus(
+                    wallet.walletId to JniScriptStatus(
                         script = lockScript,
                         scriptType = "lock",
                         blockNumber = blockNumberHex
@@ -1851,14 +1859,15 @@ class GatewayRepository @Inject constructor(
             }.awaitAll().filterNotNull()
         }
 
-        if (scriptStatuses.isEmpty()) {
+        if (pairs.isEmpty()) {
             Log.w(TAG, "registerAllWalletScripts: no scripts to register")
             return
         }
 
-        val jsonStr = json.encodeToString(scriptStatuses)
+        val scriptStatuses = pairs.map { it.second }
+        val walletIds = pairs.map { it.first }
         Log.d(TAG, "Registering ${scriptStatuses.size} wallet scripts with light client")
-        val result = LightClientNative.nativeSetScripts(jsonStr, LightClientNative.CMD_SET_SCRIPTS_ALL)
+        val result = setScriptsAndRecord(scriptStatuses, walletIds, LightClientNative.CMD_SET_SCRIPTS_ALL)
         if (!result) throw Exception("Failed to set scripts for all wallets")
 
         _isRegistered.value = true
