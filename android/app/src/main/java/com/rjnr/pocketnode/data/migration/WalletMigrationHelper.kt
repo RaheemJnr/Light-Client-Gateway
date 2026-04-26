@@ -1,9 +1,13 @@
 package com.rjnr.pocketnode.data.migration
 
 import android.util.Log
+import androidx.room.withTransaction
 import com.rjnr.pocketnode.data.database.AppDatabase
+import com.rjnr.pocketnode.data.database.dao.SyncProgressDao
 import com.rjnr.pocketnode.data.database.dao.WalletDao
+import com.rjnr.pocketnode.data.database.entity.SyncProgressEntity
 import com.rjnr.pocketnode.data.database.entity.WalletEntity
+import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
 import java.util.UUID
@@ -25,7 +29,8 @@ class WalletMigrationHelper @Inject constructor(
     private val walletDao: WalletDao,
     private val keyManager: KeyManager,
     private val walletPreferences: WalletPreferences,
-    private val database: AppDatabase
+    private val database: AppDatabase,
+    private val syncProgressDao: SyncProgressDao
 ) {
     /**
      * Migrate the legacy single-wallet to the multi-wallet Room table.
@@ -80,5 +85,62 @@ class WalletMigrationHelper @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Migration failed — legacy wallet intact, will retry next launch", e)
         }
+    }
+
+    /**
+     * Idempotent migration: copy per-wallet `lastSyncedBlock` from SharedPreferences
+     * to the v7 `sync_progress` Room table, then delete the prefs keys.
+     * Returns true if the migration ran (regardless of whether rows were written),
+     * false if the guard flag was already set.
+     *
+     * Key format read from SharedPrefs: "${walletId}_${network.lowercase()}_last_synced_block"
+     * (matches WalletPreferences.walletNetworkKey at WalletPreferences.kt:78-79, 144).
+     *
+     * Migrated rows seed `lightStartBlockNumber = localSavedBlockNumber` because
+     * the original start block was never recorded.
+     */
+    suspend fun migrateSyncProgressToRoomIfNeeded(): Boolean {
+        val rawPrefs = walletPreferences.rawPrefs
+        if (rawPrefs.getBoolean(KEY_SYNC_PROGRESS_MIGRATED, false)) return false
+
+        val now = System.currentTimeMillis()
+        val wallets = walletDao.getAll()
+        val networks = listOf(NetworkType.MAINNET, NetworkType.TESTNET)
+
+        database.withTransaction {
+            for (wallet in wallets) {
+                for (net in networks) {
+                    val key = "${wallet.walletId}_${net.name.lowercase()}_last_synced_block"
+                    if (!rawPrefs.contains(key)) continue
+                    val block = rawPrefs.getLong(key, 0L)
+                    if (block <= 0L) continue
+
+                    syncProgressDao.upsert(
+                        SyncProgressEntity(
+                            walletId = wallet.walletId,
+                            network = net.name,
+                            lightStartBlockNumber = block,
+                            localSavedBlockNumber = block,
+                            updatedAt = now
+                        )
+                    )
+                }
+            }
+        }
+
+        val editor = rawPrefs.edit()
+        for (wallet in wallets) {
+            for (net in networks) {
+                editor.remove("${wallet.walletId}_${net.name.lowercase()}_last_synced_block")
+            }
+        }
+        editor.putBoolean(KEY_SYNC_PROGRESS_MIGRATED, true).commit()
+
+        Log.d(TAG, "sync_progress migration complete: ${wallets.size} wallets x ${networks.size} networks")
+        return true
+    }
+
+    companion object {
+        private const val KEY_SYNC_PROGRESS_MIGRATED = "sync_progress_migrated_to_room_v7"
     }
 }
