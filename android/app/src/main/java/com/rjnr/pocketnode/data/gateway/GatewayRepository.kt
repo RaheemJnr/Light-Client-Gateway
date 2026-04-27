@@ -721,6 +721,9 @@ class GatewayRepository @Inject constructor(
         savePreference: Boolean = true,
         forceResync: Boolean = false
     ): Result<Unit> = runCatching {
+        // Force IO dispatcher — see registerAllWalletScripts above for the same
+        // reasoning. ACTIVE_ONLY callers also block Main without this. (#109)
+        withContext(Dispatchers.IO) {
         // Wait for node to be ready
         if (!awaitNodeReady()) {
              throw Exception("Node initialization failed")
@@ -797,6 +800,7 @@ class GatewayRepository @Inject constructor(
             }
             walletPreferences.setInitialSyncCompleted(true, walletId = wId)
         }
+        }  // end withContext(Dispatchers.IO)
     }
 
     suspend fun resyncAccount(
@@ -2306,7 +2310,13 @@ class GatewayRepository @Inject constructor(
     private suspend fun registerAllWalletScripts(
         preFetchedWallets: List<WalletEntity>? = null,
         preFilteredCandidates: List<WalletEntity>? = null
-    ) {
+    ) = withContext(Dispatchers.IO) {
+        // Force IO dispatcher for the whole body — JNI calls (nativeGetTipHeader,
+        // nativeSetScripts via setScriptsAndRecord) block the UI thread otherwise.
+        // Symptom #109: adding the 3rd wallet (which triggers a re-registration
+        // of all scripts) flashed the screen white because the caller chain ran
+        // on viewModelScope.launch (Main) and the JNI round-trip blocked Main
+        // long enough for Android to render a blank surface.
         if (!awaitNodeReady()) {
             throw Exception("Node initialization failed")
         }
@@ -2389,7 +2399,7 @@ class GatewayRepository @Inject constructor(
 
         if (pairs.isEmpty()) {
             Log.w(TAG, "registerAllWalletScripts: no scripts to register")
-            return
+            return@withContext
         }
 
         val scriptStatuses = pairs.map { it.second }
