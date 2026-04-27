@@ -217,7 +217,6 @@ class SendViewModel @Inject constructor(
 
         // Capture wallet identity upfront to prevent wallet-switch race conditions
         val capturedAddress = repository.getCurrentAddress()
-        val capturedNetwork = repository.currentNetwork
 
         if (capturedAddress == null) {
             _uiState.update { it.copy(error = "Wallet not initialized") }
@@ -244,31 +243,15 @@ class SendViewModel @Inject constructor(
                 Log.d(TAG, "  Amount: ${state.amountCkb} CKB ($amountShannons shannons)")
                 Log.d(TAG, "  From address: $capturedAddress")
 
-                Log.d(TAG, "Fetching available cells...")
-                val cellsResult = repository.getCells(capturedAddress)
-                val cells = cellsResult.getOrThrow().items
-                Log.d(TAG, "Got ${cells.size} cells")
-                cells.forEachIndexed { i, cell ->
-                    Log.d(TAG, "  Cell[$i]: ${cell.capacityAsLong()} shannons")
-                }
+                _uiState.update { it.copy(statusMessage = "Broadcasting transaction...") }
+                Log.d(TAG, "📡 prepareAndSend: fetching cells, filtering reserved, building, broadcasting...")
 
-                _uiState.update { it.copy(statusMessage = "Signing transaction...") }
-                Log.d(TAG, "Building and signing transaction...")
-
-                val signedTx = transactionBuilder.buildTransfer(
+                val txHash = repository.prepareAndSend(
                     fromAddress = capturedAddress,
                     toAddress = state.recipientAddress,
                     amountShannons = amountShannons,
-                    availableCells = cells,
-                    privateKey = capturedKey,
-                    network = capturedNetwork
-                )
-                Log.d(TAG, "✅ Transaction built: ${signedTx.cellInputs.size} inputs, ${signedTx.cellOutputs.size} outputs")
-
-                _uiState.update { it.copy(statusMessage = "Broadcasting transaction...") }
-                Log.d(TAG, "📡 Broadcasting transaction...")
-
-                val txHash = repository.sendTransaction(signedTx).getOrThrow()
+                    privateKey = capturedKey
+                ).getOrThrow()
                 Log.d(TAG, "✅ Transaction sent! Hash: $txHash")
 
                 _uiState.update {

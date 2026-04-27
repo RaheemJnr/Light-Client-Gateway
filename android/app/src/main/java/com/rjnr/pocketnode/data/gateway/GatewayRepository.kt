@@ -1002,6 +1002,91 @@ class GatewayRepository @Inject constructor(
         0L
     }
 
+    /**
+     * Single mutex-guarded prepare-and-send. Runs cell-fetch, reservation
+     * filter, build, sign, and pre-broadcast persistence all inside
+     * [sendMutex] — closing the read-filter-insert race that would
+     * otherwise let two rapid sends pick the same input cells (#115).
+     *
+     * The JNI broadcast call happens AFTER the mutex is released —
+     * locking that would needlessly serialize all sends. [sendTransaction]
+     * is idempotent on the pre-inserted hash, so it skips the duplicate
+     * insert and just performs the broadcast + post-broadcast CAS.
+     */
+    suspend fun prepareAndSend(
+        fromAddress: String,
+        toAddress: String,
+        amountShannons: Long,
+        privateKey: ByteArray
+    ): Result<String> = runCatching {
+        val walletId = activeWalletId
+        val network = currentNetwork.name
+        val tipNumber = currentTipNumberOrZero()
+
+        val signedTx = sendMutex.withLock {
+            val cellsResult = getCells(fromAddress).getOrThrow()
+            val pending = pendingBroadcastDao.getActive(walletId, network)
+            val reserved: Set<OutPoint> = pending
+                .flatMap { json.decodeFromString<List<OutPoint>>(it.reservedInputs) }
+                .toSet()
+            val filtered = cellsResult.items.filter { it.outPoint !in reserved }
+            Log.d(
+                TAG,
+                "prepareAndSend: ${cellsResult.items.size} cells, ${reserved.size} reserved, ${filtered.size} available"
+            )
+
+            val signed = transactionBuilder.buildTransfer(
+                fromAddress = fromAddress,
+                toAddress = toAddress,
+                amountShannons = amountShannons,
+                availableCells = filtered,
+                privateKey = privateKey,
+                network = currentNetwork
+            )
+
+            val txHash = transactionBuilder.computeTxHash(signed)
+            val txJson = json.encodeToString(signed)
+            val reservedJson = json.encodeToString(signed.cellInputs.map { it.previousOutput })
+            val now = System.currentTimeMillis()
+
+            // Compute outgoing amount for activity-row balanceChange — same heuristic
+            // as sendTransaction (smallest-output is recipient for normal transfers).
+            val outgoingAmount = signed.cellOutputs
+                .minOfOrNull { it.capacity.removePrefix("0x").toLong(16) }
+                ?: amountShannons
+            val balanceChangeHex = "-0x${outgoingAmount.toString(16)}"
+
+            pendingBroadcastDao.insert(
+                PendingBroadcastEntity(
+                    txHash = txHash,
+                    walletId = walletId,
+                    network = network,
+                    signedTxJson = txJson,
+                    reservedInputs = reservedJson,
+                    state = "BROADCASTING",
+                    submittedAtTipBlock = tipNumber,
+                    nullCount = 0,
+                    createdAt = now,
+                    lastCheckedAt = now
+                )
+            )
+            cacheManager.insertPendingTransaction(
+                txHash = txHash,
+                network = network,
+                walletId = walletId,
+                balanceChange = balanceChangeHex,
+                direction = "out",
+                fee = "0x0"
+            )
+            signed
+        }
+
+        // sendTransaction owns the JNI call + post-broadcast CAS.
+        // Its insert path is idempotent: it sees the row we just inserted
+        // and skips re-insertion, then performs broadcast + state CAS.
+        sendTransaction(signedTx).getOrThrow()
+    }
+
     suspend fun sendTransaction(transaction: Transaction): Result<String> = runCatching {
         Log.d(TAG, "📤 sendTransaction: building JSON")
         Log.d(TAG, "  Inputs: ${transaction.cellInputs.size}, Outputs: ${transaction.cellOutputs.size}")
