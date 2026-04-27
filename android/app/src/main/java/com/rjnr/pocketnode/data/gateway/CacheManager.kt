@@ -119,6 +119,10 @@ class CacheManager @Inject constructor(
         }
     }
 
+    /** Legacy PENDING `transactions` rows with no `pending_broadcasts` entry (#115). */
+    suspend fun getOrphanPendingHashes(walletId: String, network: String): List<String> =
+        transactionDao.getOrphanPendingHashes(walletId, network)
+
     suspend fun deleteTransaction(txHash: String) {
         try {
             transactionDao.deleteByHash(txHash)

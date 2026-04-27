@@ -57,6 +57,19 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE walletId = :walletId AND network = :network AND status IN ('PENDING', 'FAILED')")
     suspend fun getNonConfirmedByWallet(walletId: String, network: String): List<TransactionEntity>
 
+    /**
+     * Legacy PENDING `transactions` rows that have no matching `pending_broadcasts`
+     * entry — i.e. they predate the broadcast state machine (#115). Used at init
+     * to reconcile against the live chain so the user doesn't see stuck-pending
+     * rows from before the fix landed.
+     */
+    @Query(
+        "SELECT txHash FROM transactions " +
+            "WHERE walletId = :walletId AND network = :network AND status = 'PENDING' " +
+            "AND txHash NOT IN (SELECT txHash FROM pending_broadcasts)"
+    )
+    suspend fun getOrphanPendingHashes(walletId: String, network: String): List<String>
+
     @Query("DELETE FROM transactions WHERE walletId = :walletId AND network = :network")
     suspend fun deleteByWalletAndNetwork(walletId: String, network: String)
 

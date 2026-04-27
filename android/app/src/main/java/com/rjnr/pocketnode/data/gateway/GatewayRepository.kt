@@ -456,6 +456,34 @@ class GatewayRepository @Inject constructor(
                         }
                     }
 
+                    // Legacy reconciliation: PENDING `transactions` rows that predate
+                    // pending_broadcasts have no broadcast row, so the watchdog can't
+                    // see them. Query the light client directly: on chain → CONFIRMED,
+                    // not found → FAILED, in pool → leave alone (the natural pending state).
+                    // (#115 — addresses the user's "old ghosts still showing pending" case.)
+                    runCatching {
+                        val orphanHashes = cacheManager.getOrphanPendingHashes(activeWalletId, currentNetwork.name)
+                        if (orphanHashes.isNotEmpty()) {
+                            Log.w(TAG, "Legacy reconcile: ${orphanHashes.size} orphan PENDING tx(s) on ${currentNetwork.name}")
+                            scope.launch {
+                                delay(15_000) // give light client time to be ready
+                                for (hash in orphanHashes) {
+                                    val resp = getTransactionStatus(hash).getOrNull()
+                                    val newStatus = when {
+                                        resp == null -> "FAILED"
+                                        resp.status == "unknown" -> "FAILED"
+                                        resp.blockHash != null -> "CONFIRMED"
+                                        else -> null  // still in pool — leave PENDING
+                                    }
+                                    if (newStatus != null) {
+                                        cacheManager.updateTransactionStatus(hash, newStatus)
+                                        Log.d(TAG, "Legacy reconcile: $hash → $newStatus")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     startSyncPolling()
                     startBackgroundSync()
                     return
