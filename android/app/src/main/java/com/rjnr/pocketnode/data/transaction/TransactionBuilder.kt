@@ -274,9 +274,20 @@ class TransactionBuilder @Inject constructor(
         depositBlockHash: String,
         senderScript: Script,
         privateKey: ByteArray,
-        network: NetworkType
+        network: NetworkType,
+        availableCells: List<Cell>
     ): Transaction {
-        val capacity = depositCell.capacity
+        // Phase 1 (deposit → withdrawing) preserves the deposit cell's capacity
+        // exactly. The fee must come from a separate normal cell (CKB RFC 0023).
+        // The previous implementation used the deposit cell as the only input,
+        // making `inputs == outputs`, so the network rejected the tx and the
+        // JNI bridge returned null ("send failed - native returned null", #119).
+        val (feeCells, feeTotal) = selectCells(availableCells, DEFAULT_FEE + MIN_CELL_CAPACITY)
+        if (feeTotal < DEFAULT_FEE) {
+            throw Exception(
+                "Insufficient balance to cover withdraw fee. Need ${DEFAULT_FEE} shannons, have $feeTotal"
+            )
+        }
 
         // Output mirrors the deposit cell but with block number as data
         val blockNumberBytes = ByteArray(8)
@@ -287,14 +298,25 @@ class TransactionBuilder @Inject constructor(
         }
         val blockNumberHex = "0x" + blockNumberBytes.joinToString("") { "%02x".format(it) }
 
-        val inputs = listOf(CellInput(previousOutput = depositCell.outPoint))
-        val outputs = listOf(
-            CellOutput(
-                capacity = capacity,
-                lock = senderScript,
-                type = DaoConstants.DAO_TYPE_SCRIPT
-            )
+        val inputs = listOf(CellInput(previousOutput = depositCell.outPoint)) +
+            feeCells.map { CellInput(previousOutput = it.outPoint) }
+
+        val withdrawingOutput = CellOutput(
+            capacity = depositCell.capacity,
+            lock = senderScript,
+            type = DaoConstants.DAO_TYPE_SCRIPT
         )
+
+        // Change output (if any). feeTotal - DEFAULT_FEE goes back to the user.
+        // Skip the change cell when its capacity would fall below the 61 CKB
+        // minimum — that residue is absorbed into the fee.
+        val change = feeTotal - DEFAULT_FEE
+        val outputs = mutableListOf(withdrawingOutput)
+        val outputsData = mutableListOf(blockNumberHex)
+        if (change >= MIN_CELL_CAPACITY) {
+            outputs.add(CellOutput(capacity = "0x${change.toString(16)}", lock = senderScript))
+            outputsData.add("0x")
+        }
 
         val secp256k1Dep = when (network) {
             NetworkType.TESTNET -> CellDep.SECP256K1_TESTNET
@@ -306,11 +328,11 @@ class TransactionBuilder @Inject constructor(
             headerDeps = listOf(depositBlockHash),
             cellInputs = inputs,
             cellOutputs = outputs,
-            outputsData = listOf(blockNumberHex),
-            witnesses = listOf("0x")
+            outputsData = outputsData,
+            witnesses = inputs.map { "0x" }
         )
 
-        return signTransaction(unsignedTx, privateKey, 1)
+        return signTransaction(unsignedTx, privateKey, inputs.size)
     }
 
     fun buildDaoUnlock(

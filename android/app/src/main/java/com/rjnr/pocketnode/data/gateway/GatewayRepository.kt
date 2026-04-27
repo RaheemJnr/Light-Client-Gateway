@@ -2081,6 +2081,7 @@ class GatewayRepository @Inject constructor(
     suspend fun withdrawFromDao(depositOutPoint: OutPoint): Result<String> = runCatching {
         val info = _walletInfo.value ?: throw Exception("No wallet")
         val net = _network.value
+        val address = getCurrentAddress() ?: throw Exception("No address")
 
         // Find the deposit cell
         val deposits = getDaoDeposits().getOrThrow()
@@ -2092,6 +2093,12 @@ class GatewayRepository @Inject constructor(
         require(deposit.depositBlockHash.isNotBlank()) {
             "Deposit block hash unavailable. Please retry after sync."
         }
+
+        // Fetch normal cells to cover the fee — DAO Phase 1 preserves the
+        // deposit capacity exactly so a fee input cell is mandatory (#119).
+        // getCells already excludes typed (DAO) cells, so this list is only
+        // regular CKB cells safe to spend as fee.
+        val availableCells = getCells(address).getOrThrow().items
 
         // Build a Cell from the deposit for the transaction builder
         val depositCell = Cell(
@@ -2109,7 +2116,8 @@ class GatewayRepository @Inject constructor(
             depositBlockHash = deposit.depositBlockHash,
             senderScript = info.script,
             privateKey = privateKey,
-            network = net
+            network = net,
+            availableCells = availableCells
         )
 
         val txHash = sendTransaction(tx).getOrThrow()

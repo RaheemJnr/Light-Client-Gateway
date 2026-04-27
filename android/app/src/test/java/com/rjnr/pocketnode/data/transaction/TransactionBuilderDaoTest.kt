@@ -146,7 +146,8 @@ class TransactionBuilderDaoTest {
             depositBlockHash = "0x" + "ee".repeat(32),
             senderScript = testScript,
             privateKey = testPrivateKey,
-            network = NetworkType.TESTNET
+            network = NetworkType.TESTNET,
+            availableCells = listOf(makeCell(200_00000000L, index = 1))
         )
         // 12345 = 0x3039, LE bytes: 39 30 00 00 00 00 00 00
         assertEquals("0x3930000000000000", tx.outputsData[0])
@@ -161,7 +162,8 @@ class TransactionBuilderDaoTest {
             depositBlockHash = depositBlockHash,
             senderScript = testScript,
             privateKey = testPrivateKey,
-            network = NetworkType.TESTNET
+            network = NetworkType.TESTNET,
+            availableCells = listOf(makeCell(200_00000000L, index = 1))
         )
         assertEquals(1, tx.headerDeps.size)
         assertEquals(depositBlockHash, tx.headerDeps[0])
@@ -175,9 +177,54 @@ class TransactionBuilderDaoTest {
             depositBlockHash = "0x" + "ee".repeat(32),
             senderScript = testScript,
             privateKey = testPrivateKey,
-            network = NetworkType.TESTNET
+            network = NetworkType.TESTNET,
+            availableCells = listOf(makeCell(200_00000000L, index = 1))
         )
         assertEquals(DaoConstants.DAO_TYPE_SCRIPT, tx.cellOutputs[0].type)
+    }
+
+    @Test
+    fun `buildDaoWithdraw includes fee input cell so fee is positive (#119)`() {
+        val feeCellCapacity = 200_00000000L
+        val tx = builder.buildDaoWithdraw(
+            depositCell = makeDepositCell(),
+            depositBlockNumber = 100L,
+            depositBlockHash = "0x" + "ee".repeat(32),
+            senderScript = testScript,
+            privateKey = testPrivateKey,
+            network = NetworkType.TESTNET,
+            availableCells = listOf(makeCell(feeCellCapacity, index = 1))
+        )
+        // 1 deposit input + 1 fee input
+        assertEquals(2, tx.cellInputs.size)
+        // First output is the withdrawing cell — same capacity as the deposit
+        val depositCapacity = DaoConstants.MIN_DEPOSIT_SHANNONS
+        assertEquals("0x${depositCapacity.toString(16)}", tx.cellOutputs[0].capacity)
+        // Total inputs > total outputs so fee > 0 (the heart of the #119 fix)
+        val totalInputs = depositCapacity + feeCellCapacity
+        val totalOutputs = tx.cellOutputs.sumOf { it.capacity.removePrefix("0x").toLong(16) }
+        assertEquals(true, totalInputs > totalOutputs)
+    }
+
+    @Test
+    fun `buildDaoWithdraw throws when no fee-covering cells available`() {
+        try {
+            builder.buildDaoWithdraw(
+                depositCell = makeDepositCell(),
+                depositBlockNumber = 100L,
+                depositBlockHash = "0x" + "ee".repeat(32),
+                senderScript = testScript,
+                privateKey = testPrivateKey,
+                network = NetworkType.TESTNET,
+                availableCells = emptyList()
+            )
+            org.junit.Assert.fail("Expected exception")
+        } catch (e: Exception) {
+            org.junit.Assert.assertTrue(
+                "expected 'Insufficient' in '${e.message}'",
+                e.message?.contains("Insufficient") == true
+            )
+        }
     }
 
     // --- buildDaoUnlock ---
