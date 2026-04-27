@@ -429,6 +429,23 @@ class GatewayRepository @Inject constructor(
                 if (startResult) {
                     Log.d(TAG, "Node started successfully on ${targetNetwork.name} (attempt $attempt)")
                     _nodeReady.value = true
+
+                    // Cold-start recovery: surface any BROADCASTING orphan rows for the
+                    // active network so the watchdog can resolve them on the next tip.
+                    // Network-scoped — LightClientNative is per-network; querying for a
+                    // hash on a network whose light client isn't running would return null
+                    // spuriously and drive valid orphans to a false FAILED. (#115 §5)
+                    runCatching {
+                        val orphans = pendingBroadcastDao.getActive(activeWalletId, currentNetwork.name)
+                        val broadcasting = orphans.count { it.state == "BROADCASTING" }
+                        if (broadcasting > 0) {
+                            Log.w(
+                                TAG,
+                                "Cold-start: $broadcasting BROADCASTING orphan(s) on ${currentNetwork.name}; watchdog will resolve"
+                            )
+                        }
+                    }
+
                     startSyncPolling()
                     startBackgroundSync()
                     return
