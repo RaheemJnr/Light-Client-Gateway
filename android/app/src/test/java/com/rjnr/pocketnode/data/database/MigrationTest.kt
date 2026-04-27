@@ -31,7 +31,7 @@ class MigrationTest {
     fun setup() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
             .allowMainThreadQueries()
             .build()
     }
@@ -177,6 +177,12 @@ class MigrationTest {
 
         db.keyMaterialDao().delete("to-delete")
         assertEquals(0, db.keyMaterialDao().count())
+    }
+
+    @Test
+    fun `v8 pending_broadcasts table is accessible`() = runTest {
+        val dao = db.pendingBroadcastDao()
+        assertEquals(0, dao.getActive("any", "TESTNET").size)
     }
 
     @Test

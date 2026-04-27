@@ -14,10 +14,12 @@ import com.rjnr.pocketnode.data.database.MIGRATION_3_4
 import com.rjnr.pocketnode.data.database.MIGRATION_4_5
 import com.rjnr.pocketnode.data.database.MIGRATION_5_6
 import com.rjnr.pocketnode.data.database.MIGRATION_6_7
+import com.rjnr.pocketnode.data.database.MIGRATION_7_8
 import com.rjnr.pocketnode.data.database.dao.BalanceCacheDao
 import com.rjnr.pocketnode.data.database.dao.DaoCellDao
 import com.rjnr.pocketnode.data.database.dao.HeaderCacheDao
 import com.rjnr.pocketnode.data.database.dao.KeyMaterialDao
+import com.rjnr.pocketnode.data.database.dao.PendingBroadcastDao
 import com.rjnr.pocketnode.data.database.dao.SyncProgressDao
 import com.rjnr.pocketnode.data.database.dao.TransactionDao
 import com.rjnr.pocketnode.data.database.dao.WalletDao
@@ -115,7 +117,7 @@ object AppModule {
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "pocket_node.db")
             .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
             .build()
 
     @Provides
@@ -138,6 +140,10 @@ object AppModule {
 
     @Provides
     fun provideSyncProgressDao(db: AppDatabase): SyncProgressDao = db.syncProgressDao()
+
+    @Provides
+    @Singleton
+    fun providePendingBroadcastDao(db: AppDatabase): PendingBroadcastDao = db.pendingBroadcastDao()
 
     @Provides
     @Singleton
