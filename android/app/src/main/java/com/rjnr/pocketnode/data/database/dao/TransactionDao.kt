@@ -25,6 +25,10 @@ interface TransactionDao {
     @Query("UPDATE transactions SET status = :status, confirmations = :confirmations, blockNumber = :blockNumber, blockHash = :blockHash, isLocal = 0, cachedAt = :cachedAt WHERE txHash = :txHash")
     suspend fun updateStatus(txHash: String, status: String, confirmations: Int, blockNumber: String, blockHash: String, cachedAt: Long = System.currentTimeMillis())
 
+    /** Status-only update used by BroadcastWatchdog (no on-chain fields known yet). */
+    @Query("UPDATE transactions SET status = :status WHERE txHash = :hash")
+    suspend fun updateStatusOnly(hash: String, status: String)
+
     @Query("DELETE FROM transactions WHERE network = :network")
     suspend fun deleteByNetwork(network: String)
 

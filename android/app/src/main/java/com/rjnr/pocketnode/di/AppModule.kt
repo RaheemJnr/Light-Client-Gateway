@@ -29,6 +29,12 @@ import com.rjnr.pocketnode.data.gateway.CacheManager
 import com.rjnr.pocketnode.data.gateway.DaoSyncManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
 import com.rjnr.pocketnode.data.gateway.LightClientBroadcastClient
+import com.rjnr.pocketnode.data.gateway.TipSource
+import com.rjnr.pocketnode.data.gateway.TransactionStatusUpdater
+import com.rjnr.pocketnode.data.sync.LifecycleProvider
+import com.rjnr.pocketnode.data.sync.ProcessLifecycleProvider
+import com.rjnr.pocketnode.data.sync.RepositoryTransactionStatusGateway
+import com.rjnr.pocketnode.data.sync.TransactionStatusGateway
 import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.MnemonicManager
@@ -182,6 +188,22 @@ object AppModule {
     @Provides
     @Singleton
     fun provideBroadcastClient(impl: LightClientBroadcastClient): BroadcastClient = impl
+
+    @Provides
+    @Singleton
+    fun provideTipSource(impl: GatewayRepository): TipSource = impl
+
+    @Provides
+    @Singleton
+    fun provideTransactionStatusUpdater(impl: CacheManager): TransactionStatusUpdater = impl
+
+    @Provides
+    @Singleton
+    fun provideTransactionStatusGateway(impl: RepositoryTransactionStatusGateway): TransactionStatusGateway = impl
+
+    @Provides
+    @Singleton
+    fun provideLifecycleProvider(): LifecycleProvider = ProcessLifecycleProvider()
 
     @Provides
     @Singleton

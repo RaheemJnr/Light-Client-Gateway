@@ -11,11 +11,19 @@ import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Narrow surface used by BroadcastWatchdog. Lets tests fake without
+ * mocking the full CacheManager.
+ */
+interface TransactionStatusUpdater {
+    suspend fun updateTransactionStatus(hash: String, status: String)
+}
+
 @Singleton
 class CacheManager @Inject constructor(
     private val transactionDao: TransactionDao,
     private val balanceCacheDao: BalanceCacheDao
-) {
+) : TransactionStatusUpdater {
     // --- Balance cache ---
 
     suspend fun getCachedBalance(network: String, walletId: String = ""): BalanceResponse? {
@@ -98,6 +106,16 @@ class CacheManager @Inject constructor(
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Failed to cache pending tx", e)
+        }
+    }
+
+    override suspend fun updateTransactionStatus(hash: String, status: String) {
+        try {
+            transactionDao.updateStatusOnly(hash, status)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to update tx status for $hash", e)
         }
     }
 

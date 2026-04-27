@@ -56,6 +56,23 @@ data class SyncProgress(
 )
 
 /**
+ * Narrow seam over [GatewayRepository] so [com.rjnr.pocketnode.data.sync.BroadcastWatchdog]
+ * can be unit-tested without instantiating a full Repository (whose
+ * constructor surface is wide). [GatewayRepository] implements this; tests
+ * use a small fake.
+ */
+interface TipSource {
+    /** Monotonic light-client tip stream. Initial value 0L until first publish. */
+    val tipFlow: kotlinx.coroutines.flow.StateFlow<Long>
+
+    /** Pull a fresh tip via JNI and publish to [tipFlow] if higher. Returns the tip read (or 0L). */
+    suspend fun fetchAndPublishTip(): Long
+
+    /** (walletId, networkName) of the active wallet, or null if no active wallet. */
+    fun activeWalletAndNetworkOrNull(): Pair<String, String>?
+}
+
+/**
  * Pure BALANCED filter algorithm — no I/O. Extracted from GatewayRepository
  * so unit tests exercise the production implementation directly without
  * having to construct a full GatewayRepository instance.
@@ -92,8 +109,33 @@ class GatewayRepository @Inject constructor(
     private val syncProgressDao: SyncProgressDao,
     private val pendingBroadcastDao: PendingBroadcastDao,
     private val broadcastClient: BroadcastClient
-) {
+) : TipSource {
     private val sendMutex = Mutex()
+
+    private val _tipFlow = MutableStateFlow(0L)
+    override val tipFlow: StateFlow<Long> = _tipFlow.asStateFlow()
+
+    /**
+     * Publish a fresh tip to [tipFlow]. Monotonic — older tips are ignored
+     * (light-client tip events can interleave). Public-by-package so the
+     * sync polling path and send path can both keep the flow warm without
+     * exposing a setter to outside callers.
+     */
+    internal fun publishTip(n: Long) {
+        if (n > _tipFlow.value) _tipFlow.value = n
+    }
+
+    override suspend fun fetchAndPublishTip(): Long {
+        val n = currentTipNumberOrZero()
+        if (n > 0) publishTip(n)
+        return n
+    }
+
+    override fun activeWalletAndNetworkOrNull(): Pair<String, String>? {
+        val id = activeWalletId
+        if (id.isBlank()) return null
+        return id to currentNetwork.name
+    }
 
     private val _walletInfo = MutableStateFlow<WalletInfo?>(null)
     val walletInfo: StateFlow<WalletInfo?> = _walletInfo.asStateFlow()
@@ -1022,6 +1064,7 @@ class GatewayRepository @Inject constructor(
         val walletId = activeWalletId
         val network = currentNetwork.name
         val tipNumber = currentTipNumberOrZero()
+        publishTip(tipNumber)
 
         val signedTx = sendMutex.withLock {
             val cellsResult = getCells(fromAddress).getOrThrow()
@@ -1105,6 +1148,7 @@ class GatewayRepository @Inject constructor(
         val walletId = activeWalletId
         val network = currentNetwork.name
         val tipNumber = currentTipNumberOrZero()
+        publishTip(tipNumber)
         val txJson = json.encodeToString(transaction)
         val txHash = transactionBuilder.computeTxHash(transaction)
         val reservedJson = json.encodeToString(
