@@ -25,7 +25,6 @@ data class AddWalletUiState(
     val createdWallet: WalletEntity? = null,
     val isNewlyGenerated: Boolean = false,
     val error: String? = null,
-    val showSyncCapWarning: Boolean = false,
     val parentWallets: List<WalletEntity> = emptyList(),
     val selectedParentId: String? = null
 )
@@ -150,13 +149,12 @@ class AddWalletViewModel @Inject constructor(
             return
         }
 
+        // Wallet count is no longer capped at creation time (#118). The cap is
+        // applied at sync-registration time only — `registerAllWalletScripts`
+        // takes the first MAX_CONCURRENT_WALLET_SCRIPTS under the ALL_WALLETS
+        // strategy. Users can create as many wallets as they want; only the
+        // first N stay actively synced when ALL_WALLETS is selected.
         viewModelScope.launch {
-            val count = walletRepository.walletCount()
-            if (count >= 3) {
-                _uiState.update { it.copy(showSyncCapWarning = true) }
-                return@launch
-            }
-
             _uiState.update { it.copy(isLoading = true, error = null) }
             runCatching {
                 walletRepository.createWallet(name)
