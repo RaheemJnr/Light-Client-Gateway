@@ -1099,10 +1099,44 @@ class GatewayRepository @Inject constructor(
             val reserved: Set<OutPoint> = pending
                 .flatMap { json.decodeFromString<List<OutPoint>>(it.reservedInputs) }
                 .toSet()
-            val filtered = cellsResult.items.filter { it.outPoint !in reserved }
+            val liveFiltered = cellsResult.items.filter { it.outPoint !in reserved }
+
+            // Synthesize predicted change-output cells from in-flight broadcasts.
+            // Without this, rapid sequential sends exhaust live cells before the
+            // light client has synced the change outputs of prior sends — the
+            // observed "Not enough funds available" failure mode.
+            // We include each output of every active pending tx whose lock script
+            // matches the sender's lock (= change output going back to us).
+            // If a pending tx ultimately FAILs, downstream txs that consumed its
+            // synthetic change will also fail and the watchdog times them out.
+            val pendingChange: List<Cell> = pending.flatMap { row ->
+                val pendingTx = try {
+                    json.decodeFromString<Transaction>(row.signedTxJson)
+                } catch (e: Exception) {
+                    return@flatMap emptyList<Cell>()
+                }
+                pendingTx.cellOutputs.mapIndexedNotNull { idx, output ->
+                    val outAddr = try {
+                        AddressUtils.encode(output.lock, currentNetwork)
+                    } catch (e: Exception) {
+                        return@mapIndexedNotNull null
+                    }
+                    if (outAddr != fromAddress) return@mapIndexedNotNull null
+                    Cell(
+                        outPoint = OutPoint(row.txHash, "0x${idx.toString(16)}"),
+                        capacity = output.capacity,
+                        blockNumber = "0x0", // synthetic — not on chain yet
+                        lock = output.lock,
+                        type = output.type,
+                        data = "0x"
+                    )
+                }
+            }
+            val filtered = liveFiltered + pendingChange
             Log.d(
                 TAG,
-                "prepareAndSend: ${cellsResult.items.size} cells, ${reserved.size} reserved, ${filtered.size} available"
+                "prepareAndSend: ${cellsResult.items.size} live, ${reserved.size} reserved, " +
+                    "${pendingChange.size} synthetic-change, ${filtered.size} available"
             )
 
             val signed = transactionBuilder.buildTransfer(
@@ -1119,12 +1153,14 @@ class GatewayRepository @Inject constructor(
             val reservedJson = json.encodeToString(signed.cellInputs.map { it.previousOutput })
             val now = System.currentTimeMillis()
 
-            // Compute outgoing amount for activity-row balanceChange — same heuristic
-            // as sendTransaction (smallest-output is recipient for normal transfers).
+            // Outgoing amount for activity-row balanceChange. Stored as POSITIVE
+            // hex per existing convention; `direction = "out"` carries the sign
+            // for the UI. (Prior code used "-0x..." which broke capacityAsLong's
+            // hex parser and rendered as 0.)
             val outgoingAmount = signed.cellOutputs
                 .minOfOrNull { it.capacity.removePrefix("0x").toLong(16) }
                 ?: amountShannons
-            val balanceChangeHex = "-0x${outgoingAmount.toString(16)}"
+            val balanceChangeHex = "0x${outgoingAmount.toString(16)}"
 
             pendingBroadcastDao.insert(
                 PendingBroadcastEntity(
@@ -1212,7 +1248,8 @@ class GatewayRepository @Inject constructor(
         val outgoingAmount = transaction.cellOutputs
             .minOfOrNull { it.capacity.removePrefix("0x").toLong(16) }
             ?: 0L
-        val balanceChangeHex = "-0x${outgoingAmount.toString(16)}"
+        // Positive hex per existing convention; `direction = "out"` carries sign.
+        val balanceChangeHex = "0x${outgoingAmount.toString(16)}"
         val now = System.currentTimeMillis()
 
         Log.d(TAG, "📤 sendTransaction: JSON length=${txJson.length}, preHash=$txHash")
