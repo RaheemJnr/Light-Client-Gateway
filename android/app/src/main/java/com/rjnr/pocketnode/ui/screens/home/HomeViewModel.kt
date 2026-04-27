@@ -67,7 +67,8 @@ class HomeViewModel @Inject constructor(
     private val updateDownloader: UpdateDownloader,
     private val pinManager: PinManager,
     private val authManager: AuthManager,
-    private val cacheManager: CacheManager
+    private val cacheManager: CacheManager,
+    private val walletPreferences: com.rjnr.pocketnode.data.wallet.WalletPreferences
 ) : ViewModel() {
 
     // Skip-overlapping guard for refreshTransactionsOnly. The fn is called from
@@ -142,11 +143,22 @@ class HomeViewModel @Inject constructor(
                         fiatBalance = fiat ?: current.fiatBalance
                     )
                 }
-                // Post-deposit reminder: trigger when balance goes from zero to non-zero
-                // and the wallet is not fully secured
+                // Post-deposit reminder: trigger when balance goes from zero to
+                // non-zero and the wallet is not fully secured. Per-wallet
+                // "already shown" flag prevents the dialog from re-appearing on
+                // every VM init for an already-funded unsecured wallet — the
+                // `previousBalanceWasZero` field always starts true on init, so
+                // without persistence the cached/synced balance emission re-trips
+                // the condition every reopen. (#116)
                 val hasPin = _uiState.value.hasPinOrBiometrics
                 val hasBackup = _uiState.value.hasMnemonicBackup
-                if (previousBalanceWasZero && ckb > 0.0 && (!hasPin || !hasBackup)) {
+                val activeId = _uiState.value.wallets.find { it.isActive }?.walletId.orEmpty()
+                val alreadyShown = activeId.isNotEmpty()
+                    && walletPreferences.isPostDepositReminderShown(activeId)
+                if (previousBalanceWasZero && ckb > 0.0 && (!hasPin || !hasBackup) && !alreadyShown) {
+                    if (activeId.isNotEmpty()) {
+                        walletPreferences.setPostDepositReminderShown(activeId)
+                    }
                     _uiState.update { it.copy(showPostDepositReminder = true) }
                 }
                 previousBalanceWasZero = (ckb == 0.0)

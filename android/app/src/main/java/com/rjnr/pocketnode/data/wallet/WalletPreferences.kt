@@ -179,12 +179,43 @@ class WalletPreferences @Inject constructor(
     // --- Background sync (global, not per-network) ---
 
     fun isBackgroundSyncEnabled(): Boolean {
-        return prefs.getBoolean(KEY_BACKGROUND_SYNC, true)
+        // Default OFF (#116). Previous default was true, but on Android 13+
+        // the foreground service requires POST_NOTIFICATIONS to actually run;
+        // setting this to true before the user grants notifications produces
+        // a misleading "ON" state where the FGS can't post and gets killed
+        // silently. Now: explicit opt-in only, gated on permission grant in
+        // SettingsScreen.
+        return prefs.getBoolean(KEY_BACKGROUND_SYNC, false)
     }
 
     fun setBackgroundSyncEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_BACKGROUND_SYNC, enabled).commit()
     }
+
+    // --- Post-deposit "Protect your funds" dialog (per-wallet, #116 follow-up) ---
+    //
+    // The dialog is intended to fire once when a wallet first receives funds
+    // and is not fully secured (no PIN/biometrics OR no recovery-phrase backup).
+    // The trigger lives in HomeViewModel and watches `previousBalanceWasZero`,
+    // a field that resets to true on every VM init — so on every reopen of
+    // a funded-but-unsecured wallet the first balance emission (already > 0
+    // from the cached/synced state) re-trips the condition and the dialog
+    // returns.
+    //
+    // Persisting "already shown" per-wallet means each wallet sees the dialog
+    // exactly once. If the user secures the wallet later, the regular trigger
+    // condition (`!hasPin || !hasBackup`) would be false anyway.
+
+    fun isPostDepositReminderShown(walletId: String): Boolean {
+        return prefs.getBoolean(postDepositReminderKey(walletId), false)
+    }
+
+    fun setPostDepositReminderShown(walletId: String) {
+        prefs.edit().putBoolean(postDepositReminderKey(walletId), true).apply()
+    }
+
+    private fun postDepositReminderKey(walletId: String): String =
+        "${KEY_POST_DEPOSIT_REMINDER_SHOWN_PREFIX}$walletId"
 
     // --- Database maintenance ---
 
@@ -274,6 +305,7 @@ class WalletPreferences @Inject constructor(
         private const val KEY_SYNC_STRATEGY = "sync_strategy"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_BACKGROUND_SYNC = "background_sync_enabled"
+        private const val KEY_POST_DEPOSIT_REMINDER_SHOWN_PREFIX = "post_deposit_reminder_shown_"
         private const val KEY_LAST_VACUUM_AT = "last_vacuum_at"
         private const val KEY_SYNC_PROGRESS_MIGRATED = "sync_progress_migrated_to_room_v7"
     }
