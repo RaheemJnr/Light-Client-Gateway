@@ -100,7 +100,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onNavigateToSend: () -> Unit = {},
+    onNavigateToSend: (recipient: String?, amountShannons: Long?) -> Unit = { _, _ -> },
     onNavigateToReceive: () -> Unit = {},
     onNavigateToBackup: () -> Unit = {},
     onNavigateToDao: () -> Unit = {},
@@ -114,9 +114,21 @@ fun HomeScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedTransaction by remember { mutableStateOf<TransactionRecord?>(null) }
+    var retryDialogTx by remember { mutableStateOf<TransactionRecord?>(null) }
     var showAccountSelector by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    // Collect one-shot nav events from the ViewModel (e.g. retry-failed-tx).
+    LaunchedEffect(Unit) {
+        viewModel.navEvents.collect { event ->
+            when (event) {
+                is HomeNavEvent.NavigateToSendWithPrefill -> {
+                    onNavigateToSend(event.recipientAddress, event.amountShannons)
+                }
+            }
+        }
+    }
 
     // Refresh security state (PIN, backup) when returning from setup screens
     DisposableEffect(lifecycleOwner) {
@@ -252,6 +264,26 @@ fun HomeScreen(
             Log.e("HomeScreen", "Error: $error")
             viewModel.clearError()
         }
+    }
+
+    // Retry-failed-tx confirmation. Copy intentionally hedges: FAILED is a
+    // heuristic (null × 3 + tip past +25), not proof the network rejected
+    // the tx. See spec §6 cases a–d.
+    retryDialogTx?.let { tx ->
+        AlertDialog(
+            onDismissRequest = { retryDialogTx = null },
+            title = { Text("Retry transaction?") },
+            text = { Text("This transaction may not have reached the network. Retry?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    retryDialogTx = null
+                    viewModel.retryFailedTransaction(tx.txHash)
+                }) { Text("Retry") }
+            },
+            dismissButton = {
+                TextButton(onClick = { retryDialogTx = null }) { Text("Cancel") }
+            }
+        )
     }
 
     // Transaction detail bottom sheet
@@ -398,7 +430,8 @@ fun HomeScreen(
                     clipboardManager = clipboardManager,
                     snackbarHostState = snackbarHostState,
                     scope = scope,
-                    selectedTransaction = { selectedTransaction = it }
+                    selectedTransaction = { selectedTransaction = it },
+                    onRetryFailed = { retryDialogTx = it }
                 )
                 if (uiState.isSwitchingWallet) {
                     LinearProgressIndicator(
@@ -419,7 +452,7 @@ fun HomeScreenUI(
     refresh: () -> Unit,
     padding: PaddingValues,
     onNavigateToBackup: () -> Unit,
-    onNavigateToSend: () -> Unit,
+    onNavigateToSend: (recipient: String?, amountShannons: Long?) -> Unit,
     onNavigateToReceive: () -> Unit,
     onNavigateToDao: () -> Unit = {},
     onNavigateToActivity: () -> Unit = {},
@@ -430,6 +463,7 @@ fun HomeScreenUI(
     snackbarHostState: SnackbarHostState,
     scope: CoroutineScope,
     selectedTransaction: (tx: TransactionRecord) -> Unit,
+    onRetryFailed: (tx: TransactionRecord) -> Unit = {},
 ) {
     PullToRefreshBox(
         isRefreshing = uiState.isRefreshing,
@@ -524,7 +558,7 @@ fun HomeScreenUI(
             // Quick Actions Row
             item {
                 ActionRow(
-                    onSend = onNavigateToSend,
+                    onSend = { onNavigateToSend(null, null) },
                     onReceive = onNavigateToReceive,
                     onStake = onNavigateToDao
                 )
@@ -575,7 +609,10 @@ fun HomeScreenUI(
                 ) { tx ->
                     TransactionItems(
                         transaction = tx,
-                        onClick = { selectedTransaction(tx) }
+                        onClick = { selectedTransaction(tx) },
+                        onRetry = if (tx.status == "FAILED") {
+                            { onRetryFailed(tx) }
+                        } else null
                     )
                 }
             }
@@ -1142,7 +1179,7 @@ private fun HomeScreenUIPreview() {
             refresh = {},
             padding = PaddingValues(0.dp),
             onNavigateToBackup = {},
-            onNavigateToSend = {},
+            onNavigateToSend = { _, _ -> },
             onNavigateToReceive = {},
             dismissBackupReminder = {},
             onToggleBalanceVisibility = {},

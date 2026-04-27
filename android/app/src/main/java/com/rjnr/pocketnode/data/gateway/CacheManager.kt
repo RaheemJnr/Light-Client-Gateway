@@ -129,9 +129,15 @@ class CacheManager @Inject constructor(
         }
     }
 
+    /**
+     * Returns local PENDING + FAILED rows not present in [excludeHashes]. Used
+     * by `GatewayRepository.getTransactions` to merge non-confirmed activity
+     * into the JNI-derived (confirmed-only) feed. FAILED rows are written by
+     * `BroadcastWatchdog` after the timeout ladder fires.
+     */
     suspend fun getPendingNotIn(network: String, excludeHashes: Set<String>, walletId: String = ""): List<TransactionRecord> {
         return try {
-            transactionDao.getPendingByWallet(walletId, network)
+            transactionDao.getNonConfirmedByWallet(walletId, network)
                 .filter { it.isLocal && it.txHash !in excludeHashes }
                 .map { it.toTransactionRecord() }
         } catch (e: CancellationException) {

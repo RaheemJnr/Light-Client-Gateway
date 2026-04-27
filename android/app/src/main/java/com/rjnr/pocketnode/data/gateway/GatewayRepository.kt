@@ -17,6 +17,7 @@ import com.rjnr.pocketnode.data.sync.SyncForegroundService
 import com.rjnr.pocketnode.data.sync.SyncProgressTracker
 import com.rjnr.pocketnode.data.migration.WalletMigrationHelper
 import com.rjnr.pocketnode.data.transaction.TransactionBuilder
+import com.rjnr.pocketnode.data.wallet.AddressUtils
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.WalletInfo
 import com.rjnr.pocketnode.data.wallet.WalletPreferences
@@ -53,6 +54,15 @@ data class SyncProgress(
     val percentage: Double = 0.0,
     val etaDisplay: String = "",
     val justReachedTip: Boolean = false
+)
+
+/**
+ * Prefill data extracted from a FAILED `pending_broadcasts` row, used to
+ * pre-populate `SendScreen` when the user taps the Failed chip's retry CTA.
+ */
+data class FailedTxPrefill(
+    val recipientAddress: String,
+    val amountShannons: Long
 )
 
 /**
@@ -1145,6 +1155,30 @@ class GatewayRepository @Inject constructor(
         // Its insert path is idempotent: it sees the row we just inserted
         // and skips re-insertion, then performs broadcast + state CAS.
         sendTransaction(signedTx).getOrThrow()
+    }
+
+    /**
+     * Loads a FAILED `pending_broadcasts` row, decodes the recipient/amount
+     * from its signed tx, and removes the failed-state rows so the retry
+     * doesn't see itself as a reservation. Caller (HomeViewModel) navigates
+     * to SendScreen with the returned prefill.
+     *
+     * Heuristic: smallest-capacity output is the recipient (matches what
+     * `sendTransaction` uses for `balanceChange`). For "send all" txs there's
+     * only one output and the heuristic still resolves correctly.
+     */
+    suspend fun loadFailedForRetry(txHash: String): Result<FailedTxPrefill> = runCatching {
+        val row = pendingBroadcastDao.getFailedRow(txHash)
+            ?: error("No FAILED row for $txHash")
+        val tx = json.decodeFromString<Transaction>(row.signedTxJson)
+        val recipientOutput = tx.cellOutputs.minByOrNull {
+            it.capacity.removePrefix("0x").toLong(16)
+        } ?: error("Tx has no outputs")
+        val recipientAmount = recipientOutput.capacity.removePrefix("0x").toLong(16)
+        val recipientAddress = AddressUtils.encode(recipientOutput.lock, currentNetwork)
+        pendingBroadcastDao.delete(txHash)
+        cacheManager.deleteTransaction(txHash)
+        FailedTxPrefill(recipientAddress, recipientAmount)
     }
 
     suspend fun sendTransaction(transaction: Transaction): Result<String> = runCatching {

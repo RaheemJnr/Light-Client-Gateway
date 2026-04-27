@@ -49,6 +49,14 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE walletId = :walletId AND network = :network AND status = 'PENDING'")
     suspend fun getPendingByWallet(walletId: String, network: String): List<TransactionEntity>
 
+    /**
+     * Pending + Failed local rows. Used to surface non-confirmed activity in
+     * the home list — the JNI feed only carries on-chain (confirmed) txs, so
+     * pending/failed rows must be merged in from cache.
+     */
+    @Query("SELECT * FROM transactions WHERE walletId = :walletId AND network = :network AND status IN ('PENDING', 'FAILED')")
+    suspend fun getNonConfirmedByWallet(walletId: String, network: String): List<TransactionEntity>
+
     @Query("DELETE FROM transactions WHERE walletId = :walletId AND network = :network")
     suspend fun deleteByWalletAndNetwork(walletId: String, network: String)
 

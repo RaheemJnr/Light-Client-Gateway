@@ -282,9 +282,11 @@ fun ActionButton(
 @Composable
 fun TransactionItems(
     transaction: TransactionRecord,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onRetry: (() -> Unit)? = null
 ) {
-    val isPending = transaction.isPending()
+    val isFailed = transaction.status == "FAILED"
+    val isPending = !isFailed && transaction.isPending()
     val daoColor = MaterialTheme.colorScheme.primary
 
     val backgroundColor by animateColorAsState(
@@ -426,21 +428,26 @@ fun TransactionItems(
                         )
                     }
                 }
+                // Status chip — distinct visuals for Failed vs Pending vs
+                // Confirmed. Failed is tappable; the parent renders the
+                // confirm dialog and routes the retry through HomeViewModel.
+                val (chipText, chipFg, chipBg) = when {
+                    isFailed -> Triple("Failed", ErrorRed, ErrorRed.copy(alpha = 0.15f))
+                    transaction.isConfirmed() -> Triple("Confirmed", SuccessGreen, SuccessGreen.copy(alpha = 0.15f))
+                    else -> Triple("Pending", PendingAmber, PendingAmber.copy(alpha = 0.15f))
+                }
                 Surface(
-                    color = if (transaction.isConfirmed()) {
-                        SuccessGreen.copy(alpha = 0.15f)
+                    color = chipBg,
+                    shape = CircleShape,
+                    modifier = if (isFailed && onRetry != null) {
+                        Modifier.clickable { onRetry() }
                     } else {
-                        PendingAmber.copy(alpha = 0.15f)
-                    },
-                    shape = CircleShape
+                        Modifier
+                    }
                 ) {
                     Text(
-                        if (transaction.isConfirmed()) "Confirmed" else "Pending",
-                        color = if (transaction.isConfirmed()) {
-                            SuccessGreen
-                        } else {
-                            PendingAmber
-                        },
+                        chipText,
+                        color = chipFg,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)

@@ -33,7 +33,7 @@ import com.rjnr.pocketnode.ui.theme.CkbWalletTheme
 
 @Composable
 fun MainScreen(
-    onNavigateToSend: () -> Unit,
+    onNavigateToSend: (recipient: String?, amountShannons: Long?) -> Unit,
     onNavigateToReceive: () -> Unit,
     onNavigateToNodeStatus: () -> Unit,
     onNavigateToBackup: () -> Unit,
@@ -147,7 +147,7 @@ private fun tabIcon(tab: BottomTab, selected: Boolean): ImageVector = when (tab)
 fun MainScreenPreview() {
     CkbWalletTheme {
         MainScreen(
-            onNavigateToSend = {},
+            onNavigateToSend = { _, _ -> },
             onNavigateToReceive = {},
             onNavigateToNodeStatus = {},
             onNavigateToBackup = {},

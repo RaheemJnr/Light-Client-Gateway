@@ -98,6 +98,8 @@ fun SendScreen(
     onNavigateToPinVerify: () -> Unit = {},
     scannedAddress: String? = null,
     sendAuthVerified: Boolean = false,
+    prefillRecipient: String? = null,
+    prefillAmountShannons: Long? = null,
     viewModel: SendViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -108,6 +110,18 @@ fun SendScreen(
             if (address.isNotBlank()) {
                 viewModel.updateRecipient(address)
             }
+        }
+    }
+
+    // Retry-failed-tx prefill (#115). One-shot — keyed on the inputs so it
+    // runs once per navigation. updateRecipient/updateAmount are the same
+    // ViewModel hooks the rest of the screen uses.
+    LaunchedEffect(prefillRecipient, prefillAmountShannons) {
+        prefillRecipient?.let { viewModel.updateRecipient(it) }
+        prefillAmountShannons?.let { shannons ->
+            val ckb = shannons / 100_000_000.0
+            val text = "%.8f".format(ckb).trimEnd('0').trimEnd('.')
+            viewModel.updateAmount(text.ifEmpty { "0" })
         }
     }
 
