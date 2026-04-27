@@ -1038,8 +1038,18 @@ class GatewayRepository @Inject constructor(
     }
 
     suspend fun getCells(address: String? = null, limit: Int = 100, cursor: String? = null): Result<CellsResponse> = runCatching {
-        val info = _walletInfo.value ?: throw Exception("No wallet")
-        val searchKey = JniSearchKey(script = info.script)
+        // If a caller passes an address, honor it — decode to script. This is what
+        // mutex-guarded send paths rely on: the snapshot taken at the top of
+        // prepareAndSend is authoritative even if _walletInfo.value mutates while
+        // we're holding the mutex (wallet switch). Falls back to active wallet
+        // for back-compat callers that don't pass address.
+        val script = if (address != null) {
+            AddressUtils.parseAddress(address)
+                ?: throw Exception("Invalid address: $address")
+        } else {
+            _walletInfo.value?.script ?: throw Exception("No wallet")
+        }
+        val searchKey = JniSearchKey(script = script)
 
         Log.d(TAG, "🔍 getCells: Fetching cells for script: ${json.encodeToString(searchKey)}")
 
@@ -1122,12 +1132,22 @@ class GatewayRepository @Inject constructor(
         amountShannons: Long,
         privateKey: ByteArray
     ): Result<String> = runCatching {
+        // Snapshot every piece of sender state at function entry. The user can
+        // switch wallet/network mid-send (rare, but possible — Settings is one
+        // tap away); we must not let live `_walletInfo.value` / `currentNetwork`
+        // reads inside the mutex retarget the send to the new wallet while we
+        // persist rows under the old walletId. fromAddress is the authoritative
+        // sender identity here — it was captured by SendViewModel before this
+        // call and we trust it over live repository globals.
+        val senderNetwork = currentNetwork
         val walletId = activeWalletId
-        val network = currentNetwork.name
+        val network = senderNetwork.name
         val tipNumber = currentTipNumberOrZero()
         publishTip(tipNumber)
 
         val signedTx = sendMutex.withLock {
+            // getCells(fromAddress) decodes the address to a script — honors the
+            // snapshot rather than reading _walletInfo.value live.
             val cellsResult = getCells(fromAddress).getOrThrow()
             val pending = pendingBroadcastDao.getActive(walletId, network)
             val reserved: Set<OutPoint> = pending
@@ -1151,7 +1171,7 @@ class GatewayRepository @Inject constructor(
                 }
                 pendingTx.cellOutputs.mapIndexedNotNull { idx, output ->
                     val outAddr = try {
-                        AddressUtils.encode(output.lock, currentNetwork)
+                        AddressUtils.encode(output.lock, senderNetwork)
                     } catch (e: Exception) {
                         return@mapIndexedNotNull null
                     }
@@ -1179,7 +1199,7 @@ class GatewayRepository @Inject constructor(
                 amountShannons = amountShannons,
                 availableCells = filtered,
                 privateKey = privateKey,
-                network = currentNetwork
+                network = senderNetwork
             )
 
             val txHash = transactionBuilder.computeTxHash(signed)
