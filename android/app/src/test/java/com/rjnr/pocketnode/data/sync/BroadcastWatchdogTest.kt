@@ -34,7 +34,7 @@ class BroadcastWatchdogTest {
         statusGateway = statusGateway,
         cache = cache,
         tipSource = FakeTipSource(),
-        lifecycleProvider = LifecycleProvider { true },
+        lifecycleProvider = { true },
         dispatcher = StandardTestDispatcher(scheduler)
     )
 
@@ -57,6 +57,21 @@ class BroadcastWatchdogTest {
         val r = dao.getActive("w1", "TESTNET").single()
         assertEquals("BROADCAST", r.state)
         assertEquals(0, r.nullCount)
+    }
+
+    @Test
+    fun `in-pool past threshold fails and updates transactions status`() = runTest {
+        // Light client mempool says "pending" indefinitely (e.g. dependency on a
+        // never-landed tx); chain doesn't commit. Watchdog must time out instead
+        // of leaving the row stuck-pending forever.
+        val dao = FakePendingBroadcastDao(initial = listOf(row(state = "BROADCAST", submittedAt = 100L)))
+        val cache = FakeCacheManager()
+        val wd = watchdog(dao, TransactionStatusGateway { TxFetchResult.InPool }, cache, testScheduler)
+        // tip 130 >= 100 + 25
+        wd.checkAll(currentTip = 130L, walletId = "w1", network = "TESTNET")
+        val r = dao.allRows.single()
+        assertEquals("FAILED", r.state)
+        assertEquals("FAILED", cache.statusUpdates["0xaa"])
     }
 
     @Test

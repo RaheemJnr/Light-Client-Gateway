@@ -96,11 +96,29 @@ class BroadcastWatchdog(
                     }
                 }
                 TxFetchResult.InPool -> {
-                    if (row.state == "BROADCASTING") {
-                        dao.compareAndUpdateState(row.txHash, "BROADCASTING", "BROADCAST", now)
-                    }
-                    if (row.nullCount != 0) {
-                        dao.updateNullCount(row.txHash, 0, now)
+                    // In-pool past the commit window = network rejection masked by
+                    // a stale local-mempool entry. CKB proposal+commit completes in
+                    // ~12 blocks; if we're still in-pool at submitted+25 (~6.5 min)
+                    // the chain has rejected the tx (e.g. double-spend, dependency
+                    // on a tx that itself never landed). Mark FAILED so the user
+                    // sees a terminal state and the retry CTA, instead of stuck-pending.
+                    if (currentTip >= row.submittedAtTipBlock + BLOCK_TIMEOUT) {
+                        Log.w(TAG, "in-pool past +$BLOCK_TIMEOUT blocks for ${row.txHash} (submitted at ${row.submittedAtTipBlock}, tip $currentTip) — network rejected; marking FAILED")
+                        val ok = dao.compareAndUpdateState(
+                            hash = row.txHash, expected = row.state,
+                            next = "FAILED", now = now
+                        )
+                        if (ok == 1) {
+                            cache.updateTransactionStatus(row.txHash, "FAILED")
+                        }
+                    } else {
+                        // Healthy in-pool — waiting for commit.
+                        if (row.state == "BROADCASTING") {
+                            dao.compareAndUpdateState(row.txHash, "BROADCASTING", "BROADCAST", now)
+                        }
+                        if (row.nullCount != 0) {
+                            dao.updateNullCount(row.txHash, 0, now)
+                        }
                     }
                 }
                 TxFetchResult.NotFound -> {
