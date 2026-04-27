@@ -5,6 +5,7 @@ import com.rjnr.pocketnode.data.gateway.DaoConstants
 import com.rjnr.pocketnode.data.gateway.models.*
 import com.rjnr.pocketnode.data.validation.NetworkValidator
 import com.rjnr.pocketnode.data.wallet.AddressUtils
+import com.rjnr.pocketnode.util.toHex
 import org.nervos.ckb.crypto.Blake2b
 import org.nervos.ckb.crypto.secp256k1.ECKeyPair
 import org.nervos.ckb.crypto.secp256k1.Sign
@@ -393,6 +394,23 @@ class TransactionBuilder @Inject constructor(
 
     private fun parseCapacity(hex: String): Long {
         return hex.removePrefix("0x").toLong(16)
+    }
+
+    /**
+     * Computes the canonical CKB transaction hash for [tx].
+     *
+     * Returned as `0x`-prefixed lowercase hex, matching the format the
+     * Rust JNI bridge returns from `nativeSendTransaction`. Witnesses are
+     * excluded from the hash by definition (CKB tx hash = blake2b of the
+     * raw tx serialization, which `serializeRawTransaction` already produces
+     * without witness bytes).
+     *
+     * Phase A (#115) relies on this matching the JNI-returned hash byte-for-byte;
+     * the on-device verification gate runs separately.
+     */
+    fun computeTxHash(tx: Transaction): String {
+        val rawTxBytes = serializeRawTransaction(tx)
+        return "0x" + blake2bHash(rawTxBytes).toHex()
     }
 
     private fun signTransaction(
