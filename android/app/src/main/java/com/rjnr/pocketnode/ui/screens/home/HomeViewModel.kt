@@ -67,7 +67,8 @@ class HomeViewModel @Inject constructor(
     private val updateDownloader: UpdateDownloader,
     private val pinManager: PinManager,
     private val authManager: AuthManager,
-    private val cacheManager: CacheManager
+    private val cacheManager: CacheManager,
+    private val walletPreferences: com.rjnr.pocketnode.data.wallet.WalletPreferences
 ) : ViewModel() {
 
     // Skip-overlapping guard for refreshTransactionsOnly. The fn is called from
@@ -512,9 +513,16 @@ class HomeViewModel @Inject constructor(
             // the parent wallet's backup covers them. Don't show backup reminder.
             val activeWallet = _uiState.value.wallets.find { it.isActive }
             val isSubAccount = activeWallet?.parentWalletId != null
+            val activeWalletId = activeWallet?.walletId.orEmpty()
+            // Per-wallet "dismissed" flag (#116 follow-up) — previously the
+            // dismiss flag lived only in in-memory UiState, so the dialog
+            // returned on every VM init (wallet switch, app reopen).
+            val dismissed = activeWalletId.isNotEmpty()
+                && walletPreferences.isBackupReminderDismissed(activeWalletId)
             val needsBackup = type == KeyManager.WALLET_TYPE_MNEMONIC
                 && !isSubAccount
                 && !repository.hasMnemonicBackupForActiveWallet()
+                && !dismissed
             _uiState.update { it.copy(walletType = type, showBackupReminder = needsBackup) }
         }
     }
@@ -537,6 +545,13 @@ class HomeViewModel @Inject constructor(
     }
 
     fun dismissBackupReminder() {
+        // Persist the dismissal per-wallet so the reminder doesn't return on
+        // wallet switch / app reopen. Subsequent wallets that need a backup
+        // still see their own first surface of the reminder (key is per-wallet).
+        val activeWalletId = _uiState.value.wallets.find { it.isActive }?.walletId
+        if (!activeWalletId.isNullOrEmpty()) {
+            walletPreferences.setBackupReminderDismissed(activeWalletId)
+        }
         _uiState.update { it.copy(showBackupReminder = false) }
     }
 

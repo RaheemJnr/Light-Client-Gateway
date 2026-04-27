@@ -44,7 +44,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -95,6 +97,7 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     // Notification permission explanation dialog + system permission launcher
     var showNotificationExplanation by remember { mutableStateOf(false) }
@@ -102,8 +105,21 @@ fun SettingsScreen(
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        // Enable background sync regardless — notification will just be silent if denied
-        viewModel.toggleBackgroundSync(true)
+        // Only enable background sync if the user actually granted notification
+        // permission. The foreground service needs to post a notification to
+        // run — without permission, FGS startForeground silently fails and the
+        // service gets killed, leaving the user with a misleading "ON" toggle.
+        // (#116 — user observed sync freeze on background despite the toggle
+        // showing enabled.)
+        if (granted) {
+            viewModel.toggleBackgroundSync(true)
+        } else {
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    "Background sync needs notification permission to keep running"
+                )
+            }
+        }
     }
 
     if (showNotificationExplanation) {
@@ -129,9 +145,11 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = {
+                    // "Skip" leaves background sync OFF. Previously this enabled
+                    // sync anyway, but on Android 13+ the FGS can't actually run
+                    // without notification permission — so the toggle would show
+                    // ON while sync was silently dead. (#116)
                     showNotificationExplanation = false
-                    // Enable sync anyway — just no visible notification
-                    viewModel.toggleBackgroundSync(true)
                 }) {
                     Text("Skip")
                 }

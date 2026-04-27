@@ -179,12 +179,37 @@ class WalletPreferences @Inject constructor(
     // --- Background sync (global, not per-network) ---
 
     fun isBackgroundSyncEnabled(): Boolean {
-        return prefs.getBoolean(KEY_BACKGROUND_SYNC, true)
+        // Default OFF (#116). Previous default was true, but on Android 13+
+        // the foreground service requires POST_NOTIFICATIONS to actually run;
+        // setting this to true before the user grants notifications produces
+        // a misleading "ON" state where the FGS can't post and gets killed
+        // silently. Now: explicit opt-in only, gated on permission grant in
+        // SettingsScreen.
+        return prefs.getBoolean(KEY_BACKGROUND_SYNC, false)
     }
 
     fun setBackgroundSyncEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_BACKGROUND_SYNC, enabled).commit()
     }
+
+    // --- Backup reminder dismissal (per-wallet, #116 follow-up) ---
+
+    /**
+     * Whether the user has dismissed the "Secure your funds" reminder for the
+     * given wallet. Stored per-wallet so each new mnemonic wallet gets one
+     * surface of the reminder; previously the in-memory dismiss flag reset on
+     * every VM init (wallet switch, app reopen) and the dialog returned.
+     */
+    fun isBackupReminderDismissed(walletId: String): Boolean {
+        return prefs.getBoolean(backupReminderKey(walletId), false)
+    }
+
+    fun setBackupReminderDismissed(walletId: String) {
+        prefs.edit().putBoolean(backupReminderKey(walletId), true).apply()
+    }
+
+    private fun backupReminderKey(walletId: String): String =
+        "${KEY_BACKUP_REMINDER_DISMISSED_PREFIX}$walletId"
 
     // --- Database maintenance ---
 
@@ -274,6 +299,7 @@ class WalletPreferences @Inject constructor(
         private const val KEY_SYNC_STRATEGY = "sync_strategy"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_BACKGROUND_SYNC = "background_sync_enabled"
+        private const val KEY_BACKUP_REMINDER_DISMISSED_PREFIX = "backup_reminder_dismissed_"
         private const val KEY_LAST_VACUUM_AT = "last_vacuum_at"
         private const val KEY_SYNC_PROGRESS_MIGRATED = "sync_progress_migrated_to_room_v7"
     }
