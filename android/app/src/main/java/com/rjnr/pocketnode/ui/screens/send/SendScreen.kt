@@ -120,7 +120,8 @@ fun SendScreen(
         prefillRecipient?.let { viewModel.updateRecipient(it) }
         prefillAmountShannons?.let { shannons ->
             val ckb = shannons / 100_000_000.0
-            val text = "%.8f".format(ckb).trimEnd('0').trimEnd('.')
+            // Locale.US — sanitizeAmount rejects comma decimals.
+            val text = String.format(Locale.US, "%.8f", ckb).trimEnd('0').trimEnd('.')
             viewModel.updateAmount(text.ifEmpty { "0" })
         }
     }

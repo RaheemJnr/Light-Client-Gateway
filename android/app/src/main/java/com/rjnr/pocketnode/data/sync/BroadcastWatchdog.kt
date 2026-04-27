@@ -84,61 +84,73 @@ class BroadcastWatchdog(
         val rows = dao.getActive(walletId, network)
         val now = System.currentTimeMillis()
         for (row in rows) {
-            when (val result = statusGateway.fetch(row.txHash)) {
-                is TxFetchResult.OnChain -> {
-                    val ok = dao.compareAndUpdateState(
+            // Per-row runCatching: cache-update-before-CAS can throw on a DB
+            // hiccup; we want the row to stay non-terminal AND we want sibling
+            // rows in the same pass to still be processed.
+            runCatching { processRow(row, currentTip, now) }
+                .onFailure { Log.w(TAG, "checkAll: row ${row.txHash} failed: ${it.message}") }
+        }
+    }
+
+    private suspend fun processRow(
+        row: com.rjnr.pocketnode.data.database.entity.PendingBroadcastEntity,
+        currentTip: Long,
+        now: Long
+    ) {
+        when (statusGateway.fetch(row.txHash)) {
+            is TxFetchResult.OnChain -> {
+                // Update cache BEFORE the terminal CAS: if the cache write throws,
+                // the pending row stays in non-terminal state and the watchdog
+                // retries on the next tick. Reverse order would drop the row from
+                // getActive() with a stale PENDING transactions row.
+                cache.updateTransactionStatus(row.txHash, "CONFIRMED")
+                val ok = dao.compareAndUpdateState(
+                    hash = row.txHash, expected = row.state,
+                    next = "CONFIRMED", now = now
+                )
+                if (ok == 1) {
+                    dao.delete(row.txHash)
+                }
+            }
+            TxFetchResult.InPool -> {
+                // In-pool past the commit window = network rejection masked by
+                // a stale local-mempool entry. CKB proposal+commit completes in
+                // ~12 blocks; if we're still in-pool at submitted+25 (~6.5 min)
+                // the chain has rejected the tx (e.g. double-spend, dependency
+                // on a tx that itself never landed). Mark FAILED so the user
+                // sees a terminal state and the retry CTA, instead of stuck-pending.
+                if (currentTip >= row.submittedAtTipBlock + BLOCK_TIMEOUT) {
+                    Log.w(TAG, "in-pool past +$BLOCK_TIMEOUT blocks for ${row.txHash} (submitted at ${row.submittedAtTipBlock}, tip $currentTip) — network rejected; marking FAILED")
+                    cache.updateTransactionStatus(row.txHash, "FAILED")
+                    dao.compareAndUpdateState(
                         hash = row.txHash, expected = row.state,
-                        next = "CONFIRMED", now = now
+                        next = "FAILED", now = now
                     )
-                    if (ok == 1) {
-                        cache.updateTransactionStatus(row.txHash, "CONFIRMED")
-                        dao.delete(row.txHash)
+                } else {
+                    // Healthy in-pool — waiting for commit.
+                    if (row.state == "BROADCASTING") {
+                        dao.compareAndUpdateState(row.txHash, "BROADCASTING", "BROADCAST", now)
+                    }
+                    if (row.nullCount != 0) {
+                        dao.updateNullCount(row.txHash, 0, now)
                     }
                 }
-                TxFetchResult.InPool -> {
-                    // In-pool past the commit window = network rejection masked by
-                    // a stale local-mempool entry. CKB proposal+commit completes in
-                    // ~12 blocks; if we're still in-pool at submitted+25 (~6.5 min)
-                    // the chain has rejected the tx (e.g. double-spend, dependency
-                    // on a tx that itself never landed). Mark FAILED so the user
-                    // sees a terminal state and the retry CTA, instead of stuck-pending.
-                    if (currentTip >= row.submittedAtTipBlock + BLOCK_TIMEOUT) {
-                        Log.w(TAG, "in-pool past +$BLOCK_TIMEOUT blocks for ${row.txHash} (submitted at ${row.submittedAtTipBlock}, tip $currentTip) — network rejected; marking FAILED")
-                        val ok = dao.compareAndUpdateState(
-                            hash = row.txHash, expected = row.state,
-                            next = "FAILED", now = now
-                        )
-                        if (ok == 1) {
-                            cache.updateTransactionStatus(row.txHash, "FAILED")
-                        }
-                    } else {
-                        // Healthy in-pool — waiting for commit.
-                        if (row.state == "BROADCASTING") {
-                            dao.compareAndUpdateState(row.txHash, "BROADCASTING", "BROADCAST", now)
-                        }
-                        if (row.nullCount != 0) {
-                            dao.updateNullCount(row.txHash, 0, now)
-                        }
-                    }
+            }
+            TxFetchResult.NotFound -> {
+                val newCount = row.nullCount + 1
+                dao.updateNullCount(row.txHash, newCount, now)
+                if (newCount >= NULL_THRESHOLD &&
+                    currentTip >= row.submittedAtTipBlock + BLOCK_TIMEOUT
+                ) {
+                    cache.updateTransactionStatus(row.txHash, "FAILED")
+                    dao.compareAndUpdateState(
+                        hash = row.txHash, expected = row.state,
+                        next = "FAILED", now = now
+                    )
                 }
-                TxFetchResult.NotFound -> {
-                    val newCount = row.nullCount + 1
-                    dao.updateNullCount(row.txHash, newCount, now)
-                    if (newCount >= NULL_THRESHOLD &&
-                        currentTip >= row.submittedAtTipBlock + BLOCK_TIMEOUT
-                    ) {
-                        val ok = dao.compareAndUpdateState(
-                            hash = row.txHash, expected = row.state,
-                            next = "FAILED", now = now
-                        )
-                        if (ok == 1) {
-                            cache.updateTransactionStatus(row.txHash, "FAILED")
-                        }
-                    }
-                }
-                TxFetchResult.Exception -> {
-                    Log.w(TAG, "fetch exception for ${row.txHash}; no state change")
-                }
+            }
+            TxFetchResult.Exception -> {
+                Log.w(TAG, "fetch exception for ${row.txHash}; no state change")
             }
         }
     }

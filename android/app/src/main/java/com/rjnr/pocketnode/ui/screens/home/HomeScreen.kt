@@ -614,7 +614,7 @@ fun HomeScreenUI(
                     TransactionItems(
                         transaction = tx,
                         onClick = { selectedTransaction(tx) },
-                        onRetry = if (tx.status == "FAILED") {
+                        onRetry = if (tx.status == "FAILED" && tx.isOutgoing()) {
                             { onRetryFailed(tx) }
                         } else null
                     )
@@ -1064,10 +1064,11 @@ private fun TransactionDetailSheet(
                 )
             }
 
-            // Retry CTA — only for FAILED rows that came through the broadcast
-            // state machine (legacy ghosts pass null for onRetry from the
-            // call site, since loadFailedForRetry can't prefill them).
-            if (transaction.status == "FAILED" && onRetry != null) {
+            // Retry CTA — only for FAILED plain transfers. DAO deposit/withdraw/unlock
+            // and self-transfers can't be retried via the simple recipient/amount
+            // prefill path (loadFailedForRetry's smallest-output heuristic produces
+            // bogus data for them).
+            if (transaction.status == "FAILED" && transaction.isOutgoing() && onRetry != null) {
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(
                     onClick = { onRetry(transaction) },

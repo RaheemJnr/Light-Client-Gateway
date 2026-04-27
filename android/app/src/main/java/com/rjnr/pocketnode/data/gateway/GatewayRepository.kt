@@ -468,9 +468,15 @@ class GatewayRepository @Inject constructor(
                             scope.launch {
                                 delay(15_000) // give light client time to be ready
                                 for (hash in orphanHashes) {
-                                    val resp = getTransactionStatus(hash).getOrNull()
+                                    val result = getTransactionStatus(hash)
+                                    // Distinguish transient lookup failure (Result.failure) from
+                                    // a successful "unknown" response. Only the latter means the
+                                    // light client knows it doesn't have the tx; the former is a
+                                    // JNI/RPC hiccup and must NOT permanently mark the row FAILED.
+                                    val resp = result.getOrNull()
                                     val newStatus = when {
-                                        resp == null -> "FAILED"
+                                        result.isFailure -> null      // transient — retry next init
+                                        resp == null -> null           // defensive
                                         resp.status == "unknown" -> "FAILED"
                                         resp.blockHash != null -> "CONFIRMED"
                                         else -> null  // still in pool — leave PENDING

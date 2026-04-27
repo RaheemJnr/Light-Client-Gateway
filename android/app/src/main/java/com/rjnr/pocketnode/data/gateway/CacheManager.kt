@@ -110,13 +110,10 @@ class CacheManager @Inject constructor(
     }
 
     override suspend fun updateTransactionStatus(hash: String, status: String) {
-        try {
-            transactionDao.updateStatusOnly(hash, status)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to update tx status for $hash", e)
-        }
+        // Propagate failures — BroadcastWatchdog runs this BEFORE the terminal
+        // CAS specifically so a DB hiccup leaves the pending row recoverable.
+        // Swallowing here would silently break that contract.
+        transactionDao.updateStatusOnly(hash, status)
     }
 
     /** Legacy PENDING `transactions` rows with no `pending_broadcasts` entry (#115). */

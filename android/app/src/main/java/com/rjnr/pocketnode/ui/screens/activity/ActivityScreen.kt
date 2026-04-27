@@ -241,7 +241,7 @@ fun ActivityScreen(
                             ActivityTransactionItem(
                                 transaction = tx,
                                 onClick = { selectedTransaction = tx },
-                                onRetry = if (tx.status == "FAILED") {
+                                onRetry = if (tx.status == "FAILED" && tx.isOutgoing()) {
                                     { retryDialogTx = tx }
                                 } else null
                             )
@@ -730,9 +730,8 @@ private fun TransactionDetailSheet(
                 )
             }
 
-            // Retry CTA — only for FAILED rows; legacy ghosts (no signedTxJson)
-            // surface a friendly error from loadFailedForRetry instead.
-            if (transaction.status == "FAILED" && onRetry != null) {
+            // Retry CTA — only for FAILED plain transfers (see HomeScreen for why).
+            if (transaction.status == "FAILED" && transaction.isOutgoing() && onRetry != null) {
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(
                     onClick = { onRetry(transaction) },

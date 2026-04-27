@@ -150,8 +150,9 @@ class SendViewModel @Inject constructor(
         val feeShannons = transactionBuilder.estimateTransferFee(inputCount = 1, outputCount = 1)
         val maxShannons = (balanceShannons - feeShannons).coerceAtLeast(0L)
         val maxCkb = maxShannons / 100_000_000.0
-        // Format to 8 decimal places, then strip trailing zeros (and trailing dot)
-        val formatted = "%.8f".format(maxCkb)
+        // Locale.US — sanitizeAmount rejects comma decimals; on de/fr/es devices
+        // `"%.8f".format(...)` would emit "0,12345678" and silently drop the prefill.
+        val formatted = String.format(java.util.Locale.US, "%.8f", maxCkb)
             .trimEnd('0')
             .trimEnd('.')
         updateAmount(formatted.ifEmpty { "0" })
