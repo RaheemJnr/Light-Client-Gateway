@@ -33,6 +33,14 @@ import javax.inject.Inject
 
 private const val TAG = "HomeViewModel"
 
+// Price refresh tunables (#117 deferred items).
+//   PRICE_REFRESH_INTERVAL_MS — how often the periodic ticker fires.
+//   PRICE_STALENESS_THRESHOLD_MS — minimum age before refreshPriceIfStale
+//     actually re-fetches. Lower than the interval so a foreground tap can
+//     bypass the timer and refresh immediately if the cached price is old.
+private const val PRICE_REFRESH_INTERVAL_MS: Long = 5L * 60L * 1000L
+private const val PRICE_STALENESS_THRESHOLD_MS: Long = 60L * 1000L
+
 /**
  * One-shot navigation events from [HomeViewModel]. UI collects via
  * `viewModel.navEvents` and routes the user accordingly. Modeled as a
@@ -78,6 +86,10 @@ class HomeViewModel @Inject constructor(
 
     private var previousBalanceWasZero = true
 
+    // Tracks the last successful CKB/USD fetch so we can throttle
+    // refresh-on-foreground and the 5-min ticker (#117 deferred items).
+    private var lastPriceFetchAt: Long = 0L
+
     private fun formatFiat(ckb: Double, price: Double): String =
         String.format(Locale.US, "≈ $%.2f USD", ckb * price)
 
@@ -88,6 +100,17 @@ class HomeViewModel @Inject constructor(
 
         viewModelScope.launch {
             initializeWallet()
+        }
+
+        // Periodic price refresh — fetches every 5 min while the VM is alive
+        // (i.e. while HomeScreen is in the back stack). Kept simple: a delay
+        // loop, no separate Job lifecycle. Cancelled automatically when
+        // viewModelScope tears down.
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(PRICE_REFRESH_INTERVAL_MS)
+                refreshPriceIfStale()
+            }
         }
 
         viewModelScope.launch {
@@ -186,12 +209,25 @@ class HomeViewModel @Inject constructor(
                 val balanceCkb = _uiState.value.balanceCkb
                 val formatted = formatFiat(balanceCkb, price)
                 _uiState.update { it.copy(fiatBalance = formatted, ckbUsdPrice = price) }
+                lastPriceFetchAt = System.currentTimeMillis()
                 Log.d(TAG, "CKB price: $$price, fiat balance: $formatted")
             }
             .onFailure { error ->
                 Log.w(TAG, "Price fetch failed (non-critical): ${error.message}")
                 // Leave fiatBalance as-is; UI shows "≈ — USD" when null
             }
+    }
+
+    /**
+     * Refresh the CKB/USD price if the last successful fetch is older than
+     * the staleness threshold. Called from the periodic ticker and from
+     * HomeScreen on ON_RESUME (#117 deferred items). Throttled to avoid
+     * hammering CoinGecko/Binance on rapid foreground/background cycles.
+     */
+    fun refreshPriceIfStale() {
+        val now = System.currentTimeMillis()
+        if (now - lastPriceFetchAt < PRICE_STALENESS_THRESHOLD_MS) return
+        viewModelScope.launch { fetchPrice() }
     }
 
     private suspend fun registerAndRefresh() {
