@@ -111,6 +111,7 @@ private fun CameraPreviewWithScanner(
     var camera by remember { mutableStateOf<androidx.camera.core.Camera?>(null) }
 
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    val mainExecutor = remember(context) { ContextCompat.getMainExecutor(context) }
     val qrReader = remember {
         MultiFormatReader().apply {
             setHints(mapOf(DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE)))
@@ -165,7 +166,13 @@ private fun CameraPreviewWithScanner(
                                     if (address != null && !hasScanned) {
                                         hasScanned = true
                                         Log.d(TAG, "Scanned CKB address: $address")
-                                        onScanResult(address)
+                                        // Dispatch the result callback to Main —
+                                        // the caller invokes navController.popBackStack()
+                                        // which mutates LifecycleRegistry state, and
+                                        // setCurrentState must be called on the main
+                                        // thread (#120 actual crash on Xiaomi 15 Pro:
+                                        // IllegalStateException from pool-7-thread-1).
+                                        mainExecutor.execute { onScanResult(address) }
                                     }
                                 }
                             }
