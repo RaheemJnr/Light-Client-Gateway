@@ -130,11 +130,15 @@ fun HomeScreen(
         }
     }
 
-    // Refresh security state (PIN, backup) when returning from setup screens
+    // Refresh security state (PIN, backup) when returning from setup screens.
+    // Also refresh CKB/USD price on foreground if it's stale (#117 deferred —
+    // periodic ticker keeps it fresh while the app stays open; this covers
+    // long backgrounds where the ticker was paused / process slept).
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshSecurityState()
+                viewModel.refreshPriceIfStale()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
