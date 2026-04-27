@@ -96,7 +96,10 @@ data class TransactionRecord(
     // Raw hex timestamp from CKB block header (e.g. "0x18c8d0a7a00"), null if not yet fetched
     @SerialName("block_timestamp_hex") val blockTimestampHex: String? = null,
     // True if the transaction interacts with a DAO type script cell
-    @SerialName("is_dao_related") val isDaoRelated: Boolean = false
+    @SerialName("is_dao_related") val isDaoRelated: Boolean = false,
+    // "PENDING", "CONFIRMED", "FAILED" — defaults to CONFIRMED so historical
+    // rows that never had an explicit status (pre-#115) render as confirmed.
+    @SerialName("status") val status: String = "CONFIRMED"
 ) {
     /**
      * Get balance change as CKB amount (from shannons)

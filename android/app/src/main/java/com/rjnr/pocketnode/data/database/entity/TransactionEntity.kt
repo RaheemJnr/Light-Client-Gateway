@@ -41,7 +41,8 @@ data class TransactionEntity(
         fee = fee,
         confirmations = confirmations,
         blockTimestampHex = blockTimestampHex,
-        isDaoRelated = direction.startsWith("dao_")
+        isDaoRelated = direction.startsWith("dao_"),
+        status = status
     )
 
     companion object {

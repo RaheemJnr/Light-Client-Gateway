@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -36,6 +37,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -65,6 +67,7 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import com.composables.icons.lucide.*
 import com.rjnr.pocketnode.data.gateway.models.NetworkType
 import com.rjnr.pocketnode.data.gateway.models.TransactionRecord
+import com.rjnr.pocketnode.ui.screens.home.HomeNavEvent
 import com.rjnr.pocketnode.ui.theme.ErrorRed
 import com.rjnr.pocketnode.ui.theme.PendingAmber
 import com.rjnr.pocketnode.ui.theme.SuccessGreen
@@ -78,13 +81,45 @@ private val AmberPending = PendingAmber
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ActivityScreen(
+    onNavigateToSend: (recipient: String?, amountShannons: Long?) -> Unit = { _, _ -> },
     viewModel: ActivityViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTransaction by remember { mutableStateOf<TransactionRecord?>(null) }
+    var retryDialogTx by remember { mutableStateOf<TransactionRecord?>(null) }
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
     var pendingCsvContent by remember { mutableStateOf<String?>(null) }
+
+    // Collect one-shot nav events from the ViewModel (e.g. retry-failed-tx).
+    LaunchedEffect(Unit) {
+        viewModel.navEvents.collect { event ->
+            when (event) {
+                is HomeNavEvent.NavigateToSendWithPrefill -> {
+                    onNavigateToSend(event.recipientAddress, event.amountShannons)
+                }
+            }
+        }
+    }
+
+    // Retry-failed-tx confirmation. Copy mirrors HomeScreen exactly: FAILED is
+    // a heuristic, not proof the network rejected the tx.
+    retryDialogTx?.let { tx ->
+        AlertDialog(
+            onDismissRequest = { retryDialogTx = null },
+            title = { Text("Retry transaction?") },
+            text = { Text("This transaction may not have reached the network. Retry?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    retryDialogTx = null
+                    viewModel.retryFailedTransaction(tx.txHash)
+                }) { Text("Retry") }
+            },
+            dismissButton = {
+                TextButton(onClick = { retryDialogTx = null }) { Text("Cancel") }
+            }
+        )
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/csv")
@@ -205,7 +240,10 @@ fun ActivityScreen(
 
                             ActivityTransactionItem(
                                 transaction = tx,
-                                onClick = { selectedTransaction = tx }
+                                onClick = { selectedTransaction = tx },
+                                onRetry = if (tx.status == "FAILED" && tx.isOutgoing()) {
+                                    { retryDialogTx = tx }
+                                } else null
                             )
                         }
 
@@ -234,6 +272,10 @@ fun ActivityScreen(
                     onDismiss = { selectedTransaction = null },
                     onCopyTxHash = { hash ->
                         clipboardManager.setText(AnnotatedString(hash))
+                    },
+                    onRetry = { failed ->
+                        selectedTransaction = null
+                        retryDialogTx = failed
                     },
                     onOpenExplorer = { url ->
                         try {
@@ -328,9 +370,11 @@ private fun DateGroupHeader(label: String) {
 @Composable
 private fun ActivityTransactionItem(
     transaction: TransactionRecord,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onRetry: (() -> Unit)? = null
 ) {
-    val isPending = transaction.isPending()
+    val isFailed = transaction.status == "FAILED"
+    val isPending = !isFailed && transaction.isPending()
 
     val primaryColor = MaterialTheme.colorScheme.primary
     val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -386,7 +430,25 @@ private fun ActivityTransactionItem(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium
                 )
-                if (isPending) {
+                if (isFailed) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        color = ErrorRed.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = if (onRetry != null) {
+                            Modifier.clickable { onRetry() }
+                        } else {
+                            Modifier
+                        }
+                    ) {
+                        Text(
+                            text = "Failed",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = ErrorRed,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                } else if (isPending) {
                     Spacer(modifier = Modifier.width(6.dp))
                     Surface(
                         color = AmberPending.copy(alpha = 0.15f),
@@ -507,7 +569,8 @@ private fun TransactionDetailSheet(
     network: NetworkType,
     onDismiss: () -> Unit,
     onCopyTxHash: (String) -> Unit,
-    onOpenExplorer: (String) -> Unit
+    onOpenExplorer: (String) -> Unit,
+    onRetry: ((TransactionRecord) -> Unit)? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val amountColor = when {
@@ -544,7 +607,7 @@ private fun TransactionDetailSheet(
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
-                StatusBadge(confirmed = transaction.isConfirmed())
+                StatusBadge(transaction = transaction)
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -666,22 +729,40 @@ private fun TransactionDetailSheet(
                     value = "$feeFormatted CKB"
                 )
             }
+
+            // Retry CTA — only for FAILED plain transfers (see HomeScreen for why).
+            if (transaction.status == "FAILED" && transaction.isOutgoing() && onRetry != null) {
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    onClick = { onRetry(transaction) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("Retry Transaction")
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun StatusBadge(confirmed: Boolean) {
+private fun StatusBadge(transaction: TransactionRecord) {
     val primaryColor = MaterialTheme.colorScheme.primary
-
-    Surface(
-        color = if (confirmed) primaryColor.copy(alpha = 0.15f) else AmberPending.copy(alpha = 0.15f),
-        shape = RoundedCornerShape(8.dp)
-    ) {
+    val errorColor = MaterialTheme.colorScheme.error
+    val isFailed = transaction.status == "FAILED"
+    val (label, fg, bg) = when {
+        isFailed -> Triple("Failed", errorColor, errorColor.copy(alpha = 0.15f))
+        transaction.isConfirmed() -> Triple("Confirmed", primaryColor, primaryColor.copy(alpha = 0.15f))
+        else -> Triple("Pending", AmberPending, AmberPending.copy(alpha = 0.15f))
+    }
+    Surface(color = bg, shape = RoundedCornerShape(8.dp)) {
         Text(
-            text = if (confirmed) "Confirmed" else "Pending",
+            text = label,
             style = MaterialTheme.typography.labelMedium,
-            color = if (confirmed) primaryColor else AmberPending,
+            color = fg,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
         )
     }

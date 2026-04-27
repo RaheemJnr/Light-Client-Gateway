@@ -22,6 +22,7 @@ import com.rjnr.pocketnode.data.wallet.WalletInfo
 import com.rjnr.pocketnode.data.wallet.WalletRepository
 import com.rjnr.pocketnode.ui.components.WalletGroup
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -31,6 +32,23 @@ import java.util.Locale
 import javax.inject.Inject
 
 private const val TAG = "HomeViewModel"
+
+/**
+ * One-shot navigation events from [HomeViewModel]. UI collects via
+ * `viewModel.navEvents` and routes the user accordingly. Modeled as a
+ * [Channel]-backed flow so each event is delivered exactly once and
+ * re-collection (e.g. after config change) doesn't replay stale events.
+ */
+sealed class HomeNavEvent {
+    /**
+     * Navigate to SendScreen with prefilled recipient + amount, used by the
+     * Failed-tx retry CTA in the activity list.
+     */
+    data class NavigateToSendWithPrefill(
+        val recipientAddress: String,
+        val amountShannons: Long
+    ) : HomeNavEvent()
+}
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
@@ -52,6 +70,11 @@ class HomeViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    // One-shot nav events (e.g. retry-failed-tx → SendScreen with prefill).
+    // BUFFERED so an event isn't dropped if the UI is mid-recomposition.
+    private val _navEvents = Channel<HomeNavEvent>(Channel.BUFFERED)
+    val navEvents = _navEvents.receiveAsFlow()
 
     private var previousBalanceWasZero = true
 
@@ -335,6 +358,35 @@ class HomeViewModel @Inject constructor(
 
     fun clearError() {
         _uiState.update { it.copy(error = null) }
+    }
+
+    /**
+     * Handles a tap on the Failed chip in the activity list. Loads the failed
+     * `pending_broadcasts` row, deletes the failed-state rows so the retry
+     * doesn't see itself as a reservation, and emits a nav event with the
+     * decoded recipient + amount for SendScreen prefill.
+     */
+    fun retryFailedTransaction(txHash: String) {
+        viewModelScope.launch {
+            repository.loadFailedForRetry(txHash)
+                .onSuccess { prefill ->
+                    _navEvents.send(
+                        HomeNavEvent.NavigateToSendWithPrefill(
+                            recipientAddress = prefill.recipientAddress,
+                            amountShannons = prefill.amountShannons
+                        )
+                    )
+                    // Drop the row from the in-memory list so the chip disappears
+                    // immediately (the next refresh will confirm the row is gone).
+                    _uiState.update { state ->
+                        state.copy(transactions = state.transactions.filter { it.txHash != txHash })
+                    }
+                }
+                .onFailure { e ->
+                    Log.e(TAG, "retryFailedTransaction failed for $txHash", e)
+                    _uiState.update { it.copy(error = "Couldn't retry: ${e.message}") }
+                }
+        }
     }
 
     /**

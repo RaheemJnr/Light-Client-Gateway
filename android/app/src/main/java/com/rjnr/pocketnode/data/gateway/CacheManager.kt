@@ -11,11 +11,19 @@ import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Narrow surface used by BroadcastWatchdog. Lets tests fake without
+ * mocking the full CacheManager.
+ */
+interface TransactionStatusUpdater {
+    suspend fun updateTransactionStatus(hash: String, status: String)
+}
+
 @Singleton
 class CacheManager @Inject constructor(
     private val transactionDao: TransactionDao,
     private val balanceCacheDao: BalanceCacheDao
-) {
+) : TransactionStatusUpdater {
     // --- Balance cache ---
 
     suspend fun getCachedBalance(network: String, walletId: String = ""): BalanceResponse? {
@@ -66,7 +74,14 @@ class CacheManager @Inject constructor(
         }
     }
 
-    suspend fun insertPendingTransaction(txHash: String, network: String, walletId: String = "") {
+    suspend fun insertPendingTransaction(
+        txHash: String,
+        network: String,
+        walletId: String = "",
+        balanceChange: String = "0x0",
+        direction: String = "out",
+        fee: String = "0x0"
+    ) {
         try {
             transactionDao.insert(
                 TransactionEntity(
@@ -74,9 +89,9 @@ class CacheManager @Inject constructor(
                     blockNumber = "",
                     blockHash = "",
                     timestamp = System.currentTimeMillis(),
-                    balanceChange = "0x0",
-                    direction = "out",
-                    fee = "0x186a0",
+                    balanceChange = balanceChange,
+                    direction = direction,
+                    fee = fee,
                     confirmations = 0,
                     blockTimestampHex = null,
                     network = network,
@@ -94,9 +109,36 @@ class CacheManager @Inject constructor(
         }
     }
 
+    override suspend fun updateTransactionStatus(hash: String, status: String) {
+        // Propagate failures — BroadcastWatchdog runs this BEFORE the terminal
+        // CAS specifically so a DB hiccup leaves the pending row recoverable.
+        // Swallowing here would silently break that contract.
+        transactionDao.updateStatusOnly(hash, status)
+    }
+
+    /** Legacy PENDING `transactions` rows with no `pending_broadcasts` entry (#115). */
+    suspend fun getOrphanPendingHashes(walletId: String, network: String): List<String> =
+        transactionDao.getOrphanPendingHashes(walletId, network)
+
+    suspend fun deleteTransaction(txHash: String) {
+        try {
+            transactionDao.deleteByHash(txHash)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to delete transaction $txHash", e)
+        }
+    }
+
+    /**
+     * Returns local PENDING + FAILED rows not present in [excludeHashes]. Used
+     * by `GatewayRepository.getTransactions` to merge non-confirmed activity
+     * into the JNI-derived (confirmed-only) feed. FAILED rows are written by
+     * `BroadcastWatchdog` after the timeout ladder fires.
+     */
     suspend fun getPendingNotIn(network: String, excludeHashes: Set<String>, walletId: String = ""): List<TransactionRecord> {
         return try {
-            transactionDao.getPendingByWallet(walletId, network)
+            transactionDao.getNonConfirmedByWallet(walletId, network)
                 .filter { it.isLocal && it.txHash !in excludeHashes }
                 .map { it.toTransactionRecord() }
         } catch (e: CancellationException) {

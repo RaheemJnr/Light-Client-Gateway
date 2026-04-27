@@ -216,3 +216,35 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
         )
     }
 }
+
+/**
+ * v7 -> v8: Add pending_broadcasts table for the broadcast state machine (#115).
+ *
+ * Broadcast-state side of the send-reliability fix; the `transactions`
+ * table continues to be the user-facing ledger.
+ */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `pending_broadcasts` (
+                `txHash` TEXT NOT NULL,
+                `walletId` TEXT NOT NULL,
+                `network` TEXT NOT NULL,
+                `signedTxJson` TEXT NOT NULL,
+                `reservedInputs` TEXT NOT NULL,
+                `state` TEXT NOT NULL,
+                `submittedAtTipBlock` INTEGER NOT NULL,
+                `nullCount` INTEGER NOT NULL,
+                `createdAt` INTEGER NOT NULL,
+                `lastCheckedAt` INTEGER NOT NULL,
+                PRIMARY KEY(`txHash`)
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `idx_pb_wallet_net_state` " +
+                "ON `pending_broadcasts` (`walletId`, `network`, `state`)"
+        )
+    }
+}

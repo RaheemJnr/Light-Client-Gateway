@@ -100,7 +100,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onNavigateToSend: () -> Unit = {},
+    onNavigateToSend: (recipient: String?, amountShannons: Long?) -> Unit = { _, _ -> },
     onNavigateToReceive: () -> Unit = {},
     onNavigateToBackup: () -> Unit = {},
     onNavigateToDao: () -> Unit = {},
@@ -114,9 +114,21 @@ fun HomeScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedTransaction by remember { mutableStateOf<TransactionRecord?>(null) }
+    var retryDialogTx by remember { mutableStateOf<TransactionRecord?>(null) }
     var showAccountSelector by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    // Collect one-shot nav events from the ViewModel (e.g. retry-failed-tx).
+    LaunchedEffect(Unit) {
+        viewModel.navEvents.collect { event ->
+            when (event) {
+                is HomeNavEvent.NavigateToSendWithPrefill -> {
+                    onNavigateToSend(event.recipientAddress, event.amountShannons)
+                }
+            }
+        }
+    }
 
     // Refresh security state (PIN, backup) when returning from setup screens
     DisposableEffect(lifecycleOwner) {
@@ -254,6 +266,26 @@ fun HomeScreen(
         }
     }
 
+    // Retry-failed-tx confirmation. Copy intentionally hedges: FAILED is a
+    // heuristic (null × 3 + tip past +25), not proof the network rejected
+    // the tx. See spec §6 cases a–d.
+    retryDialogTx?.let { tx ->
+        AlertDialog(
+            onDismissRequest = { retryDialogTx = null },
+            title = { Text("Retry transaction?") },
+            text = { Text("This transaction may not have reached the network. Retry?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    retryDialogTx = null
+                    viewModel.retryFailedTransaction(tx.txHash)
+                }) { Text("Retry") }
+            },
+            dismissButton = {
+                TextButton(onClick = { retryDialogTx = null }) { Text("Cancel") }
+            }
+        )
+    }
+
     // Transaction detail bottom sheet
     if (selectedTransaction != null) {
         TransactionDetailSheet(
@@ -275,6 +307,10 @@ fun HomeScreen(
                 } catch (_: android.content.ActivityNotFoundException) {
                     // No browser available
                 }
+            },
+            onRetry = { tx ->
+                selectedTransaction = null
+                retryDialogTx = tx
             }
         )
     }
@@ -398,7 +434,8 @@ fun HomeScreen(
                     clipboardManager = clipboardManager,
                     snackbarHostState = snackbarHostState,
                     scope = scope,
-                    selectedTransaction = { selectedTransaction = it }
+                    selectedTransaction = { selectedTransaction = it },
+                    onRetryFailed = { retryDialogTx = it }
                 )
                 if (uiState.isSwitchingWallet) {
                     LinearProgressIndicator(
@@ -419,7 +456,7 @@ fun HomeScreenUI(
     refresh: () -> Unit,
     padding: PaddingValues,
     onNavigateToBackup: () -> Unit,
-    onNavigateToSend: () -> Unit,
+    onNavigateToSend: (recipient: String?, amountShannons: Long?) -> Unit,
     onNavigateToReceive: () -> Unit,
     onNavigateToDao: () -> Unit = {},
     onNavigateToActivity: () -> Unit = {},
@@ -430,6 +467,7 @@ fun HomeScreenUI(
     snackbarHostState: SnackbarHostState,
     scope: CoroutineScope,
     selectedTransaction: (tx: TransactionRecord) -> Unit,
+    onRetryFailed: (tx: TransactionRecord) -> Unit = {},
 ) {
     PullToRefreshBox(
         isRefreshing = uiState.isRefreshing,
@@ -524,7 +562,7 @@ fun HomeScreenUI(
             // Quick Actions Row
             item {
                 ActionRow(
-                    onSend = onNavigateToSend,
+                    onSend = { onNavigateToSend(null, null) },
                     onReceive = onNavigateToReceive,
                     onStake = onNavigateToDao
                 )
@@ -575,7 +613,10 @@ fun HomeScreenUI(
                 ) { tx ->
                     TransactionItems(
                         transaction = tx,
-                        onClick = { selectedTransaction(tx) }
+                        onClick = { selectedTransaction(tx) },
+                        onRetry = if (tx.status == "FAILED" && tx.isOutgoing()) {
+                            { onRetryFailed(tx) }
+                        } else null
                     )
                 }
             }
@@ -844,7 +885,8 @@ private fun TransactionDetailSheet(
     network: NetworkType,
     onDismiss: () -> Unit,
     onCopyTxHash: (String) -> Unit,
-    onOpenExplorer: (String) -> Unit
+    onOpenExplorer: (String) -> Unit,
+    onRetry: ((TransactionRecord) -> Unit)? = null
 ) {
     val isIncoming = transaction.isIncoming()
     val isOutgoing = transaction.isOutgoing()
@@ -874,23 +916,30 @@ private fun TransactionDetailSheet(
                     fontWeight = FontWeight.Bold
                 )
 
-                // Status badge
-                Surface(
-                    color = if (transaction.isConfirmed()) {
+                // Status badge — Confirmed / Pending / Failed (#115)
+                val isFailed = transaction.status == "FAILED"
+                val (badgeLabel, badgeFg, badgeBg) = when {
+                    isFailed -> Triple(
+                        "Failed",
+                        MaterialTheme.colorScheme.error,
+                        MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+                    )
+                    transaction.isConfirmed() -> Triple(
+                        "Confirmed",
+                        SuccessGreen,
                         SuccessGreen.copy(alpha = 0.15f)
-                    } else {
+                    )
+                    else -> Triple(
+                        "Pending",
+                        MaterialTheme.colorScheme.tertiary,
                         MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f)
-                    },
-                    shape = RoundedCornerShape(8.dp)
-                ) {
+                    )
+                }
+                Surface(color = badgeBg, shape = RoundedCornerShape(8.dp)) {
                     Text(
-                        text = if (transaction.isConfirmed()) "Confirmed" else "Pending",
+                        text = badgeLabel,
                         style = MaterialTheme.typography.labelMedium,
-                        color = if (transaction.isConfirmed()) {
-                            SuccessGreen
-                        } else {
-                            MaterialTheme.colorScheme.tertiary
-                        },
+                        color = badgeFg,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                     )
                 }
@@ -1013,6 +1062,24 @@ private fun TransactionDetailSheet(
                     value = displayBlockHash,
                     isMonospace = true
                 )
+            }
+
+            // Retry CTA — only for FAILED plain transfers. DAO deposit/withdraw/unlock
+            // and self-transfers can't be retried via the simple recipient/amount
+            // prefill path (loadFailedForRetry's smallest-output heuristic produces
+            // bogus data for them).
+            if (transaction.status == "FAILED" && transaction.isOutgoing() && onRetry != null) {
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    onClick = { onRetry(transaction) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("Retry Transaction")
+                }
             }
         }
     }
@@ -1142,7 +1209,7 @@ private fun HomeScreenUIPreview() {
             refresh = {},
             padding = PaddingValues(0.dp),
             onNavigateToBackup = {},
-            onNavigateToSend = {},
+            onNavigateToSend = { _, _ -> },
             onNavigateToReceive = {},
             dismissBackupReminder = {},
             onToggleBalanceVisibility = {},

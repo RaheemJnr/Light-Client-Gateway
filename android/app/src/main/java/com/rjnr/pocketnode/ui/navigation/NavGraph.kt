@@ -190,26 +190,32 @@ fun CkbNavGraph(
                         PinMode.VERIFY -> {
                             val previousRoute = navController.previousBackStackEntry
                                 ?.destination?.route
-                            when (previousRoute) {
-                                Screen.SecuritySettings.route -> {
+                            // The Send route is registered with optional query args
+                            // (e.g. "send?recipient=…&amountShannons=…"), so match on
+                            // the base segment rather than full equality.
+                            val isSendRoute = previousRoute != null &&
+                                (previousRoute == Screen.Send.route ||
+                                    previousRoute.startsWith("${Screen.Send.route}?"))
+                            when {
+                                previousRoute == Screen.SecuritySettings.route -> {
                                     navController.previousBackStackEntry
                                         ?.savedStateHandle
                                         ?.set("pin_verified", true)
                                     navController.popBackStack()
                                 }
-                                Screen.Send.route -> {
+                                isSendRoute -> {
                                     navController.previousBackStackEntry
                                         ?.savedStateHandle
                                         ?.set("send_pin_verified", true)
                                     navController.popBackStack()
                                 }
-                                Screen.Main.route -> {
+                                previousRoute == Screen.Main.route -> {
                                     navController.previousBackStackEntry
                                         ?.savedStateHandle
                                         ?.set("dao_pin_verified", true)
                                     navController.popBackStack()
                                 }
-                                Screen.WalletDetail.route -> {
+                                previousRoute == Screen.WalletDetail.route -> {
                                     navController.previousBackStackEntry
                                         ?.savedStateHandle
                                         ?.set("pin_verified", true)
@@ -278,7 +284,23 @@ fun CkbNavGraph(
             }
 
             MainScreen(
-                onNavigateToSend = { navController.navigate(Screen.Send.route) },
+                onNavigateToSend = { recipient, amountShannons ->
+                    val route = if (recipient != null || amountShannons != null) {
+                        val r = recipient?.let { android.net.Uri.encode(it) }
+                        buildString {
+                            append(Screen.Send.route)
+                            append("?")
+                            if (r != null) append("recipient=$r")
+                            if (amountShannons != null) {
+                                if (r != null) append("&")
+                                append("amountShannons=$amountShannons")
+                            }
+                        }
+                    } else {
+                        Screen.Send.route
+                    }
+                    navController.navigate(route)
+                },
                 onNavigateToReceive = { navController.navigate(Screen.Receive.route) },
                 onNavigateToNodeStatus = { navController.navigate(Screen.NodeStatus.route) },
                 onNavigateToBackup = { navController.navigate(Screen.MnemonicBackup.createRoute()) },
@@ -297,7 +319,25 @@ fun CkbNavGraph(
             )
         }
 
-        composable(Screen.Send.route) { backStackEntry ->
+        composable(
+            // Optional query args for retry-failed-tx prefill (#115). Both
+            // nullable; arg-less navigation to "send" still matches because
+            // both default to null.
+            route = "${Screen.Send.route}?recipient={recipient}&amountShannons={amountShannons}",
+            arguments = listOf(
+                navArgument("recipient") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("amountShannons") {
+                    // StringType so we can carry null; parse to Long below.
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) { backStackEntry ->
             val sendPinVerified = backStackEntry.savedStateHandle
                 .get<Boolean>("send_pin_verified") == true
             if (sendPinVerified) {
@@ -305,6 +345,10 @@ fun CkbNavGraph(
                     backStackEntry.savedStateHandle.remove<Boolean>("send_pin_verified")
                 }
             }
+
+            val prefillRecipient = backStackEntry.arguments?.getString("recipient")
+            val prefillAmountShannons = backStackEntry.arguments
+                ?.getString("amountShannons")?.toLongOrNull()
 
             SendScreen(
                 onNavigateBack = { navController.popBackStack() },
@@ -315,6 +359,8 @@ fun CkbNavGraph(
                 scannedAddress = backStackEntry.savedStateHandle
                     .get<String>("scanned_address"),
                 sendAuthVerified = sendPinVerified,
+                prefillRecipient = prefillRecipient,
+                prefillAmountShannons = prefillAmountShannons,
             )
         }
 

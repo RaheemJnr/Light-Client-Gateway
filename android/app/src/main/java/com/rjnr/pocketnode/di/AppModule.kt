@@ -14,17 +14,27 @@ import com.rjnr.pocketnode.data.database.MIGRATION_3_4
 import com.rjnr.pocketnode.data.database.MIGRATION_4_5
 import com.rjnr.pocketnode.data.database.MIGRATION_5_6
 import com.rjnr.pocketnode.data.database.MIGRATION_6_7
+import com.rjnr.pocketnode.data.database.MIGRATION_7_8
 import com.rjnr.pocketnode.data.database.dao.BalanceCacheDao
 import com.rjnr.pocketnode.data.database.dao.DaoCellDao
 import com.rjnr.pocketnode.data.database.dao.HeaderCacheDao
 import com.rjnr.pocketnode.data.database.dao.KeyMaterialDao
+import com.rjnr.pocketnode.data.database.dao.PendingBroadcastDao
 import com.rjnr.pocketnode.data.database.dao.SyncProgressDao
 import com.rjnr.pocketnode.data.database.dao.TransactionDao
 import com.rjnr.pocketnode.data.database.dao.WalletDao
 import com.rjnr.pocketnode.data.migration.WalletMigrationHelper
+import com.rjnr.pocketnode.data.gateway.BroadcastClient
 import com.rjnr.pocketnode.data.gateway.CacheManager
 import com.rjnr.pocketnode.data.gateway.DaoSyncManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
+import com.rjnr.pocketnode.data.gateway.LightClientBroadcastClient
+import com.rjnr.pocketnode.data.gateway.TipSource
+import com.rjnr.pocketnode.data.gateway.TransactionStatusUpdater
+import com.rjnr.pocketnode.data.sync.LifecycleProvider
+import com.rjnr.pocketnode.data.sync.ProcessLifecycleProvider
+import com.rjnr.pocketnode.data.sync.RepositoryTransactionStatusGateway
+import com.rjnr.pocketnode.data.sync.TransactionStatusGateway
 import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.MnemonicManager
@@ -115,7 +125,7 @@ object AppModule {
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "pocket_node.db")
             .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
             .build()
 
     @Provides
@@ -138,6 +148,10 @@ object AppModule {
 
     @Provides
     fun provideSyncProgressDao(db: AppDatabase): SyncProgressDao = db.syncProgressDao()
+
+    @Provides
+    @Singleton
+    fun providePendingBroadcastDao(db: AppDatabase): PendingBroadcastDao = db.pendingBroadcastDao()
 
     @Provides
     @Singleton
@@ -173,6 +187,26 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideBroadcastClient(impl: LightClientBroadcastClient): BroadcastClient = impl
+
+    @Provides
+    @Singleton
+    fun provideTipSource(impl: GatewayRepository): TipSource = impl
+
+    @Provides
+    @Singleton
+    fun provideTransactionStatusUpdater(impl: CacheManager): TransactionStatusUpdater = impl
+
+    @Provides
+    @Singleton
+    fun provideTransactionStatusGateway(impl: RepositoryTransactionStatusGateway): TransactionStatusGateway = impl
+
+    @Provides
+    @Singleton
+    fun provideLifecycleProvider(impl: ProcessLifecycleProvider): LifecycleProvider = impl
+
+    @Provides
+    @Singleton
     fun provideGatewayRepository(
         @ApplicationContext context: Context,
         keyManager: KeyManager,
@@ -185,6 +219,8 @@ object AppModule {
         walletDao: WalletDao,
         appDatabase: AppDatabase,
         headerCacheDao: HeaderCacheDao,
-        syncProgressDao: SyncProgressDao
-    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, transactionBuilder, cacheManager, daoSyncManager, walletMigrationHelper, walletDao, appDatabase, headerCacheDao, syncProgressDao)
+        syncProgressDao: SyncProgressDao,
+        pendingBroadcastDao: PendingBroadcastDao,
+        broadcastClient: BroadcastClient
+    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, transactionBuilder, cacheManager, daoSyncManager, walletMigrationHelper, walletDao, appDatabase, headerCacheDao, syncProgressDao, pendingBroadcastDao, broadcastClient)
 }
