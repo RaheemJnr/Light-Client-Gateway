@@ -112,7 +112,9 @@ fun MainScreen(
                 )
             }
             composable(BottomTab.Activity.route) {
-                ActivityScreen()
+                ActivityScreen(
+                    onNavigateToSend = onNavigateToSend
+                )
             }
             composable(BottomTab.DAO.route) {
                 DaoScreen(
