@@ -192,25 +192,6 @@ class WalletPreferences @Inject constructor(
         prefs.edit().putBoolean(KEY_BACKGROUND_SYNC, enabled).commit()
     }
 
-    // --- Backup reminder dismissal (per-wallet, #116 follow-up) ---
-
-    /**
-     * Whether the user has dismissed the "Secure your funds" reminder for the
-     * given wallet. Stored per-wallet so each new mnemonic wallet gets one
-     * surface of the reminder; previously the in-memory dismiss flag reset on
-     * every VM init (wallet switch, app reopen) and the dialog returned.
-     */
-    fun isBackupReminderDismissed(walletId: String): Boolean {
-        return prefs.getBoolean(backupReminderKey(walletId), false)
-    }
-
-    fun setBackupReminderDismissed(walletId: String) {
-        prefs.edit().putBoolean(backupReminderKey(walletId), true).apply()
-    }
-
-    private fun backupReminderKey(walletId: String): String =
-        "${KEY_BACKUP_REMINDER_DISMISSED_PREFIX}$walletId"
-
     // --- Post-deposit "Protect your funds" dialog (per-wallet, #116 follow-up) ---
     //
     // The dialog is intended to fire once when a wallet first receives funds
@@ -324,7 +305,6 @@ class WalletPreferences @Inject constructor(
         private const val KEY_SYNC_STRATEGY = "sync_strategy"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_BACKGROUND_SYNC = "background_sync_enabled"
-        private const val KEY_BACKUP_REMINDER_DISMISSED_PREFIX = "backup_reminder_dismissed_"
         private const val KEY_POST_DEPOSIT_REMINDER_SHOWN_PREFIX = "post_deposit_reminder_shown_"
         private const val KEY_LAST_VACUUM_AT = "last_vacuum_at"
         private const val KEY_SYNC_PROGRESS_MIGRATED = "sync_progress_migrated_to_room_v7"
