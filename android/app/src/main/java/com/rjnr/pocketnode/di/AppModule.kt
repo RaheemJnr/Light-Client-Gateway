@@ -203,7 +203,7 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideLifecycleProvider(): LifecycleProvider = ProcessLifecycleProvider()
+    fun provideLifecycleProvider(impl: ProcessLifecycleProvider): LifecycleProvider = impl
 
     @Provides
     @Singleton
