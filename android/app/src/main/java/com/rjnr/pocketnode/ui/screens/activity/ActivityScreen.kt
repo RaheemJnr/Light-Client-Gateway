@@ -602,7 +602,7 @@ private fun TransactionDetailSheet(
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
-                StatusBadge(confirmed = transaction.isConfirmed())
+                StatusBadge(transaction = transaction)
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -729,17 +729,20 @@ private fun TransactionDetailSheet(
 }
 
 @Composable
-private fun StatusBadge(confirmed: Boolean) {
+private fun StatusBadge(transaction: TransactionRecord) {
     val primaryColor = MaterialTheme.colorScheme.primary
-
-    Surface(
-        color = if (confirmed) primaryColor.copy(alpha = 0.15f) else AmberPending.copy(alpha = 0.15f),
-        shape = RoundedCornerShape(8.dp)
-    ) {
+    val errorColor = MaterialTheme.colorScheme.error
+    val isFailed = transaction.status == "FAILED"
+    val (label, fg, bg) = when {
+        isFailed -> Triple("Failed", errorColor, errorColor.copy(alpha = 0.15f))
+        transaction.isConfirmed() -> Triple("Confirmed", primaryColor, primaryColor.copy(alpha = 0.15f))
+        else -> Triple("Pending", AmberPending, AmberPending.copy(alpha = 0.15f))
+    }
+    Surface(color = bg, shape = RoundedCornerShape(8.dp)) {
         Text(
-            text = if (confirmed) "Confirmed" else "Pending",
+            text = label,
             style = MaterialTheme.typography.labelMedium,
-            color = if (confirmed) primaryColor else AmberPending,
+            color = fg,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
         )
     }
