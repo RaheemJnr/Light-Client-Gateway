@@ -111,6 +111,7 @@ private fun CameraPreviewWithScanner(
     var camera by remember { mutableStateOf<androidx.camera.core.Camera?>(null) }
 
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    val mainExecutor = remember(context) { ContextCompat.getMainExecutor(context) }
     val qrReader = remember {
         MultiFormatReader().apply {
             setHints(mapOf(DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE)))
@@ -165,7 +166,13 @@ private fun CameraPreviewWithScanner(
                                     if (address != null && !hasScanned) {
                                         hasScanned = true
                                         Log.d(TAG, "Scanned CKB address: $address")
-                                        onScanResult(address)
+                                        // Dispatch the result callback to Main —
+                                        // the caller invokes navController.popBackStack()
+                                        // which mutates LifecycleRegistry state, and
+                                        // setCurrentState must be called on the main
+                                        // thread (#120 actual crash on Xiaomi 15 Pro:
+                                        // IllegalStateException from pool-7-thread-1).
+                                        mainExecutor.execute { onScanResult(address) }
                                     }
                                 }
                             }
@@ -223,19 +230,34 @@ private fun CameraPreviewWithScanner(
  * Returns the raw text or null if no QR code was found.
  */
 private fun decodeQrFromImage(imageProxy: ImageProxy, reader: MultiFormatReader): String? {
-    val plane = imageProxy.planes[0]
-    val buffer = plane.buffer
-    val bytes = ByteArray(buffer.remaining())
-    buffer.get(bytes)
-
-    val width = imageProxy.width
-    val height = imageProxy.height
-    val source = PlanarYUVLuminanceSource(
-        bytes, width, height, 0, 0, width, height, false
-    )
-    val bitmap = BinaryBitmap(HybridBinarizer(source))
-
+    // Wrap the whole body — buffer/plane access and the
+    // PlanarYUVLuminanceSource constructor can throw on devices where the
+    // pixel format or stride doesn't match expectations (#120: Xiaomi 15 Pro
+    // / Android 16 crashed scanning Joyid QR codes). The previous try only
+    // covered `decodeWithState`; the unsafe parts ran outside.
     return try {
+        if (imageProxy.planes.isEmpty()) return null
+        val plane = imageProxy.planes[0]
+        val buffer = plane.buffer
+        val bytes = ByteArray(buffer.remaining())
+        buffer.get(bytes)
+
+        val width = imageProxy.width
+        val height = imageProxy.height
+        // CameraX's Y plane is often padded — rowStride > width on many
+        // devices (especially Xiaomi/Tecno/recent flagships). Pass the actual
+        // stride as ZXing's `dataWidth` so it doesn't read past the buffer.
+        val rowStride = plane.rowStride
+        val dataWidth = if (rowStride >= width) rowStride else width
+        if (bytes.size < dataWidth * height) {
+            // Defensive: malformed buffer — skip this frame rather than OOB.
+            return null
+        }
+
+        val source = PlanarYUVLuminanceSource(
+            bytes, dataWidth, height, 0, 0, width, height, false
+        )
+        val bitmap = BinaryBitmap(HybridBinarizer(source))
         reader.decodeWithState(bitmap).text
     } catch (_: Exception) {
         null
