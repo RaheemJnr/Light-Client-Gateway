@@ -307,6 +307,10 @@ fun HomeScreen(
                 } catch (_: android.content.ActivityNotFoundException) {
                     // No browser available
                 }
+            },
+            onRetry = { tx ->
+                selectedTransaction = null
+                retryDialogTx = tx
             }
         )
     }
@@ -881,7 +885,8 @@ private fun TransactionDetailSheet(
     network: NetworkType,
     onDismiss: () -> Unit,
     onCopyTxHash: (String) -> Unit,
-    onOpenExplorer: (String) -> Unit
+    onOpenExplorer: (String) -> Unit,
+    onRetry: ((TransactionRecord) -> Unit)? = null
 ) {
     val isIncoming = transaction.isIncoming()
     val isOutgoing = transaction.isOutgoing()
@@ -1057,6 +1062,23 @@ private fun TransactionDetailSheet(
                     value = displayBlockHash,
                     isMonospace = true
                 )
+            }
+
+            // Retry CTA — only for FAILED rows that came through the broadcast
+            // state machine (legacy ghosts pass null for onRetry from the
+            // call site, since loadFailedForRetry can't prefill them).
+            if (transaction.status == "FAILED" && onRetry != null) {
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    onClick = { onRetry(transaction) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("Retry Transaction")
+                }
             }
         }
     }

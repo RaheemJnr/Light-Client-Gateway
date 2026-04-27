@@ -273,6 +273,10 @@ fun ActivityScreen(
                     onCopyTxHash = { hash ->
                         clipboardManager.setText(AnnotatedString(hash))
                     },
+                    onRetry = { failed ->
+                        selectedTransaction = null
+                        retryDialogTx = failed
+                    },
                     onOpenExplorer = { url ->
                         try {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
@@ -565,7 +569,8 @@ private fun TransactionDetailSheet(
     network: NetworkType,
     onDismiss: () -> Unit,
     onCopyTxHash: (String) -> Unit,
-    onOpenExplorer: (String) -> Unit
+    onOpenExplorer: (String) -> Unit,
+    onRetry: ((TransactionRecord) -> Unit)? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val amountColor = when {
@@ -723,6 +728,22 @@ private fun TransactionDetailSheet(
                     label = "Fee",
                     value = "$feeFormatted CKB"
                 )
+            }
+
+            // Retry CTA — only for FAILED rows; legacy ghosts (no signedTxJson)
+            // surface a friendly error from loadFailedForRetry instead.
+            if (transaction.status == "FAILED" && onRetry != null) {
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    onClick = { onRetry(transaction) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("Retry Transaction")
+                }
             }
         }
     }
