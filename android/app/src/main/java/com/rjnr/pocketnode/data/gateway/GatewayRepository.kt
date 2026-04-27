@@ -1233,7 +1233,7 @@ class GatewayRepository @Inject constructor(
      */
     suspend fun loadFailedForRetry(txHash: String): Result<FailedTxPrefill> = runCatching {
         val row = pendingBroadcastDao.getFailedRow(txHash)
-            ?: error("No FAILED row for $txHash")
+            ?: error("This transaction is too old to retry automatically. Please send a new one.")
         val tx = json.decodeFromString<Transaction>(row.signedTxJson)
         val recipientOutput = tx.cellOutputs.minByOrNull {
             it.capacity.removePrefix("0x").toLong(16)

@@ -911,23 +911,30 @@ private fun TransactionDetailSheet(
                     fontWeight = FontWeight.Bold
                 )
 
-                // Status badge
-                Surface(
-                    color = if (transaction.isConfirmed()) {
+                // Status badge — Confirmed / Pending / Failed (#115)
+                val isFailed = transaction.status == "FAILED"
+                val (badgeLabel, badgeFg, badgeBg) = when {
+                    isFailed -> Triple(
+                        "Failed",
+                        MaterialTheme.colorScheme.error,
+                        MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+                    )
+                    transaction.isConfirmed() -> Triple(
+                        "Confirmed",
+                        SuccessGreen,
                         SuccessGreen.copy(alpha = 0.15f)
-                    } else {
+                    )
+                    else -> Triple(
+                        "Pending",
+                        MaterialTheme.colorScheme.tertiary,
                         MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f)
-                    },
-                    shape = RoundedCornerShape(8.dp)
-                ) {
+                    )
+                }
+                Surface(color = badgeBg, shape = RoundedCornerShape(8.dp)) {
                     Text(
-                        text = if (transaction.isConfirmed()) "Confirmed" else "Pending",
+                        text = badgeLabel,
                         style = MaterialTheme.typography.labelMedium,
-                        color = if (transaction.isConfirmed()) {
-                            SuccessGreen
-                        } else {
-                            MaterialTheme.colorScheme.tertiary
-                        },
+                        color = badgeFg,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                     )
                 }
