@@ -28,6 +28,9 @@ interface TransactionDao {
     @Query("DELETE FROM transactions WHERE network = :network")
     suspend fun deleteByNetwork(network: String)
 
+    @Query("DELETE FROM transactions WHERE txHash = :hash")
+    suspend fun deleteByHash(hash: String)
+
     @Query("DELETE FROM transactions")
     suspend fun deleteAll()
 

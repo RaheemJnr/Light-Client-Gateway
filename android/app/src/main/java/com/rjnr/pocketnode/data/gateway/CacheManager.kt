@@ -66,7 +66,14 @@ class CacheManager @Inject constructor(
         }
     }
 
-    suspend fun insertPendingTransaction(txHash: String, network: String, walletId: String = "") {
+    suspend fun insertPendingTransaction(
+        txHash: String,
+        network: String,
+        walletId: String = "",
+        balanceChange: String = "0x0",
+        direction: String = "out",
+        fee: String = "0x0"
+    ) {
         try {
             transactionDao.insert(
                 TransactionEntity(
@@ -74,9 +81,9 @@ class CacheManager @Inject constructor(
                     blockNumber = "",
                     blockHash = "",
                     timestamp = System.currentTimeMillis(),
-                    balanceChange = "0x0",
-                    direction = "out",
-                    fee = "0x186a0",
+                    balanceChange = balanceChange,
+                    direction = direction,
+                    fee = fee,
                     confirmations = 0,
                     blockTimestampHex = null,
                     network = network,
@@ -91,6 +98,16 @@ class CacheManager @Inject constructor(
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Failed to cache pending tx", e)
+        }
+    }
+
+    suspend fun deleteTransaction(txHash: String) {
+        try {
+            transactionDao.deleteByHash(txHash)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to delete transaction $txHash", e)
         }
     }
 

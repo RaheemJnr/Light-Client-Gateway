@@ -24,9 +24,11 @@ import com.rjnr.pocketnode.data.database.dao.SyncProgressDao
 import com.rjnr.pocketnode.data.database.dao.TransactionDao
 import com.rjnr.pocketnode.data.database.dao.WalletDao
 import com.rjnr.pocketnode.data.migration.WalletMigrationHelper
+import com.rjnr.pocketnode.data.gateway.BroadcastClient
 import com.rjnr.pocketnode.data.gateway.CacheManager
 import com.rjnr.pocketnode.data.gateway.DaoSyncManager
 import com.rjnr.pocketnode.data.gateway.GatewayRepository
+import com.rjnr.pocketnode.data.gateway.LightClientBroadcastClient
 import com.rjnr.pocketnode.data.transaction.TransactionBuilder
 import com.rjnr.pocketnode.data.wallet.KeyManager
 import com.rjnr.pocketnode.data.wallet.MnemonicManager
@@ -179,6 +181,10 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideBroadcastClient(impl: LightClientBroadcastClient): BroadcastClient = impl
+
+    @Provides
+    @Singleton
     fun provideGatewayRepository(
         @ApplicationContext context: Context,
         keyManager: KeyManager,
@@ -191,6 +197,8 @@ object AppModule {
         walletDao: WalletDao,
         appDatabase: AppDatabase,
         headerCacheDao: HeaderCacheDao,
-        syncProgressDao: SyncProgressDao
-    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, transactionBuilder, cacheManager, daoSyncManager, walletMigrationHelper, walletDao, appDatabase, headerCacheDao, syncProgressDao)
+        syncProgressDao: SyncProgressDao,
+        pendingBroadcastDao: PendingBroadcastDao,
+        broadcastClient: BroadcastClient
+    ): GatewayRepository = GatewayRepository(context, keyManager, walletPreferences, json, transactionBuilder, cacheManager, daoSyncManager, walletMigrationHelper, walletDao, appDatabase, headerCacheDao, syncProgressDao, pendingBroadcastDao, broadcastClient)
 }
